@@ -1,182 +1,208 @@
--- ==== Discovery + safe injection for horses even if Horse.GetActions doesn't exist ====
+-- Scripts/Quietus/HorseFeed_Patch.lua
+-- Goal: show Feed on horse, log player-horse info, and open item transfer/filter UI from feed
+
 Quietus = Quietus or {}
-Quietus.DEBUG = true
+if Quietus.DEBUG == nil then Quietus.DEBUG = true end
 local function Q(fmt, ...) if Quietus.DEBUG then System.LogAlways(("[Quietus][HorseFeed] " .. fmt):format(...)) end end
+local function QH(fmt, ...) if Quietus.DEBUG then System.LogAlways(("[Quietus][HorseInfo] " .. fmt):format(...)) end end
 
--- Attempt to detect “is this a horse entity?”
-local function isHorse(self)
-    if not self then return false end
-    -- Common patterns; adapt if your class names differ.
-    if self.class == "Horse" then return true end
-    if self.horse ~= nil then return true end
-    -- Some builds keep horse flags on actor params:
-    if self.actor and self.actor.IsMountable and self.actor:IsMountable() then return true end
-    return false
-end
+-- ===== Config =====
+local FORCE_LANE       = "inspect" -- "inspect" | "mount"
+local FEED_LOC         = "@ui_hud_feed_horse"
 
--- Prevent duplicate injection per output array
-local function hasFeedAction(out, func)
-    for i = 1, #out do
-        local a = out[i]
-        if a and (a.func == func or a.hint == "@ui_hud_feed_horse") then return true end
-    end
-    return false
-end
+-- inventory modes/filters (from ApseInventoryList)
+local MODE_FILTER      = 5
+local MODE_MULTISELECT = 6
+local FILTER_FOOD      = 3
+local FILTER_QUEST     = 6
 
--- Delete everything that landed in the horse's inventory during this feed
-local function Quietus_ConsumeHorseInventory(horse, feeder)
-    if not horse or not horse.inventory then return end
-    local removed = 0
+-- ===== Player horse resolution / ownership =====
+Quietus.Horse          = Quietus.Horse or { playerHorseId = nil }
 
-    -- API shape differs per build; do your best to iterate stacks
-    -- Try a few common patterns (all protected with pcall)
-    local stacks = {}
-    pcall(function()
-        if horse.inventory.GetAllItems then
-            stacks = horse.inventory:GetAllItems() or {}
-        end
-    end)
-
-    -- If GetAllItems isn’t available, try a slot enum pattern
-    if #stacks == 0 then
+function Quietus.Horse.Resolve()
+    local ent
+    -- A) direct engine helper
+    pcall(function() if Game and Game.GetPlayerHorse then ent = Game:GetPlayerHorse() end end)
+    -- B) via player horse id
+    if not ent then
         pcall(function()
-            if horse.inventory.EnumItems then
-                horse.inventory:EnumItems(function(itemId, count)
-                    table.insert(stacks, { id = itemId, count = count or 1 })
-                    return true -- continue
-                end)
+            if player and player.actor and player.actor.GetHorseId then
+                local hid = player.actor:GetHorseId()
+                if hid then ent = System.GetEntity(hid) end
+            end
+        end)
+    end
+    -- C) nearby fallback
+    if not ent then
+        pcall(function()
+            if System and System.GetEntitiesInSphere and player and player.GetWorldPos then
+                local pos = player:GetWorldPos()
+                local list = System.GetEntitiesInSphere(pos, 15.0) or {}
+                local best, bd
+                for _, e in ipairs(list) do
+                    if e and (e.class == "Horse" or e.horse ~= nil) and e.GetWorldPos then
+                        local ep = e:GetWorldPos(); local dx, dy, dz = ep.x - pos.x, ep.y - pos.y, ep.z - pos.z
+                        local dsq = dx * dx + dy * dy + dz * dz; if not best or dsq < bd then best, bd = e, dsq end
+                    end
+                end
+                ent = best
             end
         end)
     end
 
-    -- Consume (delete) everything we find
-    for _, s in ipairs(stacks) do
-        local id    = s.id
-        local count = (s.count and s.count > 0) and s.count or 1
-        if id then
-            pcall(function() horse.inventory:DeleteItem(id, count) end)
-            removed = removed + count
+    if ent and ent.id then
+        Quietus.Horse.playerHorseId = ent.id
+        QH("Resolved player horse: %s (id=%s)", tostring(ent.GetName and ent:GetName() or "Horse"), tostring(ent.id))
+    else
+        QH("Player horse not resolved")
+    end
+    return ent
+end
+
+function Quietus.Horse.IsPlayerHorse(ent)
+    return ent and ent.id and Quietus.Horse.playerHorseId and ent.id == Quietus.Horse.playerHorseId
+end
+
+-- keep freshest id on mount
+do
+    local H = _G.Horse
+    if H and type(H.OnMount) == "function" and not H.__quietus_mount then
+        local base = H.OnMount
+        function H:OnMount(user, ...)
+            local r = base(self, user, ...)
+            if player and user and user.id == player.id then
+                Quietus.Horse.playerHorseId = self.id
+                QH("OnMount → playerHorseId=%s", tostring(self.id))
+            end
+            return r
+        end
+
+        H.__quietus_mount = true
+    end
+end
+
+-- seed once after load
+Script.SetTimer(1000, function() Quietus.Horse.Resolve() end)
+
+-- ===== Feed handler: open UI (filtered if possible) or exchange =====
+local function tryOpenFiltered(user, targetId)
+    if not (user and user.actor and user.actor.OpenInventory) then return false end
+    local variants = { FILTER_FOOD, tostring(FILTER_FOOD), "FOOD", "food", "3", ("3|%s"):format(tostring(FILTER_QUEST)) }
+    for _, flt in ipairs(variants) do
+        local ok = pcall(function() user.actor:OpenInventory(targetId, MODE_FILTER, nil, flt) end)
+        if ok then
+            Q("OpenInventory MODE_FILTER ok filter=%s", tostring(flt)); return true
         end
     end
-
-    System.LogAlways(("[Quietus][HorseFeed] Consumed %d item(s) from %s"):format(
-        removed, tostring(horse.GetName and horse:GetName() or "horse")))
-end
-
--- Some builds send this to the *target* entity when exchange closes
-function Horse:OnItemExchangeClosed()
-    if self.__quietus_feed_active then
-        Quietus_ConsumeHorseInventory(self, self.__quietus_feed_user or player)
-    end
-    self.__quietus_feed_active = nil
-    self.__quietus_feed_user   = nil
-end
-
--- Other builds reuse the generic inventory close callback name
-function Horse:OnInventoryClosed()
-    if self.__quietus_feed_active then
-        Quietus_ConsumeHorseInventory(self, self.__quietus_feed_user or player)
-    end
-    self.__quietus_feed_active = nil
-    self.__quietus_feed_user   = nil
-end
-
--- Our handler stubs
-local function OnFeedHorse(self, user, slot)
-    Q("OnFeedHorse fired for %s", tostring(self.class or "entity"))
-    if user and user.actor and user.actor.OpenItemMultiselectionFilter then
-        user.actor:OpenItemMultiselectionFilter(self.id, "")
-    elseif user and user.actor and user.actor.OpenItemSelectionFilter then
-        user.actor:OpenItemSelectionFilter(self.id, "")
-    else
-        Q("Item selection UI not available in this build (no OpenItem*Filter)")
-    end
-    -- Minimal consume path (you can wire OnInventoryItemUsed/Closed later if this fires)
+    return false
 end
 
 function Horse:OnFeedHorse(user, slot)
     System.LogAlways("[Quietus][HorseFeed] OnFeedHorse → " ..
         tostring(self.GetName and self:GetName() or self.class or "horse"))
-
-    -- mark that we're in a feed exchange so we only consume when *we* opened it
     self.__quietus_feed_active = true
     self.__quietus_feed_user   = user
 
-    -- Open the standard exchange window (same as loot but for a living actor it’s “give/take”)
+    -- Optional: direct GFX picker (harmless if your gfx doesn't use it)
+    if Quietus and Quietus.UI and Quietus.UI.OpenFoodPicker then
+        Quietus.UI.OpenFoodPicker("@quietus_feed_heading")
+    end
+
+    -- Preferred: engine filtered picker (controller-friendly)
+    if tryOpenFiltered(user, self.id) then return end
+
+    -- Fallback: multiselect (may not strictly filter)
+    local ok = pcall(function() user.actor:OpenInventory(self.id, MODE_MULTISELECT, nil, tostring(FILTER_FOOD)) end)
+    if ok then
+        Q("OpenInventory MODE_MULTISELECT opened"); return
+    end
+
+    -- Last resort: unfiltered exchange
     if self.actor and self.actor.RequestItemExchange and user and user.id then
+        Q("Falling back to RequestItemExchange (unfiltered)")
         self.actor:RequestItemExchange(user.id)
-    else
-        System.LogAlways("[Quietus][HorseFeed] RequestItemExchange not available — falling back to selection UI")
-        -- Fallback to selection UI if your build lacks RequestItemExchange for horse
-        if user and user.actor and user.actor.OpenItemMultiselectionFilter then
-            user.actor:OpenItemMultiselectionFilter(self.id, "")
-        elseif user and user.actor and user.actor.OpenItemSelectionFilter then
-            user.actor:OpenItemSelectionFilter(self.id, "")
+    end
+end
+
+-- ===== Inventory callbacks (log-only for now; consume later) =====
+function Horse:OnInventoryItemUsed(id, count)
+    System.LogAlways(("[Quietus][HorseFeed] ItemUsed id=%s x%s"):format(tostring(id), tostring(count or 1)))
+end
+
+function Horse:OnInventoryClosed()
+    System.LogAlways("[Quietus][HorseFeed] InventoryClosed (horse)")
+    self.__quietus_feed_active, self.__quietus_feed_user = nil, nil
+end
+
+function Horse:OnItemExchangeClosed()
+    System.LogAlways("[Quietus][HorseFeed] ItemExchangeClosed (horse)")
+    self.__quietus_feed_active, self.__quietus_feed_user = nil, nil
+end
+
+-- ===== Quick horse debug =====
+function Horse:QuietusDebugDump()
+    local name = self.GetName and self:GetName() or self.class or "horse"
+    local isMine = Quietus.Horse.IsPlayerHorse(self)
+    local hp = (self.actor and self.actor.GetHealth and self.actor:GetHealth()) or "n/a"
+    System.LogAlways(("[Quietus][HorseInfo] === %s id=%s (playerHorse=%s) ==="):format(name, tostring(self.id),
+        tostring(isMine)))
+    pcall(function()
+        if self.horse and self.horse.IsMountable then
+            System.LogAlways("[Quietus][HorseInfo] IsMountable=" ..
+                tostring(self.horse:IsMountable()))
         end
-    end
+        if self.horse and self.horse.IsMounted then
+            System.LogAlways("[Quietus][HorseInfo] IsMounted=" ..
+                tostring(self.horse:IsMounted()))
+        end
+    end)
 end
 
--- Try to inject “Feed horse” into the current output list
-local function tryInjectFeed(self, user, firstFast, out)
-    -- Prefer the horse “inspect” lane if present; else fall back to mount lane; else give up.
-    local hasInspectLane = (rawget(_G, "inr_horseInspect") ~= nil)
-    local hasMountLane   = (rawget(_G, "inr_horseMount") ~= nil)
-    local lane           = hasInspectLane and inr_horseInspect or hasMountLane and inr_horseMount or nil
-    if not (Action and AddInteractorAction and lane) then
-        Q("Cannot inject: Action/AddInteractorAction/lane missing (inspect=%s mount=%s)", tostring(hasInspectLane),
-            tostring(hasMountLane))
-        return
-    end
-    if hasFeedAction(out, OnFeedHorse) then return end
+-- ===== Inject Feed into Horse.GetActions (force lane, compute order) =====
+do
+    local H = _G.Horse
+    if H and type(H.GetActions) == "function" and not H.__quietus_feed_wrapped then
+        local _Get = H.GetActions
+        function H.GetActions(self, user, firstFast)
+            local actions = _Get(self, user, firstFast) or {}
+            local alive = self and self.actor and self.actor.GetHealth and (self.actor:GetHealth() > 0) or false
+            if not alive then return actions end
 
-    AddInteractorAction(out, firstFast,
-        Action()
-        :hint("@ui_hud_feed_horse")
-        :action("use_horse") -- safe generic; lane decides grouping
-        :hintType(AHT_PRESS)
-        :func(OnFeedHorse)
-        :interaction(lane)
-        :uiOrder(2)
-        :enabled(true)
-    )
-    Q("Injected Feed horse on lane %s", (lane == inr_horseInspect) and "inspect" or "mount")
-end
-
--- Wrap EVERY table that has :GetActions and log calls for horses
-local wrapped = {}
-local function wrapHost(name, host)
-    if wrapped[name] then return end
-    local GA = rawget(host, "GetActions")
-    if type(GA) ~= "function" then return end
-
-    host.GetActions = function(self, user, firstFast)
-        local out = GA(self, user, firstFast) or {}
-        if isHorse(self) then
-            -- Log once per host so we know who owns it
-            if not host.__quietus_horse_logged then
-                Q("GetActions call for horse is coming from table: %s", tostring(name))
-                host.__quietus_horse_logged = true
+            -- avoid duplicates
+            for i = 1, #actions do
+                local a = actions[i]; if a and a.func == H.OnFeedHorse then return actions end
             end
-            -- Try to inject the feed action
-            tryInjectFeed(self, user, firstFast, out)
-        end
-        return out
-    end
-    wrapped[name] = true
-    Q("✅ Wrapped %s.GetActions (discovery)", tostring(name))
-end
 
--- Scan globals now and a few times later for late load
-local tries = 0
-local function scanLoop()
-    tries = tries + 1
-    for k, v in pairs(_G) do
-        if type(v) == "table" then wrapHost(k, v) end
-    end
-    if tries < 20 then
-        Script.SetTimer(500, scanLoop) -- retry for ~10s total to catch late loads
-    else
-        Q("Discovery settled")
+            -- ui order → after existing
+            local maxOrder = 0; for i = 1, #actions do maxOrder = math.max(maxOrder, actions[i].uiOrder or 0) end
+            local uiOrder = maxOrder + 1
+
+            -- forced lane (engine doesn't expose it on horse rows in this build)
+            local lane = nil
+            if FORCE_LANE == "inspect" and rawget(_G, "inr_horseInspect") then
+                lane = inr_horseInspect
+            elseif FORCE_LANE == "mount" and rawget(_G, "inr_horseMount") then
+                lane = inr_horseMount
+            end
+            if not lane then
+                Q("No lane available; skipping inject"); return actions
+            end
+
+            local A = Action()
+                :hint(FEED_LOC)
+                :action("use_horse")
+                :hintType(AHT_PRESS)
+                :func(H.OnFeedHorse)
+                :interaction(lane)
+                :uiOrder(uiOrder)
+                :enabled(true)
+
+            AddInteractorAction(actions, firstFast, A)
+            Q("Injected Feed (lane=%s uiOrder=%d) count_before=%d", tostring(lane), uiOrder, #actions)
+            return actions
+        end
+
+        H.__quietus_feed_wrapped = true
+        System.LogAlways("[Quietus][HorseFeed] ✅ Wrapped Horse.GetActions")
     end
 end
-scanLoop()

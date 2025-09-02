@@ -1,23 +1,18 @@
 -- Scripts/Quietus/quietus_init.lua
 Quietus = Quietus or {}
-Quietus.DEBUG = true -- flip off later
+Quietus.DEBUG = true -- flip false for release
 
-local function Q(fmt, ...)
-    if Quietus.DEBUG then System.LogAlways(("[Quietus] " .. fmt):format(...)) end
-end
-
+local function Q(fmt, ...) if Quietus.DEBUG then System.LogAlways(("[Quietus] " .. fmt):format(...)) end end
 Q("init")
 
--- Load modules
+-- Load modules (order matters)
 Script.ReloadScript("Scripts/Quietus/Quietus.lua")
+Script.ReloadScript("Scripts/Quietus/HorseItemSelection_UI.lua")
 Script.ReloadScript("Scripts/Quietus/HorseFeed_Patch.lua")
 
--- Also hook gameplay start to retry later (many core scripts load around then)
+-- optional: late hooks if you want
 UIAction.RegisterEventSystemListener(Quietus, "System", "OnGameplayStarted", "OnGameplayStarted")
-
 function Quietus.OnGameplayStarted()
-    if Quietus.BasicAIActions_StartPatchLoop then
-        Q("OnGameplayStarted → (re)starting patch loop")
-        Quietus.BasicAIActions_StartPatchLoop(true) -- signal “late stage” start
-    end
+    Q("OnGameplayStarted")
+    -- if you later add other patch loops, kick them here
 end
