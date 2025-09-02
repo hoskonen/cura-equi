@@ -10,7 +10,7 @@ Q("init")
 
 -- Load modules
 Script.ReloadScript("Scripts/Quietus/Quietus.lua")
-Script.ReloadScript("Scripts/Quietus/BasicAIActions_Patch.lua")
+Script.ReloadScript("Scripts/Quietus/HorseFeed_Patch.lua")
 
 -- Also hook gameplay start to retry later (many core scripts load around then)
 UIAction.RegisterEventSystemListener(Quietus, "System", "OnGameplayStarted", "OnGameplayStarted")
