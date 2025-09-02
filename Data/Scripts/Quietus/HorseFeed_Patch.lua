@@ -7,17 +7,20 @@ local function Q(fmt, ...) if Quietus.DEBUG then System.LogAlways(("[Quietus][Ho
 local function QH(fmt, ...) if Quietus.DEBUG then System.LogAlways(("[Quietus][HorseInfo] " .. fmt):format(...)) end end
 
 -- ===== Config =====
-local FORCE_LANE       = "inspect" -- "inspect" | "mount"
-local FEED_LOC         = "@ui_hud_feed_horse"
+local FORCE_LANE        = "inspect" -- "inspect" | "mount"
+local FEED_LOC          = "@ui_hud_feed_horse"
 
 -- inventory modes/filters (from ApseInventoryList)
-local MODE_FILTER      = 5
-local MODE_MULTISELECT = 6
-local FILTER_FOOD      = 3
-local FILTER_QUEST     = 6
+local MODE_FILTER       = 5
+local MODE_MULTISELECT  = 6
+local FILTER_FOOD       = 3
+local FILTER_QUEST      = 6
 
 -- ===== Player horse resolution / ownership =====
-Quietus.Horse          = Quietus.Horse or { playerHorseId = nil }
+Quietus.Horse           = Quietus.Horse or { playerHorseId = nil }
+
+-- per-horse UI-open guard (top-level once)
+Quietus.__uiOpenByHorse = Quietus.__uiOpenByHorse or {}
 
 function Quietus.Horse.Resolve()
     local ent
@@ -97,42 +100,39 @@ local function tryOpenFiltered(user, targetId)
     return false
 end
 
+-- HorseFeed_Patch.lua — engine-driven ItemSelection open
 function Horse:OnFeedHorse(user, slot)
     System.LogAlways("[Quietus][HorseFeed] OnFeedHorse → " ..
         tostring(self.GetName and self:GetName() or self.class or "horse"))
-    self.__quietus_feed_active = true
-    self.__quietus_feed_user   = user
 
-    -- Optional: direct GFX picker (harmless if your gfx doesn't use it)
-    if Quietus and Quietus.UI and Quietus.UI.OpenFoodPicker then
-        Quietus.UI.OpenFoodPicker("@quietus_feed_heading")
+    -- Prefer the engine helper that drives ItemSelection internally (pad-friendly)
+    local ok = false
+    if user and user.actor and user.actor.OpenItemSelectionFilter then
+        ok = pcall(function()
+            -- "food" token is sample; if your build wants numeric, pass "3" or 3 (FILTER_FOOD)
+            user.actor:OpenItemSelectionFilter(self.id, "food")
+        end)
+    end
+    if not ok and user and user.actor and user.actor.OpenItemMultiselectionFilter then
+        ok = pcall(function()
+            user.actor:OpenItemMultiselectionFilter(self.id, "") -- empty = all; we can filter on close
+        end)
     end
 
-    -- Preferred: engine filtered picker (controller-friendly)
-    if tryOpenFiltered(user, self.id) then return end
-
-    -- Fallback: multiselect (may not strictly filter)
-    local ok = pcall(function() user.actor:OpenInventory(self.id, MODE_MULTISELECT, nil, tostring(FILTER_FOOD)) end)
-    if ok then
-        Q("OpenInventory MODE_MULTISELECT opened"); return
-    end
-
-    -- Last resort: unfiltered exchange
-    if self.actor and self.actor.RequestItemExchange and user and user.id then
-        Q("Falling back to RequestItemExchange (unfiltered)")
-        self.actor:RequestItemExchange(user.id)
-    end
+    System.LogAlways("[Quietus][HorseFeed] OpenItemSelectionFilter: " .. (ok and "ok" or "failed"))
 end
 
--- ===== Inventory callbacks (log-only for now; consume later) =====
+-- Keep these; the engine calls them after the UI is closed
 function Horse:OnInventoryItemUsed(id, count)
     System.LogAlways(("[Quietus][HorseFeed] ItemUsed id=%s x%s"):format(tostring(id), tostring(count or 1)))
 end
 
 function Horse:OnInventoryClosed()
     System.LogAlways("[Quietus][HorseFeed] InventoryClosed (horse)")
-    self.__quietus_feed_active, self.__quietus_feed_user = nil, nil
+    -- TODO next step: consume only food, return non-food, apply horse buff, etc.
 end
+
+-- ===== Inventory callbacks (log-only for now; consume later) =====
 
 function Horse:OnItemExchangeClosed()
     System.LogAlways("[Quietus][HorseFeed] ItemExchangeClosed (horse)")

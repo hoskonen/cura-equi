@@ -2,4 +2,7 @@
 <Row>
     <Cell>ui_hud_feed_horse</Cell><Cell>Feed</Cell><Cell>Feed</Cell>
 </Row>
+<Row>
+    <Cell>ui_hud_feed_heading</Cell><Cell>Horsie needs protein</Cell><Cell>Horsie needs protein</Cell>
+</Row>
 </Table> 
