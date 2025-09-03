@@ -1,17 +1,30 @@
 -- Scripts/CuraEqui/Core.lua
-CuraEqui = CuraEqui or {}
-CuraEqui.VERSION = "0.1.0"
-CuraEqui.DEBUG = CuraEqui.DEBUG ~= false
-CuraEqui.state = CuraEqui.state or {
-    hungerTimer = nil,
-    pausedForSleep = false,
-    started = false,
+CuraEqui                     = CuraEqui or {}
+CuraEqui.VERSION             = "0.1.0"
+CuraEqui.state               = CuraEqui.state or { hungerTimer = nil, pausedForSleep = false, started = false }
+
+-- Safe config (defaults if Config.lua not loaded yet)
+local C                      = CuraEqui.Config or {
+    Debug = { enabled = true, distanceTrace = true, distanceTraceStepM = 100.0 },
+    Hunger = { hungerMax = 100, hungerStart = 30, tickSec = 10, ratePerMin = 1.0, ratePerKm = 15.0, debuffAt = 70 },
+}
+
+-- Wire flags/tunables
+CuraEqui.DEBUG               = C.Debug.enabled
+CuraEqui.DEBUG_DISTANCE      = C.Debug.distanceTrace
+CuraEqui.DEBUG_DISTANCE_STEP = C.Debug.distanceTraceStepM
+
+CuraEqui.HorseCfg            = {
+    hungerMax   = C.Hunger.hungerMax,
+    hungerStart = C.Hunger.hungerStart,
+    tickSec     = C.Hunger.tickSec,
+    ratePerMin  = C.Hunger.ratePerMin,
+    ratePerKm   = C.Hunger.ratePerKm,
+    debuffAt    = C.Hunger.debuffAt,
 }
 
 function CuraEqui.Log(tag, fmt, ...)
-    if CuraEqui.DEBUG then
-        System.LogAlways(("[CuraEqui]%s %s"):format(tag and ("[" .. tag .. "]") or "", fmt:format(...)))
-    end
+    if CuraEqui.DEBUG then System.LogAlways(("[CuraEqui]%s %s"):format(tag and ("[" .. tag .. "]") or "", fmt:format(...))) end
 end
 
 -- Event glue (register once in init file or here)

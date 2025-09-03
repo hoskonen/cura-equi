@@ -7,12 +7,27 @@ CuraEqui.HorseCfg = CuraEqui.HorseCfg or
 
 function CuraEqui.Horse.Resolve()
     local ent
-    pcall(function() if Game and Game.GetPlayerHorse then ent = Game:GetPlayerHorse() end end)
-    if not ent and player and player.actor and player.actor.GetHorseId then
-        local hid = player.actor:GetHorseId(); if hid then ent = System.GetEntity(hid) end
+
+    -- 1) fastest: stored id from our OnMount hook
+    if CuraEqui.Horse.playerHorseId then
+        ent = System.GetEntity(CuraEqui.Horse.playerHorseId)
     end
+
+    -- 2) engine helper
+    if not ent then
+        pcall(function()
+            if Game and Game.GetPlayerHorse then ent = Game:GetPlayerHorse() end
+        end)
+    end
+
+    -- 3) player->horse id fallback
+    if not ent and player and player.actor and player.actor.GetHorseId then
+        local hid = player.actor:GetHorseId()
+        if hid then ent = System.GetEntity(hid) end
+    end
+
     if ent and ent.id then
-        CuraEqui.Horse.playerHorseId = ent.id; QH("resolved id=%s", tostring(ent.id))
+        CuraEqui.Horse.playerHorseId = ent.id -- keep it fresh
     end
     return ent
 end
