@@ -2,32 +2,64 @@
 local Q = function(fmt, ...) CuraEqui.Log("Feed", fmt, ...) end
 local HGetState = CuraEqui.HorseStateGet
 
--- Feed entrypoint
-function Horse:OnFeedHorse(user, _slot)
+-- Feeding.lua
+-- Feeding.lua
+
+-- toggle here
+local USE_TRANSFER = false -- true = ItemTransfer (supports filters), false = ItemSelection (no filter)
+
+function Horse:OnFeedHorse(user)
     System.LogAlways("[CuraEqui][Feed] OnFeedHorse → " ..
     tostring(self.GetName and self:GetName() or self.class or "horse"))
     self.__curaequi_used, self.__curaequi_single, self.__curaequi_consumed = {}, true, false
 
-    local hasSel                                                           = user and user.actor and
-    (user.actor.OpenItemSelectionFilter ~= nil)
-    local hasMulti                                                         = user and user.actor and
-    (user.actor.OpenItemMultiselectionFilter ~= nil)
-    local hasXfer                                                          = self and self.actor and
-    (self.actor.RequestItemExchange ~= nil)
-    Q("caps: selection=%s multiselect=%s exchange=%s", tostring(hasSel), tostring(hasMulti), tostring(hasXfer))
+    if USE_TRANSFER then
+        ----------------------------------------------------------------
+        -- Option B: ItemTransfer (two-pane, categories available)
+        ----------------------------------------------------------------
+        if self.actor and self.actor.RequestItemExchange then
+            local ok = pcall(function() self.actor:RequestItemExchange(user.id) end)
+            System.LogAlways("[CuraEqui][Feed] RequestItemExchange → " .. (ok and "ok" or "fail"))
+        else
+            System.LogAlways("[CuraEqui][Feed] No ItemTransfer available")
+            return
+        end
 
-    if hasSel then
-        local ok = pcall(function() user.actor:OpenItemSelectionFilter(self.id, "") end); Q(
-        "OpenItemSelectionFilter(\"\") → %s", ok and "ok" or "fail"); if ok then return end
+        -- delayed attempt to force Food filter on left/player pane
+        local tries, maxTries = 0, 15
+        local function applyFoodFilter()
+            tries = tries + 1
+            local function call(fname, arg)
+                local ok = pcall(function()
+                    if arg ~= nil then
+                        UIAction.CallFunction("ItemTransfer", nil, fname, arg)
+                    else
+                        UIAction.CallFunction("ItemTransfer", nil, fname)
+                    end
+                end)
+                System.LogAlways(("[CuraEqui][UI] %s(%s) → %s"):format(fname, tostring(arg or ""), ok and "ok" or "fail"))
+                return ok
+            end
+
+            call("fc_focusLeft")
+            if call("fc_setLeftFilter", 3) or call("fc_setCategoryIndex", 3) then return end
+            if tries < maxTries then
+                Script.SetTimerForFunction(150, "CuraEqui_ApplyFoodFilterTick")
+            end
+        end
+        _G["CuraEqui_ApplyFoodFilterTick"] = applyFoodFilter
+        Script.SetTimerForFunction(200, "CuraEqui_ApplyFoodFilterTick")
+    else
+        ----------------------------------------------------------------
+        -- Option A: ItemSelection (simple list, no filters)
+        ----------------------------------------------------------------
+        if user and user.actor and user.actor.OpenItemSelectionFilter then
+            local ok = pcall(function() user.actor:OpenItemSelectionFilter(self.id, "") end)
+            System.LogAlways("[CuraEqui][Feed] OpenItemSelectionFilter('') → " .. (ok and "ok" or "fail"))
+        else
+            System.LogAlways("[CuraEqui][Feed] No ItemSelection available")
+        end
     end
-    if hasMulti then
-        local ok = pcall(function() user.actor:OpenItemMultiselectionFilter(self.id, "") end); Q(
-        "OpenItemMultiselectionFilter(\"\") → %s", ok and "ok" or "fail"); if ok then return end
-    end
-    if hasXfer then
-        local ok = pcall(function() self.actor:RequestItemExchange(user.id) end); Q("RequestItemExchange → %s",
-            ok and "ok" or "fail")
-    else Q("No UI path available") end
 end
 
 function Horse:OnInventoryItemUsed(id, count)
@@ -80,7 +112,7 @@ do
             local maxOrder = 0; for i = 1, #actions do maxOrder = math.max(maxOrder, actions[i].uiOrder or 0) end
             local lane = rawget(_G, "inr_horseInspect") or rawget(_G, "inr_horseMount"); if not lane then return actions end
             local A = Action():hint("@ui_hud_feed_horse"):action("use_horse"):hintType(AHT_PRESS):func(H.OnFeedHorse)
-            :interaction(lane):uiOrder(maxOrder + 1):enabled(true)
+                :interaction(lane):uiOrder(maxOrder + 1):enabled(true)
             AddInteractorAction(actions, firstFast, A)
             if not self.__curaequi_feed_logged then
                 CuraEqui.Log("Feed", "Injected (lane=%s order=%d)", tostring(lane), maxOrder + 1); self.__curaequi_feed_logged = true
