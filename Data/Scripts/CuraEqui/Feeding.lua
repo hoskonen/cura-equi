@@ -2,16 +2,27 @@
 -- Cura Equi · Feeding (player drops → scanner eats)
 -- ---------------------------------------------------------------------------
 
-CuraEqui = CuraEqui or {}
-CuraEqui.Config = CuraEqui.Config or {}
+CuraEqui                 = CuraEqui or {}
+CuraEqui.Config          = CuraEqui.Config or {}
 CuraEqui.Config.FeedScan = CuraEqui.Config.FeedScan or {
-    radius         = 2.0,                        -- meters around horse mouth
-    windowSec      = 6.0,                        -- how long we scan after action
-    tickMs         = 150,                        -- scan cadence
-    toastOnStart   = "@curaequi_feed_drop_hint", -- shown when scan starts (optional)
-    _invArmActive  = false,
-    _invArmExpires = 0
+    radius = 2.5,
+    windowSec = 6.0,
+    postCloseWindowSec = 8.0,
+    postCloseDelayMs = 250,
+    tickMs = 150,
+    toastOnStart = "@curaequi_feed_drop_hint",
+    armOnInventoryClose = true,
+    armTimeoutSec = 25.0, -- ← add this
+    groundProbe = true,
+    groundOffsetDown = 1.2,
+    debugDraw = false,
 }
+
+
+-- runtime state (keep outside config)
+CuraEqui._invArmActive  = false
+CuraEqui._invArmExpires = 0
+
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -72,6 +83,57 @@ local function CE_SniffGuidAndName(ent)
     return guid, name
 end
 
+local function CE_GetScanCenters()
+    local centers = {}
+    local horse, mouth = CE_GetHorseAndMouthPos()
+    if horse and mouth then
+        centers[#centers + 1] = mouth
+        if CuraEqui.Config.FeedScan.groundProbe then
+            local gz = (CuraEqui.Config.FeedScan.groundOffsetDown or 1.2)
+            centers[#centers + 1] = { x = mouth.x, y = mouth.y, z = mouth.z - gz }
+        end
+        return centers, "horse"
+    end
+
+    -- Fallback: in front of PLAYER
+    if player and player.GetWorldPos then
+        local p = player:GetWorldPos()
+        local f = (player.GetDirectionVector and player:GetDirectionVector(1)) or { x = 1, y = 0, z = 0 }
+        centers[#centers + 1] = { x = p.x + f.x * 1.0, y = p.y + f.y * 1.0, z = p.z - 0.4 }
+        return centers, "player"
+    end
+
+    return centers, "none"
+end
+
+
+function CuraEqui.Feed_DebugDumpNearby(radius)
+    local centers, origin = CE_GetScanCenters()
+    local r = tonumber(radius) or (CuraEqui.Config.FeedScan.radius or 2.5)
+    for _, c in ipairs(centers) do
+        local ents = CE_ListNearbyEntities(c, r)
+        System.LogAlways(("[CuraEqui][Dbg] center=(%.2f,%.2f,%.2f) r=%.2f → %d entities")
+            :format(c.x, c.y, c.z, r, #ents))
+        for i, ent in ipairs(ents) do
+            local pos = (ent.GetWorldPos and ent:GetWorldPos()) or { x = 0, y = 0, z = 0 }
+            local dx, dy, dz = pos.x - c.x, pos.y - c.y, pos.z - c.z
+            local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+            local guid, nm = CE_SniffGuidAndName(ent)
+            local hasItem = (rawget(ent, "item") ~= nil)
+            System.LogAlways(("[CuraEqui][Dbg] #%d eid=%s cls=%s dist=%.2f hasItem=%s guid=%s name=%s")
+                :format(i, tostring(ent.id), tostring(ent.class), dist, tostring(hasItem), tostring(guid), tostring(nm)))
+            if XGenAIModule and XGenAIModule.GetWuidDebugString then
+                local ok, dbg = pcall(function() return XGenAIModule.GetWuidDebugString(ent.id) end)
+                if ok and dbg then System.LogAlways("[CuraEqui][Dbg]  └─ WUID: " .. tostring(dbg)) end
+            end
+        end
+    end
+end
+
+function CuraEqui_Feed_StartScanDelayed()
+    return CuraEqui.Feed_StartScan(CuraEqui.Config.FeedScan.postCloseWindowSec or 8.0)
+end
+
 -- Nutrition applier (expects DietData to be required elsewhere like before)
 function CuraEqui._ApplyNutrition(diet, label)
     local n = diet and diet.nutrition or 0
@@ -94,8 +156,6 @@ function CuraEqui._InvClose_ArmOnce(durationSec)
         pcall(function() UIAction.RegisterElementListener(CuraEqui, elem, -1, ev, cb) end)
     end
 
-    -- Try a few likely movies/events used by vanilla inventory stack.
-    -- (Harmless if an element/event doesn’t exist.)
     reg("ApseInventoryList", "OnClose", "OnInvClosed")
     reg("ApseInventoryList", "OnHide", "OnInvClosed")
     reg("ApseInventoryInfo", "OnClose", "OnInvClosed")
@@ -114,73 +174,96 @@ end
 -- Listener target (called by any of the above UI events)
 function CuraEqui:OnInvClosed(elementName, _instanceId, eventName, _args)
     if not CuraEqui._invArmActive then return end
-    if _now() > CuraEqui._invArmExpires then
+    local now = (_G.Script and Script.GetTime and Script.GetTime()) or os.clock()
+    if now > (CuraEqui._invArmExpires or 0) then
         CE_Log("ignored close (arm expired)")
         return
     end
     CE_Log("inventory closed via %s.%s → starting post-close scan", tostring(elementName), tostring(eventName))
     CuraEqui._InvClose_Disarm()
-    CuraEqui.Feed_StartScan(CuraEqui.Config.FeedScan.postCloseWindowSec or 8.0)
+    local delay = CuraEqui.Config.FeedScan.postCloseDelayMs or 0
+    if delay > 0 then
+        Script.SetTimerForFunction(delay, "CuraEqui_Feed_StartScanDelayed")
+    else
+        CuraEqui.Feed_StartScan(CuraEqui.Config.FeedScan.postCloseWindowSec or 8.0)
+    end
 end
 
 -- ---------------------------------------------------------------------------
 -- Scanner: runs for a short window after the action; eats first edible thing
 -- ---------------------------------------------------------------------------
-CuraEqui._scanUntil = nil
-CuraEqui._scanActive = false
+CuraEqui._scanUntil  = CuraEqui._scanUntil or nil
+CuraEqui._scanActive = CuraEqui._scanActive or false
 
-local function CE_FeedScan_Tick()
+local function _scan_once()
+    local centers, origin = CE_GetScanCenters()
+    System.LogAlways(("[CuraEqui][Scan] origin=%s centers=%d"):format(origin, #centers))
+
+    local now    = _now()
+    local total  = (CuraEqui.Config.FeedScan.postCloseWindowSec or CuraEqui.Config.FeedScan.windowSec or 6.0)
+    local left   = math.max(0, (CuraEqui._scanUntil or 0) - now)
+    local baseR  = CuraEqui.Config.FeedScan.radius or 2.5
+    local grow   = 1.0 + (1.0 - (left / math.max(0.001, total))) * 0.4 -- up to +40%
+    local radius = math.min(baseR * grow, 4.0)
+
+    for _, c in ipairs(centers) do
+        local ents = CE_ListNearbyEntities(c, radius)
+        System.LogAlways(("[CuraEqui][Scan] center=(%.2f,%.2f,%.2f) r=%.2f → ents=%d")
+            :format(c.x, c.y, c.z, radius, #ents))
+
+        for _, ent in ipairs(ents) do
+            local guid, name = CE_SniffGuidAndName(ent)
+            if guid or (rawget(ent, "item") ~= nil) then
+                System.LogAlways(("[CuraEqui][Scan] found '%s' guid=%s eid=%s")
+                    :format(tostring(name or ent.class), tostring(guid), tostring(ent.id)))
+
+                local diet = (guid and CuraEqui.Diet and CuraEqui.Diet.byGuid and CuraEqui.Diet.byGuid[guid]) or nil
+                -- TEMP keyword fallback for testing; remove when GUID map is ready
+                if not diet and name then
+                    local s = string.lower(tostring(name))
+                    if s:find("apple", 1, true) or s:find("@ui_nm_", 1, true) or s:find("bread", 1, true) then
+                        System.LogAlways("[CuraEqui][Scan] keyword-allow → edible (test)")
+                        diet = { nutrition = (CuraEqui.Config.Diet and CuraEqui.Config.Diet.defaultNutrition) or 10, token =
+                        name }
+                    end
+                end
+
+                if diet then
+                    CE_DeleteEntity(ent)
+                    CuraEqui._scanActive = false
+                    return CuraEqui._ApplyNutrition(diet, diet.token or name or "?")
+                else
+                    System.LogAlways("[CuraEqui][Scan] not edible → leaving")
+                end
+            end
+        end
+    end
+end
+
+function CuraEqui.Feed_StartScan(seconds)
+    local s              = tonumber(seconds) or (CuraEqui.Config.FeedScan.windowSec or 6.0)
+    CuraEqui._scanUntil  = _now() + s
+    CuraEqui._scanActive = true
+    System.LogAlways(("[CuraEqui][Scan] started (%.1fs, r=%.1fm)"):format(s, CuraEqui.Config.FeedScan.radius))
+    if CuraEqui.UI and CuraEqui.UI.ShowInfo and CuraEqui.Config.FeedScan.toastOnStart then
+        pcall(function() CuraEqui.UI.ShowInfo(CuraEqui.Config.FeedScan.toastOnStart, 2.2) end)
+    end
+    Script.SetTimerForFunction(CuraEqui.Config.FeedScan.tickMs or 150, "CuraEqui_FeedScan_Tick")
+end
+
+function CuraEqui_FeedScan_Tick()
     if not CuraEqui._scanActive then return end
     if _now() > (CuraEqui._scanUntil or 0) then
         CuraEqui._scanActive = false
         System.LogAlways("[CuraEqui][Scan] window ended")
         return
     end
-
-    local horse, mouth = CE_GetHorseAndMouthPos()
-    if not horse then
-        Script.SetTimerForFunction(CuraEqui.Config.FeedScan.tickMs, "CuraEqui_FeedScan_Tick")
-        return
-    end
-
-    local ents = CE_ListNearbyEntities(mouth, CuraEqui.Config.FeedScan.radius)
-    for _, ent in ipairs(ents) do
-        -- Try to detect item-like entities
-        local guid, name = CE_SniffGuidAndName(ent)
-        if guid or (ent.item ~= nil) then
-            System.LogAlways(("[CuraEqui][Scan] found '%s' guid=%s eid=%s")
-                :format(tostring(name or ent.class), tostring(guid), tostring(ent.id)))
-            -- Decide edibility
-            local diet = (guid and CuraEqui.Diet and CuraEqui.Diet.byGuid and CuraEqui.Diet.byGuid[guid]) or nil
-            if diet then
-                -- Eat it: delete entity, apply nutrition, stop scan
-                CE_DeleteEntity(ent)
-                CuraEqui._scanActive = false
-                return CuraEqui._ApplyNutrition(diet, diet.token or name or "?")
-            else
-                -- Not edible → leave it on the ground
-                System.LogAlways("[CuraEqui][Scan] not edible → leaving")
-            end
-        end
-    end
-
-    -- keep scanning
-    Script.SetTimerForFunction(CuraEqui.Config.FeedScan.tickMs, "CuraEqui_FeedScan_Tick")
+    _scan_once()
+    Script.SetTimerForFunction(CuraEqui.Config.FeedScan.tickMs or 150, "CuraEqui_FeedScan_Tick")
 end
-_G["CuraEqui_FeedScan_Tick"] = CE_FeedScan_Tick
 
-function CuraEqui.Feed_StartScan(seconds)
-    local s = tonumber(seconds) or CuraEqui.Config.FeedScan.windowSec
-    CuraEqui._scanUntil = _now() + s
-    CuraEqui._scanActive = true
-    System.LogAlways(("[CuraEqui][Scan] started (%.1fs, r=%.1fm)")
-        :format(s, CuraEqui.Config.FeedScan.radius))
-    -- Optional toast to instruct the player
-    if CuraEqui.UI and CuraEqui.UI.ShowInfo and CuraEqui.Config.FeedScan.toastOnStart then
-        pcall(function() CuraEqui.UI.ShowInfo(CuraEqui.Config.FeedScan.toastOnStart, 2.2) end)
-    end
-    CE_FeedScan_Tick()
-end
+_G["CuraEqui_FeedScan_Tick"] = CuraEqui_FeedScan_Tick
+
 
 -- ---------------------------------------------------------------------------
 -- Entrypoint: action opens a picker if available, then starts the scanner
