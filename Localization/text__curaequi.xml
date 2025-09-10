@@ -1,5 +1,11 @@
 <Table>
 <Row>
-    <Cell>ui_hud_feed_horse</Cell><Cell>Feed</Cell><Cell>Feed</Cell>
+    <Cell>curaequi_drop_food</Cell><Cell>Drop food for horse</Cell><Cell>Drop food for Horse</Cell>
+</Row>
+<Row>
+    <Cell>curaequi_feed_drop_hint</Cell><Cell>Drop edible for Horse</Cell><Cell>Drop edible for Horse</Cell>
+</Row>
+<Row>
+    <Cell>curaequi_horse_feed_ok</Cell><Cell>Horse eats happily</Cell><Cell>Horse eats happily</Cell>
 </Row>
 </Table> 

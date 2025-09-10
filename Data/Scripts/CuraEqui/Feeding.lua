@@ -1,219 +1,209 @@
 -- Scripts/CuraEqui/Feeding.lua
--- Cura Equi · Feeding (drop-only) & UI bridge
+-- Cura Equi · Feeding (player drops → scanner eats)
 -- ---------------------------------------------------------------------------
 
--- Keep logs small & clear for this test iteration
-local _unpack = (table and table.unpack) or _G.unpack
+CuraEqui = CuraEqui or {}
+CuraEqui.Config = CuraEqui.Config or {}
+CuraEqui.Config.FeedScan = CuraEqui.Config.FeedScan or {
+    radius         = 2.0,                        -- meters around horse mouth
+    windowSec      = 6.0,                        -- how long we scan after action
+    tickMs         = 150,                        -- scan cadence
+    toastOnStart   = "@curaequi_feed_drop_hint", -- shown when scan starts (optional)
+    _invArmActive  = false,
+    _invArmExpires = 0
+}
 
--- Toggle which picker UI to open:
---   false = ItemSelection (simple)
---   true  = ItemTransfer  (two-pane)
-local USE_TRANSFER = false
+-- ---------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------
+local function _now()
+    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
+end
 
--- ===========================================================================
--- Lua → GFx helpers (for harmless pings/close)
--- ===========================================================================
-local function ce_ui_call(elem, inst, fname, args)
-    local ok = pcall(function()
-        if args and #args > 0 then
-            return UIAction.CallFunction(elem, inst, fname, _unpack(args))
-        else
-            return UIAction.CallFunction(elem, inst, fname)
+local function CE_Log(fmt, ...)
+    System.LogAlways("[CuraEqui][Scan] " .. string.format(fmt, ...))
+end
+
+local function _vec_add(a, b) return { x = a.x + b.x, y = a.y + b.y, z = a.z + b.z } end
+local function _vec_scale(a, s) return { x = a.x * s, y = a.y * s, z = a.z * s } end
+
+local function CE_GetHorseAndMouthPos()
+    local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    if not h or not h.GetWorldPos then return nil end
+    local hp    = h:GetWorldPos()
+    local f     = (h.GetDirectionVector and h:GetDirectionVector(1)) or { x = 1, y = 0, z = 0 }
+    -- ~0.9m forward, ~1.3m up; tweak for your model
+    local mouth = _vec_add(hp, _vec_add(_vec_scale(f, 0.9), { x = 0, y = 0, z = 1.3 }))
+    return h, mouth
+end
+
+local function CE_ListNearbyEntities(pos, radius)
+    local list = {}
+    local ok, ids = pcall(function()
+        return System.GetEntitiesInSphere and System.GetEntitiesInSphere(pos, radius) or {}
+    end)
+    if not ok or not ids then return list end
+    for i = 1, #ids do
+        local eid = ids[i]
+        local okE, ent = pcall(function() return System.GetEntity(eid) end)
+        if okE and ent then list[#list + 1] = ent end
+    end
+    return list
+end
+
+local function CE_DeleteEntity(ent)
+    return pcall(function()
+        if ent.DeleteThis then
+            ent:DeleteThis()
+        elseif System.RemoveEntity then
+            System.RemoveEntity(ent.id)
         end
     end)
-    System.LogAlways(("[CuraEqui][UI] %s.%s → %s"):format(tostring(elem), tostring(fname), ok and "ok" or "fail"))
-    return ok
 end
 
--- ===========================================================================
--- GFx → Lua bridge (element listeners)
--- ===========================================================================
-CuraEqui = CuraEqui or {}
-CuraEqui._feedBridgeListenersReady = CuraEqui._feedBridgeListenersReady or false
-
--- Focus state (WUID cached from UI focus changes)
-CuraEqui._lastFocusWUID = CuraEqui._lastFocusWUID or nil
-
-local function _arg(args, key)
-    return (args and (args[0] or args[1] or args[key] or args[string.upper(key)] or args[string.lower(key)] or "")) or ""
+-- Try to read class/template guid + a UI-ish name from an item entity
+local function CE_SniffGuidAndName(ent)
+    if not ent then return nil, nil end
+    local t = rawget(ent, "item") or rawget(ent, "Item") or ent
+    local guid = (t and (t.classGuid or t.templateGuid or t.guid or t.ClassGuid or t.TemplateGuid))
+        or ent.classGuid or ent.templateGuid
+    local name = (t and ((t.GetUIName and t:GetUIName()) or t.uiName or t.name or t.displayName or t.templateName))
+        or ent.szName or ent.name or ent.class
+    return guid, name
 end
 
-function CuraEqui.Feed_RegisterBridgeListeners()
-    if CuraEqui._feedBridgeListenersReady then return end
-    if not (UIAction and UIAction.RegisterElementListener) then
-        System.LogAlways("[CuraEqui][Bridge] UIAction not available; cannot register listeners"); return
+-- Nutrition applier (expects DietData to be required elsewhere like before)
+function CuraEqui._ApplyNutrition(diet, label)
+    local n = diet and diet.nutrition or 0
+    System.LogAlways(("[CuraEqui][Horse] Fed '%s' → -%s hunger"):format(tostring(label or "?"), tostring(n)))
+    if CuraEqui.Hunger and CuraEqui.Hunger.AddNutrition then
+        pcall(function() CuraEqui.Hunger.AddNutrition(n) end)
     end
+    if CuraEqui.UI and CuraEqui.UI.ShowInfo then
+        pcall(function() CuraEqui.UI.ShowInfo("@curaequi_horse_feed_ok", 1.5) end)
+    end
+end
 
+function CuraEqui._InvClose_ArmOnce(durationSec)
+    CuraEqui._invArmActive  = true
+    CuraEqui._invArmExpires = _now() + (durationSec or CuraEqui.Config.FeedScan.armTimeoutSec or 25)
+    CE_Log("armed for inventory close (%.1fs)", CuraEqui._invArmExpires - _now())
+
+    if not (UIAction and UIAction.RegisterElementListener) then return end
     local function reg(elem, ev, cb)
-        local ok = pcall(function() UIAction.RegisterElementListener(CuraEqui, elem, -1, ev, cb) end)
-        System.LogAlways(("[CuraEqui][Bridge] listen %s.%s → %s (%s)")
-            :format(elem, ev, ok and "ok" or "fail", tostring(cb)))
+        pcall(function() UIAction.RegisterElementListener(CuraEqui, elem, -1, ev, cb) end)
     end
 
-    -- Our custom XML events (params may be empty on your build; that's fine)
-    reg("ItemSelection", "CuraEquiOnItemInfo", "OnCuraEquiItemInfoEvent")
-    reg("ItemSelection", "CuraEquiOnItemUsed", "OnCuraEquiItemUsedEvent")
-    reg("ItemTransfer", "CuraEquiOnItemInfo", "OnCuraEquiItemInfoEvent")
-    reg("ItemTransfer", "CuraEquiOnItemUsed", "OnCuraEquiItemUsedEvent")
-
-    -- Focus tracking (gives us WUIDs)
-    reg("ItemSelection", "OnFocusChanged", "OnItemSelectionFocusChanged")
-    reg("ItemTransfer", "OnFocusChanged", "OnItemSelectionFocusChanged")
-
-    -- Also react to double-click (mouse path)
-    reg("ItemSelection", "OnDoubleClicked", "OnItemSelectionDoubleClicked")
-    reg("ItemTransfer", "OnDoubleClicked", "OnItemSelectionDoubleClicked")
-
-    CuraEqui._feedBridgeListenersReady = true
+    -- Try a few likely movies/events used by vanilla inventory stack.
+    -- (Harmless if an element/event doesn’t exist.)
+    reg("ApseInventoryList", "OnClose", "OnInvClosed")
+    reg("ApseInventoryList", "OnHide", "OnInvClosed")
+    reg("ApseInventoryInfo", "OnClose", "OnInvClosed")
+    reg("ApseInventoryInfo", "OnHide", "OnInvClosed")
+    reg("ApseModalDialog", "OnClose", "OnInvClosed")
+    reg("ApsePlayerList", "OnClose", "OnInvClosed")
+    reg("ApsePlayerInfo", "OnClose", "OnInvClosed")
+    reg("ApseCharacter", "OnClose", "OnInvClosed")
 end
 
-function CuraEqui:OnItemSelectionFocusChanged(_elementName, _instanceId, _eventName, args)
-    local idsStr = tostring(_arg(args, "Ids"))
-    local wuid   = idsStr:match("([^,;%s]+)") or idsStr
-    if wuid == "" then wuid = nil end
-    CuraEqui._lastFocusWUID = wuid
-    System.LogAlways(("[CuraEqui][Focus] WUID=%s"):format(tostring(wuid)))
+function CuraEqui._InvClose_Disarm()
+    CuraEqui._invArmActive  = false
+    CuraEqui._invArmExpires = 0
 end
 
-function CuraEqui:OnItemSelectionDoubleClicked(_elementName, _instanceId, _eventName, _args)
-    System.LogAlways("[CuraEqui][Evt] OnDoubleClicked → dropping focused")
-    CuraEqui.Feed_DropFocused("doubleclick")
-end
-
-function CuraEqui:OnCuraEquiItemInfoEvent(elementName, instanceId, eventName, args)
-    local id, guid, name = tostring(_arg(args, "Id")), tostring(_arg(args, "Guid")), tostring(_arg(args, "Name"))
-    System.LogAlways(("[CuraEqui][Evt] %s from %s id=%s guid=%s name=%s")
-        :format(eventName, tostring(elementName), id, guid, name))
-end
-
-function CuraEqui:OnCuraEquiItemUsedEvent(_elementName, _instanceId, _eventName, _args)
-    System.LogAlways("[CuraEqui][Evt] CuraEquiOnItemUsed → dropping focused")
-    CuraEqui.Feed_DropFocused("event")
-end
-
--- ===========================================================================
--- Drop-only feed: just spawn the selected item instance to the world
--- ===========================================================================
-local function CE_DropOneFromPlayer(wuid)
-    if not (player and player.inventory and player.inventory.DropItem) then return false end
-    local ok, res = pcall(function() return player.inventory:DropItem(wuid, 1) end)
-    System.LogAlways(("[CuraEqui][Drop] DropItem(%s,1) → %s (%s)")
-        :format(tostring(wuid), ok and "ok" or "fail", tostring(res)))
-    return ok and true or false
-end
-
-local function CE_EntityFromWUID(wuid)
-    if Framework and Framework.GetEntityIdByWUID then
-        local ok, eid = pcall(function() return Framework.GetEntityIdByWUID(wuid) end)
-        if ok and eid then
-            local ok2, ent = pcall(function() return System.GetEntity(eid) end)
-            if ok2 and ent then return ent, eid end
-        end
+-- Listener target (called by any of the above UI events)
+function CuraEqui:OnInvClosed(elementName, _instanceId, eventName, _args)
+    if not CuraEqui._invArmActive then return end
+    if _now() > CuraEqui._invArmExpires then
+        CE_Log("ignored close (arm expired)")
+        return
     end
-    return nil, nil
+    CE_Log("inventory closed via %s.%s → starting post-close scan", tostring(elementName), tostring(eventName))
+    CuraEqui._InvClose_Disarm()
+    CuraEqui.Feed_StartScan(CuraEqui.Config.FeedScan.postCloseWindowSec or 8.0)
 end
 
--- Tiny debounce (UI sometimes fires twice)
-local _lastFireAt = 0
-local function _debounce()
-    local now = _G.Script and Script.GetTime() or os.clock()
-    if now - _lastFireAt < 0.2 then return false end
-    _lastFireAt = now
-    return true
-end
+-- ---------------------------------------------------------------------------
+-- Scanner: runs for a short window after the action; eats first edible thing
+-- ---------------------------------------------------------------------------
+CuraEqui._scanUntil = nil
+CuraEqui._scanActive = false
 
-function CuraEqui.Feed_DropFocused(reason)
-    if not _debounce() then
-        System.LogAlways("[CuraEqui][Drop] debounce → ignore"); return
-    end
-
-    local wuid = CuraEqui._lastFocusWUID
-    System.LogAlways(("[CuraEqui][Drop] Feed_DropFocused(%s) wuid=%s")
-        :format(tostring(reason or "?"), tostring(wuid)))
-    if not wuid then
-        System.LogAlways("[CuraEqui][Drop] no focused WUID → abort")
+local function CE_FeedScan_Tick()
+    if not CuraEqui._scanActive then return end
+    if _now() > (CuraEqui._scanUntil or 0) then
+        CuraEqui._scanActive = false
+        System.LogAlways("[CuraEqui][Scan] window ended")
         return
     end
 
-    -- Optional: close the picker so the drop is less visible
-    pcall(function() UIAction.CallFunction("ItemSelection", -1, "fc_close") end)
-
-    -- Drop exactly one instance of the selected item
-    local ok = CE_DropOneFromPlayer(wuid)
-    if not ok then
-        System.LogAlways("[CuraEqui][Drop] DropItem failed"); return
+    local horse, mouth = CE_GetHorseAndMouthPos()
+    if not horse then
+        Script.SetTimerForFunction(CuraEqui.Config.FeedScan.tickMs, "CuraEqui_FeedScan_Tick")
+        return
     end
 
-    -- Probe for a spawned entity (up to 3 quick retries). Purely for logging.
-    local tries, ent, eid = 0, nil, nil
-    local function tick()
-        tries = tries + 1
-        ent, eid = ent or CE_EntityFromWUID(wuid)
-        if ent or tries >= 3 then
-            System.LogAlways(("[CuraEqui][Drop] spawned eid=%s ent=%s tries=%d")
-                :format(tostring(eid), tostring(ent), tries))
-            return
+    local ents = CE_ListNearbyEntities(mouth, CuraEqui.Config.FeedScan.radius)
+    for _, ent in ipairs(ents) do
+        -- Try to detect item-like entities
+        local guid, name = CE_SniffGuidAndName(ent)
+        if guid or (ent.item ~= nil) then
+            System.LogAlways(("[CuraEqui][Scan] found '%s' guid=%s eid=%s")
+                :format(tostring(name or ent.class), tostring(guid), tostring(ent.id)))
+            -- Decide edibility
+            local diet = (guid and CuraEqui.Diet and CuraEqui.Diet.byGuid and CuraEqui.Diet.byGuid[guid]) or nil
+            if diet then
+                -- Eat it: delete entity, apply nutrition, stop scan
+                CE_DeleteEntity(ent)
+                CuraEqui._scanActive = false
+                return CuraEqui._ApplyNutrition(diet, diet.token or name or "?")
+            else
+                -- Not edible → leave it on the ground
+                System.LogAlways("[CuraEqui][Scan] not edible → leaving")
+            end
         end
-        Script.SetTimerForFunction(80, "CuraEqui_DropProbeTick")
     end
-    _G["CuraEqui_DropProbeTick"] = tick
-    return tick()
+
+    -- keep scanning
+    Script.SetTimerForFunction(CuraEqui.Config.FeedScan.tickMs, "CuraEqui_FeedScan_Tick")
+end
+_G["CuraEqui_FeedScan_Tick"] = CE_FeedScan_Tick
+
+function CuraEqui.Feed_StartScan(seconds)
+    local s = tonumber(seconds) or CuraEqui.Config.FeedScan.windowSec
+    CuraEqui._scanUntil = _now() + s
+    CuraEqui._scanActive = true
+    System.LogAlways(("[CuraEqui][Scan] started (%.1fs, r=%.1fm)")
+        :format(s, CuraEqui.Config.FeedScan.radius))
+    -- Optional toast to instruct the player
+    if CuraEqui.UI and CuraEqui.UI.ShowInfo and CuraEqui.Config.FeedScan.toastOnStart then
+        pcall(function() CuraEqui.UI.ShowInfo(CuraEqui.Config.FeedScan.toastOnStart, 2.2) end)
+    end
+    CE_FeedScan_Tick()
 end
 
--- Back-compat global handler (not used for params, just to keep hook alive)
-function CuraEqui_onItemUsed(id, guid, name)
-    System.LogAlways(("[CuraEqui][Bridge] onItemUsed id=%s guid=%s name=%s")
-        :format(tostring(id), tostring(guid or ""), tostring(name or "")))
-    return CuraEqui.Feed_DropFocused("global")
-end
-
-_G.CuraEqui_onItemUsed = CuraEqui_onItemUsed
-
--- ===========================================================================
--- Entrypoint: open picker & prime bridge
--- ===========================================================================
+-- ---------------------------------------------------------------------------
+-- Entrypoint: action opens a picker if available, then starts the scanner
+-- ---------------------------------------------------------------------------
 function Horse:OnFeedHorse(user)
-    if CuraEqui and CuraEqui.Feed_RegisterBridgeListeners then
-        CuraEqui.Feed_RegisterBridgeListeners()
-    end
+    System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
 
-    System.LogAlways("[CuraEqui][Feed] OnFeedHorse → " ..
-        tostring(self.GetName and self:GetName() or self.class or "horse"))
-
-    if USE_TRANSFER then
-        -- Two-pane
-        if self.actor and self.actor.RequestItemExchange then
-            local ok = pcall(function() self.actor:RequestItemExchange(user.id) end)
-            System.LogAlways("[CuraEqui][Feed] RequestItemExchange → " .. (ok and "ok" or "fail"))
-        else
-            System.LogAlways("[CuraEqui][Feed] No ItemTransfer available")
+    if CuraEqui.Config.FeedScan.armOnInventoryClose then
+        -- Arm a one-shot “scan after inventory closes”.
+        CuraEqui._InvClose_ArmOnce(CuraEqui.Config.FeedScan.armTimeoutSec or 25.0)
+        -- Optional hint: tell the player what to do
+        if CuraEqui.UI and CuraEqui.UI.ShowInfo and CuraEqui.Config.FeedScan.toastOnStart then
+            pcall(function() CuraEqui.UI.ShowInfo(CuraEqui.Config.FeedScan.toastOnStart, 2.2) end)
         end
     else
-        -- Simple picker
-        if user and user.actor and user.actor.OpenItemSelectionFilter then
-            local ok = pcall(function() user.actor:OpenItemSelectionFilter(self.id, "") end)
-            System.LogAlways("[CuraEqui][Feed] OpenItemSelectionFilter('') → " .. (ok and "ok" or "fail"))
-            if ok then
-                -- harmless pings (helps AS2 warm up)
-                local tries, maxTries = 0, 3
-                local function tryPing()
-                    tries = tries + 1
-                    ce_ui_call("ItemSelection", nil, "fc_ping", { "hello from CuraEqui" })
-                    ce_ui_call("ItemSelection", nil, "fc_emitFocusedInfo", {})
-                    if tries < maxTries then Script.SetTimerForFunction(150, "CuraEqui_PickerBridgeTick") end
-                end
-                _G["CuraEqui_PickerBridgeTick"] = tryPing
-                Script.SetTimerForFunction(150, "CuraEqui_PickerBridgeTick")
-            end
-        else
-            System.LogAlways("[CuraEqui][Feed] No ItemSelection available")
-        end
+        -- Classic v0 behavior: start scanning immediately.
+        CuraEqui.Feed_StartScan()
     end
 end
 
--- ===========================================================================
--- Action injection (kept identical in behavior)
--- ===========================================================================
+-- ---------------------------------------------------------------------------
+-- Action injection (kept identical in behavior to your working version)
+-- ---------------------------------------------------------------------------
 do
     local H = _G.Horse
     if H and type(H.GetActions) == "function" and not H.__curaequi_feed_wrapped then
@@ -235,7 +225,7 @@ do
             if not lane then return actions end
 
             local A = Action()
-                :hint("@ui_hud_feed_horse")
+                :hint("@curaequi_drop_food")
                 :action("use_horse")
                 :hintType(AHT_PRESS)
                 :func(H.OnFeedHorse)
