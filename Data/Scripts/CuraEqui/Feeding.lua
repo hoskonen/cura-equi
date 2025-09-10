@@ -48,16 +48,49 @@ local function CE_GetHorseAndMouthPos()
     return h, mouth
 end
 
+-- Return a list of entity *tables* near pos within radius.
+-- Tries GetEntitiesInSphere; if empty or missing, falls back to GetEntities() + distance filter.
 local function CE_ListNearbyEntities(pos, radius)
     local list = {}
-    local ok, ids = pcall(function()
-        return System.GetEntitiesInSphere and System.GetEntitiesInSphere(pos, radius) or {}
+
+    -- A) Preferred: direct sphere query → ids
+    local okSphere, ids = pcall(function()
+        return System.GetEntitiesInSphere and System.GetEntitiesInSphere(pos, radius) or nil
     end)
-    if not ok or not ids then return list end
-    for i = 1, #ids do
-        local eid = ids[i]
-        local okE, ent = pcall(function() return System.GetEntity(eid) end)
-        if okE and ent then list[#list + 1] = ent end
+
+    if okSphere and ids and #ids > 0 then
+        for i = 1, #ids do
+            local okEnt, ent = pcall(function() return System.GetEntity(ids[i]) end)
+            if okEnt and ent then list[#list + 1] = ent end
+        end
+        return list
+    end
+
+    -- B) Fallback: enumerate all entities then distance-filter in Lua
+    local okAll, all = pcall(function()
+        return System.GetEntities and System.GetEntities() or nil
+    end)
+    if not (okAll and all) then
+        return list
+    end
+
+    local px, py, pz = pos.x or 0, pos.y or 0, pos.z or 0
+    local r2 = (radius or 0) ^ 2
+    local n = #all
+    -- Some builds return ids, others return entity tables; handle both
+    for i = 1, n do
+        local ent = all[i]
+        if type(ent) ~= "table" then
+            local okE, got = pcall(function() return System.GetEntity(ent) end)
+            ent = okE and got or nil
+        end
+        if ent and ent.GetWorldPos then
+            local ep = ent:GetWorldPos()
+            local dx, dy, dz = (ep.x - px), (ep.y - py), (ep.z - pz)
+            if (dx * dx + dy * dy + dz * dz) <= r2 then
+                list[#list + 1] = ent
+            end
+        end
     end
     return list
 end
@@ -105,27 +138,29 @@ local function CE_GetScanCenters()
 
     return centers, "none"
 end
-
-
-function CuraEqui.Feed_DebugDumpNearby(radius)
+function CuraEqui.Feed_DebugDumpNearby(r)
     local centers, origin = CE_GetScanCenters()
-    local r = tonumber(radius) or (CuraEqui.Config.FeedScan.radius or 2.5)
+    local radius = tonumber(r) or (CuraEqui.Config.FeedScan.radius or 2.5)
+    System.LogAlways(("[CuraEqui][Dbg] origin=%s centers=%d radius=%.2f"):format(origin, #centers, radius))
     for _, c in ipairs(centers) do
-        local ents = CE_ListNearbyEntities(c, r)
-        System.LogAlways(("[CuraEqui][Dbg] center=(%.2f,%.2f,%.2f) r=%.2f → %d entities")
-            :format(c.x, c.y, c.z, r, #ents))
-        for i, ent in ipairs(ents) do
-            local pos = (ent.GetWorldPos and ent:GetWorldPos()) or { x = 0, y = 0, z = 0 }
-            local dx, dy, dz = pos.x - c.x, pos.y - c.y, pos.z - c.z
+        local ents = CE_ListNearbyEntities(c, radius)
+        System.LogAlways(("[CuraEqui][Dbg] center=(%.2f,%.2f,%.2f) → %d ents"):format(c.x, c.y, c.z, #ents))
+        -- compute and sort by distance
+        local rows = {}
+        for _, ent in ipairs(ents) do
+            local ep = (ent.GetWorldPos and ent:GetWorldPos()) or { x = 0, y = 0, z = 0 }
+            local dx, dy, dz = ep.x - c.x, ep.y - c.y, ep.z - c.z
             local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
-            local guid, nm = CE_SniffGuidAndName(ent)
             local hasItem = (rawget(ent, "item") ~= nil)
-            System.LogAlways(("[CuraEqui][Dbg] #%d eid=%s cls=%s dist=%.2f hasItem=%s guid=%s name=%s")
-                :format(i, tostring(ent.id), tostring(ent.class), dist, tostring(hasItem), tostring(guid), tostring(nm)))
-            if XGenAIModule and XGenAIModule.GetWuidDebugString then
-                local ok, dbg = pcall(function() return XGenAIModule.GetWuidDebugString(ent.id) end)
-                if ok and dbg then System.LogAlways("[CuraEqui][Dbg]  └─ WUID: " .. tostring(dbg)) end
-            end
+            local guid, nm = CE_SniffGuidAndName(ent)
+            rows[#rows + 1] = { dist = dist, id = ent.id, cls = ent.class, hasItem = hasItem, guid = guid, name = nm }
+        end
+        table.sort(rows, function(a, b) return a.dist < b.dist end)
+        for i = 1, math.min(#rows, 10) do
+            local r = rows[i]
+            System.LogAlways(("[CuraEqui][Dbg] #%02d d=%.2f id=%s cls=%s hasItem=%s guid=%s name=%s")
+                :format(i, r.dist, tostring(r.id), tostring(r.cls), tostring(r.hasItem), tostring(r.guid),
+                    tostring(r.name)))
         end
     end
 end
@@ -223,8 +258,11 @@ local function _scan_once()
                     local s = string.lower(tostring(name))
                     if s:find("apple", 1, true) or s:find("@ui_nm_", 1, true) or s:find("bread", 1, true) then
                         System.LogAlways("[CuraEqui][Scan] keyword-allow → edible (test)")
-                        diet = { nutrition = (CuraEqui.Config.Diet and CuraEqui.Config.Diet.defaultNutrition) or 10, token =
-                        name }
+                        diet = {
+                            nutrition = (CuraEqui.Config.Diet and CuraEqui.Config.Diet.defaultNutrition) or 10,
+                            token =
+                                name
+                        }
                     end
                 end
 
