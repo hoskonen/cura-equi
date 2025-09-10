@@ -23,6 +23,8 @@ CuraEqui.Config = {
             -- ["itm_carrot"]= {nutrition=20, bond=1},
         },
         denyKeywords = { "sword", "mace", "axe", "arrow", "meat_raw", "spoiled", "quest" },
+        allowKeywords = { "apple", "pear", "plum", "peach", "carrot", "turnip", "cabbage", "beet", "onion",
+            "garlic", "leek", "walnut", "watermelon", "sauerkraut", "peas" }
     },
 
     HUD = {

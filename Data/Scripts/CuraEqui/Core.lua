@@ -23,6 +23,19 @@ CuraEqui.HorseCfg            = {
     debuffAt    = C.Hunger.debuffAt,
 }
 
+CuraEqui.Diet                = CuraEqui.Diet or {}
+CuraEqui.Diet.aliasByLabel   = CuraEqui.Diet.aliasByLabel or {}
+
+function CuraEqui.Feed_Bind(label, classGuid)
+    if not label or not classGuid then
+        System.LogAlways("[CuraEqui][Diet] Bind usage: lua CuraEqui.Feed_Bind('<labelFromLog>', '<guid-from-DietData>')")
+        return
+    end
+    local key = tostring(label):lower():gsub("%s+", "")
+    CuraEqui.Diet.aliasByLabel[key] = tostring(classGuid)
+    System.LogAlways(("[CuraEqui][Diet] bound %s → %s"):format(key, classGuid))
+end
+
 function CuraEqui.Log(tag, fmt, ...)
     if CuraEqui.DEBUG then System.LogAlways(("[CuraEqui]%s %s"):format(tag and ("[" .. tag .. "]") or "", fmt:format(...))) end
 end
