@@ -31,11 +31,10 @@ CuraEqui.Config = {
         showWhenMounted = true,
         nearRadiusM     = 20.0,
         tiers           = {
-            -- optional future: hud effect ids per tier
-            -- {name="OK",        effect="ce_horse_sated"},
-            -- {name="Peckish",   effect="ce_horse_hungry1"},
-            -- {name="Hungry",    effect="ce_horse_hungry2"},
-            -- {name="Starving",  effect="ce_horse_starving"},
+            { name = "sated",  uidd = "1a638e4c-e931-415d-b3bd-c8402ed836ea" },
+            { name = "minor",  uidd = "3329d630-3aa6-4d65-b7bb-8257fdecb66c" },
+            { name = "moderate", uidd = "11a47968-997f-41a4-a9f7-ad5a99b1d737" },
+            { name = "critical", uidd = "5b57061a-3425-460e-9848-a26afbd060a4" },
         }
     },
     FeedScan = {

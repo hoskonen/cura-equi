@@ -1,4 +1,5 @@
 <Table>
+    <!-- Toasts -->
 <Row>
     <Cell>curaequi_drop_food</Cell><Cell>Drop food for horse</Cell><Cell>Drop food for Horse</Cell>
 </Row>
@@ -10,5 +11,38 @@
 </Row>
 <Row>
     <Cell>curaequi_horse_munch</Cell><Cell>Horse eats happily</Cell><Cell>Horse eats happily</Cell>
+</Row>
+
+<!-- Buffs & Debuffs -->
+<Row>
+    <Cell>buff_ce_sated</Cell><Cell>Sated</Cell><Cell>Sated</Cell>
+</Row>
+<Row>
+    <Cell>buff_ce_sated_desc</Cell>
+    <Cell>Well-fed and calm. Hunger builds more slowly; handling and courage improve while this lasts.</Cell><Cell>Well-fed and calm. Hunger builds more slowly; handling and courage improve while this lasts.</Cell>
+</Row>
+
+<Row>
+    <Cell>buff_ce_mild</Cell><Cell>Mild Hunger</Cell><Cell>Mild Hunger</Cell>
+</Row>
+<Row>
+    <Cell>buff_ce_mild_desc</Cell>
+    <Cell>A little hungry. Slight drop in responsiveness—feed soon to prevent worsening effects.</Cell><Cell>A little hungry. Slight drop in responsiveness—feed soon to prevent worsening effects.</Cell>
+</Row>
+
+<Row>
+    <Cell>buff_ce_moderate</Cell><Cell>Moderate Hunger</Cell><Cell>Moderate Hunger</Cell>
+</Row>
+<Row>
+    <Cell>buff_ce_moderate_desc</Cell>
+    <Cell>Hungry. Noticeable loss of acceleration and courage; stamina drains faster.</Cell><Cell>Hungry. Noticeable loss of acceleration and courage; stamina drains faster.</Cell>
+</Row>
+
+<Row>
+    <Cell>buff_ce_critical</Cell><Cell>Critical Hunger</Cell><Cell>Critical Hunger</Cell>
+</Row>
+<Row>
+    <Cell>buff_ce_critical_desc</Cell>
+    <Cell>Starving. Severely reduced speed, stamina, and courage; may ignore or delay commands.</Cell><Cell>Starving. Severely reduced speed, stamina, and courage; may ignore or delay commands.</Cell>
 </Row>
 </Table> 
