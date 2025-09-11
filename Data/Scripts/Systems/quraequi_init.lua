@@ -5,7 +5,7 @@ CuraEqui.DEBUG = true
 local function Q(fmt, ...) if CuraEqui.DEBUG then System.LogAlways(("[CuraEqui] " .. fmt):format(...)) end end
 Q("init")
 
--- Load config BEFORE core (core reads it)
+-- Config first (Core reads it)
 Script.ReloadScript("Scripts/CuraEqui/Config.lua")
 Script.ReloadScript("Scripts/CuraEqui/Core.lua")
 
@@ -13,8 +13,14 @@ Script.ReloadScript("Scripts/CuraEqui/Core.lua")
 Script.ReloadScript("Scripts/CuraEqui/Utils.lua")
 Script.ReloadScript("Scripts/CuraEqui/Debug.lua")
 
+-- UI bridge (optional earlier if you want toasts available everywhere)
+Script.ReloadScript("Scripts/CuraEqui/UiStubs.lua")
+
+-- NEW: effects bridge + buff logic (must be before Hunger)
+Script.ReloadScript("Scripts/CuraEqui/Effects.lua")
+Script.ReloadScript("Scripts/CuraEqui/BuffLogic.lua")
+
 -- Game-facing modules
 Script.ReloadScript("Scripts/CuraEqui/Horse.lua")
 Script.ReloadScript("Scripts/CuraEqui/Feeding.lua")
 Script.ReloadScript("Scripts/CuraEqui/Hunger.lua")
-Script.ReloadScript("Scripts/CuraEqui/UiStubs.lua")

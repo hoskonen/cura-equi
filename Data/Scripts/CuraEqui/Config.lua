@@ -3,9 +3,10 @@ CuraEqui = CuraEqui or {}
 
 CuraEqui.Config = {
     Debug = {
-        enabled            = true,  -- master debug (logging)
-        distanceTrace      = true,  -- off by default; flip on when needed
-        distanceTraceStepM = 100.0, -- meters per log milestone
+        enabled = true,
+        distanceTrace = true,
+        distanceTraceStepM = 100.0,
+        hud = { enabled = true, refresh = 1200, lane = "notification", id = "CuraEqui_DebugHUD" }
     },
 
     Hunger = {
@@ -18,23 +19,30 @@ CuraEqui.Config = {
     },
 
     Diet = {
-        allow            = { -- future: template/tag keys
-            -- ["itm_apple"]= {nutrition=25, bond=2},
-            -- ["itm_carrot"]= {nutrition=20, bond=1},
-        },
         denyKeywords     = { "sword", "mace", "axe", "arrow", "meat_raw", "spoiled", "quest" },
         allowKeywords    = { "ui_nm_", "apple", "bread", "carrot" },
         keywordNutrition = 10
     },
 
     HUD = {
-        showWhenMounted = true,
-        nearRadiusM     = 20.0,
-        tiers           = {
-            { name = "sated",  uidd = "1a638e4c-e931-415d-b3bd-c8402ed836ea" },
-            { name = "minor",  uidd = "3329d630-3aa6-4d65-b7bb-8257fdecb66c" },
+        showWhenMounted   = true,
+        nearRadiusM       = 20.0,
+        playerStatusTiers = {
+            { name = "sated",    uidd = "1a638e4c-e931-415d-b3bd-c8402ed836ea" },
+            { name = "minor",    uidd = "3329d630-3aa6-4d65-b7bb-8257fdecb66c" },
             { name = "moderate", uidd = "11a47968-997f-41a4-a9f7-ad5a99b1d737" },
             { name = "critical", uidd = "5b57061a-3425-460e-9848-a26afbd060a4" },
+        },
+        horseDebuffTiers  = {
+            { name = "sated",    uidd = "7d3c2a91-8c6b-4f3f-9a6e-2b1d3e94a6b0" },
+            { name = "minor",    uidd = "c4b7f9d2-1e35-4a07-8b3a-1b6e9b2a0c18" },
+            { name = "moderate", uidd = "e1a5c0f7-2d4c-41f9-8d45-7a9f0c3e1b72" },
+            { name = "critical", uidd = "9f2e6b84-3a10-4719-b6d9-5d0c8f2a4c63" },
+        },
+        thresholds        = {
+            minor = 50,
+            moderate = 70,
+            critical = 90
         }
     },
     FeedScan = {

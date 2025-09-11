@@ -174,6 +174,43 @@ function CuraEqui._HungerTickBody()
     S.hunger = U.clamp((S.hunger or 0) + (CuraEqui.HorseCfg.ratePerMin * (CuraEqui.HorseCfg.tickSec / 60.0)), 0,
         CuraEqui.HorseCfg.hungerMax)
 
+    do
+        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+            CuraEqui.Buffs.SyncAll(h, S)
+        end
+    end
+
+    do
+        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud and CuraEqui.Config.Debug.hud.enabled then
+            local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+            local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
+            if S then
+                local hud = CuraEqui.Config.HUD or {}
+                local tier = (CuraEqui.Buffs and CuraEqui.Buffs._pickTierName) and
+                    CuraEqui.Buffs._pickTierName(tonumber(S.hunger or 0) or 0, S.satedUntil) or "?"
+                local pUuid = ""
+                local listP = hud.playerStatusTiers
+                if listP then for i = 1, #listP do if listP[i].name == tier then pUuid = listP[i].uidd or "" end end end
+                local hUuid = ""
+                local listH = hud.horseDebuffTiers
+                if listH then for i = 1, #listH do if listH[i].name == tier then hUuid = listH[i].uidd or "" end end end
+                local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                local rem = math.max(0, (S.satedUntil or 0) - now)
+                CuraEqui.Debug.ShowHUDLine(
+                    string.format("Horse: %d%% | Sated %.0fs | %s | P:%s H:%s",
+                        math.floor(tonumber(S.hunger or 0) or 0),
+                        rem,
+                        tier,
+                        (pUuid == "" and "-" or pUuid:sub(1, 8) .. "…"),
+                        (hUuid == "" and "-" or hUuid:sub(1, 8) .. "…")
+                    )
+                )
+            end
+        end
+    end
+
     -- threshold ping (optional)
     if S.hunger >= CuraEqui.HorseCfg.debuffAt and not S._warned then
         Q("Hungry (hunger=%d)", tonumber(S.hunger or 0)); S._warned = true
