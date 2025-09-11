@@ -26,6 +26,8 @@ CuraEqui._invArmActive  = CuraEqui._invArmActive or false
 CuraEqui._invArmExpires = CuraEqui._invArmExpires or 0
 CuraEqui._scanUntil     = CuraEqui._scanUntil or nil
 CuraEqui._scanActive    = CuraEqui._scanActive or false
+CuraEqui._armToken      = CuraEqui._armToken or 0  -- bumps to invalidate stale scans
+CuraEqui._scanToken     = CuraEqui._scanToken or 0 -- snapshot of token for the current scan
 
 -- ------------------------------------------------------------
 -- Small utils
@@ -45,14 +47,31 @@ end
 -- Inventory close arming (one removal window)
 -- ------------------------------------------------------------
 function CuraEqui._InvClose_ArmOnce(timeoutSec)
-    CuraEqui._invArmActive  = true
-    CuraEqui._invArmExpires = _now() + (tonumber(timeoutSec) or FEED_ARM_TIMEOUT)
+    CuraEqui._invArmActive        = true
+    CuraEqui._invArmExpires       = _now() + (tonumber(timeoutSec) or FEED_ARM_TIMEOUT)
+    CuraEqui._armToken            = (CuraEqui._armToken or 0) + 1 -- NEW
+    CuraEqui._windowEndedNotified = false                         -- optional: for one-shot end toast
     System.LogAlways(("[CuraEqui][Scan] armed for inventory close (%.1fs)"):format(timeoutSec or FEED_ARM_TIMEOUT))
 end
 
-function CuraEqui._InvClose_Disarm()
+function CuraEqui._InvClose_Disarm(reason)
     CuraEqui._invArmActive  = false
     CuraEqui._invArmExpires = 0
+    CuraEqui._scanActive    = false
+    CuraEqui._armToken      = (CuraEqui._armToken or 0) + 1
+
+    if reason == "timeout" then
+        System.LogAlways("[CuraEqui][Scan] window ended")
+        local D = CuraEqui.Config and CuraEqui.Config.Debug
+        if D and D.enabled and not CuraEqui._windowEndedNotified and CuraEqui.UI then
+            CuraEqui._windowEndedNotified = true
+            pcall(function()
+                local F = CuraEqui.Config.FeedScan
+                CuraEqui.UI.Toast("@curaequi_feed_window_ended", (F and F.toastMs) or 1200, 0, "CuraEquiFeed",
+                    (F and F.toastLane) or "infotext")
+            end)
+        end
+    end
 end
 
 -- ------------------------------------------------------------
@@ -83,7 +102,7 @@ function CuraEqui:OnInvClosed(elementName, _instanceId, eventName, _args)
     end
     System.LogAlways(("[CuraEqui][Scan] inventory closed via %s.%s → starting post-close scan")
         :format(tostring(elementName), tostring(eventName)))
-    CuraEqui._InvClose_Disarm()
+    CuraEqui._InvClose_Disarm("arm_used")
 
     if FEED_DELAY_MS > 0 and Script and Script.SetTimerForFunction then
         _G["CuraEqui_Feed_StartScanDelayed"] = function()
@@ -266,32 +285,21 @@ local function CE_ConsumeAfterDelay(ent, diet, label)
             end)
         end
         -- Prefer playing at the horse (moves with it); fallback to player; finally the food's last pos
-        do
-            local trigger = sfxId
-            if trigger and trigger ~= "" and CuraEqui.Audio then
-                local horse = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
-                local ok = false
-                if horse then ok = CuraEqui.Audio.PlayAtEntity(trigger, horse) end
-                if not ok and g_localActor then ok = CuraEqui.Audio.PlayAtEntity(trigger, g_localActor) end
-                if not ok and ent then ok = CuraEqui.Audio.PlayAtEntity(trigger, ent) end
-                -- Optional: also emit an AI-hearing “crunch” if you want NPCs to react (tune/remove later)
-                -- CuraEqui.Audio.ProduceAIsound("horse_eat_noise", (ent and ent:GetWorldPos()) or nil, 0.5)
-            end
+        if sfxId and sfxId ~= "" and CuraEqui.Audio then
+            local horse = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+            local ok = false
+            if horse then ok = CuraEqui.Audio.PlayAtEntity(sfxId, horse) end
+            if not ok and g_localActor then ok = CuraEqui.Audio.PlayAtEntity(sfxId, g_localActor) end
+            if not ok and ent then ok = CuraEqui.Audio.PlayAtEntity(sfxId, ent) end
         end
+        return CuraEqui._ApplyNutrition and CuraEqui._ApplyNutrition(diet, diet.token or label or "?")
+    end
 
-        -- feedback (one toast + optional sfx)
-        if CuraEqui.UI then
-            pcall(function()
-                CuraEqui.UI.Toast(msg, toastMs, toastPrio, "CuraEquiFeed", toastLane)
-                if sfxId and sfxId ~= "" then CuraEqui.UI.PlaySfx(sfxId) end
-            end)
-        end
-
-        -- apply the effect
-        if CuraEqui._ApplyNutrition then
-            return CuraEqui._ApplyNutrition(diet, diet.token or label or "?")
-        end
-        return true
+    if CuraEqui._InvClose_Disarm then
+        pcall(CuraEqui._InvClose_Disarm, "success")
+    else
+        CuraEqui._scanActive = false
+        CuraEqui._armToken = (CuraEqui._armToken or 0) + 1
     end
 
     if delay > 0 and Script and Script.SetTimerForFunction then
@@ -346,6 +354,9 @@ local function _scan_once()
             end
 
             if diet then
+                if CuraEqui._scanToken ~= CuraEqui._armToken or not CuraEqui._scanActive then
+                    return -- stale or stopped
+                end
                 return CE_ConsumeAfterDelay(ent, diet, name)
             end
         end
@@ -359,10 +370,9 @@ function CuraEqui.Feed_StartScan(seconds)
     local s              = tonumber(seconds) or FEED_WINDOW_SEC
     CuraEqui._scanUntil  = _now() + s
     CuraEqui._scanActive = true
+    CuraEqui._scanToken  = CuraEqui._armToken -- NEW: bind this scan to current window
     System.LogAlways(("[CuraEqui][Scan] started (%.1fs, r=%.1fm)"):format(s, FEED_RADIUS))
-    if CuraEqui.UI and CuraEqui.UI.ShowInfo and FEED_TOAST then
-        pcall(function() CuraEqui.UI.ShowInfo(FEED_TOAST, 2.2) end)
-    end
+
     if Script and type(Script.SetTimerForFunction) == "function" then
         Script.SetTimerForFunction(FEED_TICK_MS, "CuraEqui_FeedScan_Tick")
     end
@@ -370,9 +380,13 @@ end
 
 function CuraEqui_FeedScan_Tick()
     if not CuraEqui._scanActive then return end
+    if CuraEqui._scanToken ~= CuraEqui._armToken then return end
     if _now() > (CuraEqui._scanUntil or 0) then
-        CuraEqui._scanActive = false
-        System.LogAlways("[CuraEqui][Scan] window ended")
+        if CuraEqui._InvClose_Disarm then
+            CuraEqui._InvClose_Disarm("timeout")
+        else
+            CuraEqui._scanActive = false
+        end
         return
     end
     _scan_once()
