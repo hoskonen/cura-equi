@@ -2,27 +2,25 @@
 -- Cura Equi · Feeding (player drops → scanner eats)
 -- ---------------------------------------------------------------------------
 
-CuraEqui                 = CuraEqui or {}
-CuraEqui.Config          = CuraEqui.Config or {}
-CuraEqui.Config.FeedScan = CuraEqui.Config.FeedScan or {
-    radius = 2.5,
-    windowSec = 6.0,
-    postCloseWindowSec = 8.0,
-    postCloseDelayMs = 250,
-    tickMs = 150,
-    toastOnStart = "@curaequi_feed_drop_hint",
-    armOnInventoryClose = true,
-    armTimeoutSec = 25.0, -- ← add this
-    groundProbe = true,
-    groundOffsetDown = 1.2,
-    debugDraw = false,
-}
+CuraEqui                = CuraEqui or {}
+local FC                = (CuraEqui.Config and CuraEqui.Config.FeedScan) or {}
+local DC                = (CuraEqui.Config and CuraEqui.Config.Diet) or {}
 
+-- lightweight fallbacks only (used if Config.lua omitted a field)
+local FEED_RADIUS       = tonumber(FC.radius) or 3.0
+local FEED_TICK_MS      = tonumber(FC.tickMs) or 150
+local FEED_WINDOW_SEC   = tonumber(FC.windowSec) or 6.0
+local FEED_POST_SEC     = tonumber(FC.postCloseWindowSec) or 10.0
+local FEED_DELAY_MS     = tonumber(FC.postCloseDelayMs) or 400
+local FEED_TOAST        = FC.toastOnStart
+local FEED_ARM_ON_CLOSE = (FC.armOnInventoryClose ~= false)
+
+local ALLOW_KWS         = (DC.allowKeywords) or { "ui_nm_", "apple", "bread", "carrot" }
+local KW_NUTRITION      = tonumber(DC.keywordNutrition) or 10
 
 -- runtime state (keep outside config)
 CuraEqui._invArmActive  = false
 CuraEqui._invArmExpires = 0
-
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -35,64 +33,17 @@ local function CE_Log(fmt, ...)
     System.LogAlways("[CuraEqui][Scan] " .. string.format(fmt, ...))
 end
 
-local function _vec_add(a, b) return { x = a.x + b.x, y = a.y + b.y, z = a.z + b.z } end
-local function _vec_scale(a, s) return { x = a.x * s, y = a.y * s, z = a.z * s } end
-
-local function CE_GetHorseAndMouthPos()
-    local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
-    if not h or not h.GetWorldPos then return nil end
-    local hp    = h:GetWorldPos()
-    local f     = (h.GetDirectionVector and h:GetDirectionVector(1)) or { x = 1, y = 0, z = 0 }
-    -- ~0.9m forward, ~1.3m up; tweak for your model
-    local mouth = _vec_add(hp, _vec_add(_vec_scale(f, 0.9), { x = 0, y = 0, z = 1.3 }))
-    return h, mouth
-end
-
 -- Return a list of entity *tables* near pos within radius.
 -- Tries GetEntitiesInSphere; if empty or missing, falls back to GetEntities() + distance filter.
 local function CE_ListNearbyEntities(pos, radius)
-    local list = {}
-
-    -- A) Preferred: direct sphere query → ids
-    local okSphere, ids = pcall(function()
-        return System.GetEntitiesInSphere and System.GetEntitiesInSphere(pos, radius) or nil
-    end)
-
-    if okSphere and ids and #ids > 0 then
-        for i = 1, #ids do
-            local okEnt, ent = pcall(function() return System.GetEntity(ids[i]) end)
-            if okEnt and ent then list[#list + 1] = ent end
-        end
-        return list
+    local out = {}
+    local ok, arr = pcall(function() return System.GetEntitiesInSphere(pos, radius) end)
+    if not ok or not arr then return out end
+    for _, e in ipairs(arr) do
+        local ent = (type(e) == "table") and e or (System.GetEntity and System.GetEntity(e))
+        if ent then out[#out + 1] = ent end
     end
-
-    -- B) Fallback: enumerate all entities then distance-filter in Lua
-    local okAll, all = pcall(function()
-        return System.GetEntities and System.GetEntities() or nil
-    end)
-    if not (okAll and all) then
-        return list
-    end
-
-    local px, py, pz = pos.x or 0, pos.y or 0, pos.z or 0
-    local r2 = (radius or 0) ^ 2
-    local n = #all
-    -- Some builds return ids, others return entity tables; handle both
-    for i = 1, n do
-        local ent = all[i]
-        if type(ent) ~= "table" then
-            local okE, got = pcall(function() return System.GetEntity(ent) end)
-            ent = okE and got or nil
-        end
-        if ent and ent.GetWorldPos then
-            local ep = ent:GetWorldPos()
-            local dx, dy, dz = (ep.x - px), (ep.y - py), (ep.z - pz)
-            if (dx * dx + dy * dy + dz * dz) <= r2 then
-                list[#list + 1] = ent
-            end
-        end
-    end
-    return list
+    return out
 end
 
 local function CE_DeleteEntity(ent)
@@ -106,38 +57,120 @@ local function CE_DeleteEntity(ent)
 end
 
 -- Try to read class/template guid + a UI-ish name from an item entity
+-- ent is a PickableItem (we gate by class before this)
 local function CE_SniffGuidAndName(ent)
-    if not ent then return nil, nil end
+    -- prefer item subtable if present
     local t = rawget(ent, "item") or rawget(ent, "Item") or ent
-    local guid = (t and (t.classGuid or t.templateGuid or t.guid or t.ClassGuid or t.TemplateGuid))
-        or ent.classGuid or ent.templateGuid
-    local name = (t and ((t.GetUIName and t:GetUIName()) or t.uiName or t.name or t.displayName or t.templateName))
-        or ent.szName or ent.name or ent.class
-    return guid, name
+
+    -- NAME
+    local name = nil
+    if type(t.GetUIName) == "function" then
+        pcall(function() name = t:GetUIName() end)
+    end
+    name = name or t.uiName or t.name or ent.name or "?"
+
+    -- GUID
+    local guid = nil
+    if type(t.GetGuid) == "function" then
+        pcall(function() guid = t:GetGuid() end)
+    end
+    guid = guid or t.guid or ent.guid or nil
+
+    -- CLASS NAME (can be useful for diet maps keyed by class)
+    local className = nil
+    if type(t.GetClassName) == "function" then
+        pcall(function() className = t:GetClassName() end)
+    end
+    className = className or t.className or ent.className or ent.class
+
+    return guid, name, className
 end
 
+
+-- Replace CE_GetScanCenters with a player-first variant
+-- Player-first centers (match the probe)
 local function CE_GetScanCenters()
     local centers = {}
-    local horse, mouth = CE_GetHorseAndMouthPos()
-    if horse and mouth then
-        centers[#centers + 1] = mouth
-        if CuraEqui.Config.FeedScan.groundProbe then
-            local gz = (CuraEqui.Config.FeedScan.groundOffsetDown or 1.2)
-            centers[#centers + 1] = { x = mouth.x, y = mouth.y, z = mouth.z - gz }
-        end
-        return centers, "horse"
-    end
-
-    -- Fallback: in front of PLAYER
     if player and player.GetWorldPos then
         local p = player:GetWorldPos()
-        local f = (player.GetDirectionVector and player:GetDirectionVector(1)) or { x = 1, y = 0, z = 0 }
-        centers[#centers + 1] = { x = p.x + f.x * 1.0, y = p.y + f.y * 1.0, z = p.z - 0.4 }
-        return centers, "player"
+        centers[#centers + 1] = { x = p.x, y = p.y, z = p.z }       -- player feet
+        centers[#centers + 1] = { x = p.x, y = p.y, z = p.z - 0.6 } -- ground just below
+    end
+    -- (Optional) also include horse mouth as *extra* center, not primary
+    local horse = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+    if horse and horse.GetWorldPos then
+        local hp              = horse:GetWorldPos()
+        local f               = (horse.GetDirectionVector and horse:GetDirectionVector(1)) or { x = 1, y = 0, z = 0 }
+        centers[#centers + 1] = { x = hp.x + f.x * 0.9, y = hp.y + f.y * 0.9, z = hp.z + 1.3 }
+    end
+    return centers, "player+horse"
+end
+
+-- Try multiple delete paths; verify immediately; log a follow-up verdict.
+local function CE_DeleteEntity(ent)
+    if not ent then return false end
+    local id  = ent.id
+    local tag = tostring(id)
+
+    local function try(label, fn)
+        local ok, res = pcall(fn)
+        System.LogAlways(("[CuraEqui][Delete] %s → %s (%s)")
+            :format(label, ok and "ok" or "fail", tostring(res)))
+        return ok and (res ~= false)
     end
 
-    return centers, "none"
+    local deleted = false
+    -- Common Cry paths
+    if type(ent.DeleteThis) == "function" then
+        deleted = try("ent:DeleteThis()", function() return ent:DeleteThis() end) or deleted
+    end
+    if not deleted and type(ent.Remove) == "function" then
+        deleted = try("ent:Remove()", function() return ent:Remove() end) or deleted
+    end
+    if not deleted and System and type(System.RemoveEntity) == "function" and id then
+        deleted = try("System.RemoveEntity(id)", function() return System.RemoveEntity(id) end) or deleted
+    end
+
+    -- Immediate verification
+    local still = (System and System.GetEntity) and System.GetEntity(id) or nil
+    System.LogAlways(("[CuraEqui][Delete] verify-now id=%s → %s")
+        :format(tag, still and "STILL THERE" or "gone"))
+
+    -- Optional delayed verification (some engines remove next frame)
+    if Script and type(Script.SetTimer) == "function" then
+        Script.SetTimer(250, function()
+            local again = (System and System.GetEntity) and System.GetEntity(id) or nil
+            System.LogAlways(("[CuraEqui][Delete] verify-250ms id=%s → %s")
+                :format(tag, again and "STILL THERE" or "gone"))
+        end)
+    elseif Script and type(Script.SetTimerForFunction) == "function" then
+        -- Fallback if only SetTimerForFunction exists (no args)
+        CuraEqui._deleteVerifyId = id
+        _G.CuraEqui_DeleteVerify = function()
+            local v = (System and System.GetEntity) and System.GetEntity(CuraEqui._deleteVerifyId) or nil
+            System.LogAlways(("[CuraEqui][Delete] verify-250ms id=%s → %s")
+                :format(tostring(CuraEqui._deleteVerifyId), v and "STILL THERE" or "gone"))
+            CuraEqui._deleteVerifyId = nil
+        end
+        Script.SetTimerForFunction(250, "CuraEqui_DeleteVerify")
+    end
+
+    return deleted and not still
 end
+
+
+function CuraEqui.Feed_ScanOnce(r)
+    local centers = { player and player:GetWorldPos() or { x = 0, y = 0, z = 0 } }
+    local radius  = tonumber(r) or (CuraEqui.Config.FeedScan.radius or 3.0)
+    for _, c in ipairs(centers) do
+        local ents = CE_ListNearbyEntities(c, radius)
+        System.LogAlways(("[CuraEqui][FeedScanOnce] center=(%.2f,%.2f,%.2f) ents=%d"):format(c.x, c.y, c.z, #ents))
+        for _, ent in ipairs(ents) do
+            System.LogAlways(("[CuraEqui][FeedScanOnce] • %s %s"):format(tostring(ent.class), tostring(ent.name)))
+        end
+    end
+end
+
 function CuraEqui.Feed_DebugDumpNearby(r)
     local centers, origin = CE_GetScanCenters()
     local radius = tonumber(r) or (CuraEqui.Config.FeedScan.radius or 2.5)
@@ -163,6 +196,12 @@ function CuraEqui.Feed_DebugDumpNearby(r)
                     tostring(r.name)))
         end
     end
+end
+
+function CuraEqui:OnDroppedToHorse(elementName, instanceId, eventName, args)
+    System.LogAlways(("[CuraEqui][Drop→Horse TEST] element=%s event=%s args=%s")
+        :format(tostring(elementName), tostring(eventName),
+            Utils and Utils.DumpTable and Utils.DumpTable(args) or tostring(args)))
 end
 
 function CuraEqui_Feed_StartScanDelayed()
@@ -247,31 +286,37 @@ local function _scan_once()
             :format(c.x, c.y, c.z, radius, #ents))
 
         for _, ent in ipairs(ents) do
-            local guid, name = CE_SniffGuidAndName(ent)
-            if guid or (rawget(ent, "item") ~= nil) then
-                System.LogAlways(("[CuraEqui][Scan] found '%s' guid=%s eid=%s")
-                    :format(tostring(name or ent.class), tostring(guid), tostring(ent.id)))
+            if ent.class == "PickableItem" then
+                -- name/guid sniff (common fields on PickableItem)
+                local t                     = rawget(ent, "item") or rawget(ent, "Item") or ent
+                local name                  = (t.GetUIName and t:GetUIName())
+                    or t.uiName or t.name or ent.name or "?"
+                local guid, name, className = CE_SniffGuidAndName(ent)
+                System.LogAlways(("[CuraEqui][Scan] Pickable eid=%s name=%s guid=%s class=%s")
+                    :format(tostring(ent.id), tostring(name), tostring(guid), tostring(className)))
 
-                local diet = (guid and CuraEqui.Diet and CuraEqui.Diet.byGuid and CuraEqui.Diet.byGuid[guid]) or nil
-                -- TEMP keyword fallback for testing; remove when GUID map is ready
+                System.LogAlways(("[CuraEqui][Scan] Pickable eid=%s name=%s guid=%s"):format(tostring(ent.id),
+                    tostring(name), tostring(guid)))
+
+                local diet = (guid and CuraEqui.Diet and CuraEqui.Diet.byGuid and CuraEqui.Diet.byGuid[guid])
+                    or (className and CuraEqui.Diet and CuraEqui.Diet.byClass and CuraEqui.Diet.byClass[className])
+                    or nil
+                -- TEMP keyword fallback so you can validate the loop today
                 if not diet and name then
-                    local s = string.lower(tostring(name))
-                    if s:find("apple", 1, true) or s:find("@ui_nm_", 1, true) or s:find("bread", 1, true) then
-                        System.LogAlways("[CuraEqui][Scan] keyword-allow → edible (test)")
-                        diet = {
-                            nutrition = (CuraEqui.Config.Diet and CuraEqui.Config.Diet.defaultNutrition) or 10,
-                            token =
-                                name
-                        }
+                    local s = string.lower(name)
+                    for i = 1, #ALLOW_KWS do
+                        if s:find(ALLOW_KWS[i], 1, true) then
+                            System.LogAlways("[CuraEqui][Scan] keyword-allow → edible (test)")
+                            diet = { nutrition = KW_NUTRITION, token = name }
+                            break
+                        end
                     end
                 end
 
                 if diet then
-                    CE_DeleteEntity(ent)
+                    CE_DeleteEntity(ent) -- remove the world drop immediately
                     CuraEqui._scanActive = false
                     return CuraEqui._ApplyNutrition(diet, diet.token or name or "?")
-                else
-                    System.LogAlways("[CuraEqui][Scan] not edible → leaving")
                 end
             end
         end
@@ -302,12 +347,18 @@ end
 
 _G["CuraEqui_FeedScan_Tick"] = CuraEqui_FeedScan_Tick
 
-
 -- ---------------------------------------------------------------------------
 -- Entrypoint: action opens a picker if available, then starts the scanner
 -- ---------------------------------------------------------------------------
 function Horse:OnFeedHorse(user)
     System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
+
+    if UIAction and UIAction.RegisterElementListener then
+        pcall(function()
+            UIAction.RegisterElementListener(CuraEqui, "ApseInventoryList", -1, "CuraEquiOnDroppedToHorse",
+                "OnDroppedToHorse")
+        end)
+    end
 
     if CuraEqui.Config.FeedScan.armOnInventoryClose then
         -- Arm a one-shot “scan after inventory closes”.
