@@ -8,4 +8,7 @@
 <Row>
     <Cell>curaequi_horse_feed_ok</Cell><Cell>Horse eats happily</Cell><Cell>Horse eats happily</Cell>
 </Row>
+<Row>
+    <Cell>curaequi_horse_munch</Cell><Cell>Horse eats happily</Cell><Cell>Horse eats happily</Cell>
+</Row>
 </Table> 

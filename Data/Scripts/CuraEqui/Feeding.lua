@@ -241,6 +241,70 @@ local function CE_DeleteEntity(ent)
     return deleted and not still
 end
 
+-- expects FC = CuraEqui.Config.FeedScan (alias defined near top of file)
+local function CE_ConsumeAfterDelay(ent, diet, label)
+    -- stop the scan window immediately so we can't re-pick the same entity
+    if CuraEqui._InvClose_Disarm then pcall(CuraEqui._InvClose_Disarm) end
+    CuraEqui._scanActive = false
+
+    local F              = CuraEqui.Config and CuraEqui.Config.FeedScan or nil
+    local delay          = tonumber(FC and FC.landDelayMs) or 0
+    local msg            = (F and F.toastOnEat) or "@curaequi_horse_munch"
+    local toastMs        = (F and F.toastMs) or 1800
+    local toastPrio      = (F and F.toastPrio) or 0
+    local toastLane      = (F and F.toastLane) or "tutorial" -- "tutorial" (tiny right) | "notification" (center)
+    local sfxId          = F and F.munchSfx
+
+    -- single place that actually consumes + feedback
+    local function doConsume()
+        -- delete the world drop
+        CE_DeleteEntity(ent)
+
+        if CuraEqui.UI then
+            pcall(function()
+                CuraEqui.UI.Toast(msg, toastMs, toastPrio, "CuraEquiFeed", toastLane)
+            end)
+        end
+        -- Prefer playing at the horse (moves with it); fallback to player; finally the food's last pos
+        do
+            local trigger = sfxId
+            if trigger and trigger ~= "" and CuraEqui.Audio then
+                local horse = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+                local ok = false
+                if horse then ok = CuraEqui.Audio.PlayAtEntity(trigger, horse) end
+                if not ok and g_localActor then ok = CuraEqui.Audio.PlayAtEntity(trigger, g_localActor) end
+                if not ok and ent then ok = CuraEqui.Audio.PlayAtEntity(trigger, ent) end
+                -- Optional: also emit an AI-hearing “crunch” if you want NPCs to react (tune/remove later)
+                -- CuraEqui.Audio.ProduceAIsound("horse_eat_noise", (ent and ent:GetWorldPos()) or nil, 0.5)
+            end
+        end
+
+        -- feedback (one toast + optional sfx)
+        if CuraEqui.UI then
+            pcall(function()
+                CuraEqui.UI.Toast(msg, toastMs, toastPrio, "CuraEquiFeed", toastLane)
+                if sfxId and sfxId ~= "" then CuraEqui.UI.PlaySfx(sfxId) end
+            end)
+        end
+
+        -- apply the effect
+        if CuraEqui._ApplyNutrition then
+            return CuraEqui._ApplyNutrition(diet, diet.token or label or "?")
+        end
+        return true
+    end
+
+    if delay > 0 and Script and Script.SetTimerForFunction then
+        -- optional visual: hide while "landing"
+        if ent and type(ent.Hide) == "function" then pcall(function() ent:Hide(1) end) end
+        _G["CuraEqui_Feed_DoConsume"] = doConsume
+        Script.SetTimerForFunction(delay, "CuraEqui_Feed_DoConsume")
+        return true        -- scheduled
+    else
+        return doConsume() -- immediate
+    end
+end
+
 -- ------------------------------------------------------------
 -- Scanner pass: look for first edible PickableItem near the centers
 -- ------------------------------------------------------------
@@ -282,9 +346,7 @@ local function _scan_once()
             end
 
             if diet then
-                CE_DeleteEntity(ent) -- remove the world drop
-                CuraEqui._scanActive = false
-                return CuraEqui._ApplyNutrition(diet, diet.token or name or "?")
+                return CE_ConsumeAfterDelay(ent, diet, name)
             end
         end
     end
@@ -395,7 +457,7 @@ do
             -- build the action (press)
             local A = Action()
                 :hint("@curaequi_drop_food") -- your string table key
-                :action("use_horse") -- keep identical to vanilla mappings
+                :action("use_horse")         -- keep identical to vanilla mappings
                 :hintType(AHT_PRESS)
                 :func(H.OnFeedHorse)
                 :interaction(lane)
