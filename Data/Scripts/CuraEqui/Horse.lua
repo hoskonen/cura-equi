@@ -5,32 +5,99 @@ CuraEqui.HorseState = CuraEqui.HorseState or {}
 CuraEqui.HorseCfg = CuraEqui.HorseCfg or
     { hungerMax = 100, hungerStart = 30, tickSec = 10, ratePerMin = 1.0, ratePerKm = 15.0, debuffAt = 70 }
 
+function CuraEqui.Horse.Debug_LogPlayerHorseHandles()
+    local function log(label, ok, val)
+        local t = type(val)
+        System.LogAlways(("[CuraEqui][Horse][dbg] %s -> ok=%s type=%s val=%s")
+            :format(label, tostring(ok), t, tostring(val)))
+    end
+
+    -- Try all likely bindings (dot/colon/legacy) + the player form
+    local ok, v
+
+    if Game and Game.GetPlayerHorse then
+        ok, v = pcall(Game.GetPlayerHorse, Game); log("Game:GetPlayerHorse(dot)", ok, v)
+    end
+    if Game and Game.GetPlayerHorse then
+        ok, v = pcall(Game.GetPlayerHorse, Game); log("Game:GetPlayerHorse(colon)", ok, v)
+    end
+    if g_gameRules and g_gameRules.game and g_gameRules.game.GetPlayerHorse then
+        ok, v = pcall(g_gameRules.game.GetPlayerHorse, g_gameRules.game); log("g_gameRules.game:GetPlayerHorse", ok, v)
+    end
+    if player and player.player and player.player.GetPlayerHorse then
+        ok, v = pcall(player.player.GetPlayerHorse, player.player); log("player.player:GetPlayerHorse (WUID expected)",
+            ok, v)
+    end
+
+    -- Player->HorseId fallback
+    if player and player.actor and player.actor.GetHorseId then
+        ok, v = pcall(player.actor.GetHorseId, player.actor); log("player.actor:GetHorseId (entityId)", ok, v)
+    end
+end
+
+function CuraEqui.Horse.Has()
+    local h = CuraEqui.Horse.Resolve()
+    if h and h.id and System.GetEntity(h.id) then
+        return true, h
+    end
+    return false
+end
+
+-- Returns the player's horse entity or nil. Caches id when found.
 function CuraEqui.Horse.Resolve()
     local ent
 
-    -- 1) fastest: stored id from our OnMount hook
-    if CuraEqui.Horse.playerHorseId then
-        ent = System.GetEntity(CuraEqui.Horse.playerHorseId)
+    -- 0) cached
+    if CuraEqui.Horse.playerHorseId then ent = System.GetEntity(CuraEqui.Horse.playerHorseId) end
+    if ent then return ent end
+
+    -- helper: coerce various handles into an entity
+    local function asEnt(handle)
+        if not handle then return nil end
+        local ty = type(handle)
+        if ty == "number" then return System.GetEntity(handle) end
+        if ty == "table" and handle.id then return handle end
+        -- WUID path (string/userdata depending on binding)
+        if XGenAIModule and (ty == "string" or ty == "userdata") then
+            local id = XGenAIModule.GetEntityIdByWUID(handle)
+            if id and id ~= 0 then return System.GetEntity(id) end
+            local e = XGenAIModule.GetEntityByWUID(handle)
+            if e and e.id then return e end
+        end
+        return nil
     end
 
-    -- 2) engine helper
-    if not ent then
-        pcall(function()
-            if Game and Game.GetPlayerHorse then ent = Game:GetPlayerHorse() end
-        end)
+    -- 1) prefer player.player:GetPlayerHorse() → WUID (as in NoHorseTeleport)
+    if player and player.player and player.player.GetPlayerHorse then
+        local ok, wuid = pcall(player.player.GetPlayerHorse, player.player)
+        if ok then ent = asEnt(wuid) end
     end
 
-    -- 3) player->horse id fallback
+    -- 2) engine helpers (dot/colon/legacy variants)
+    if not ent and Game and Game.GetPlayerHorse then
+        local ok, h = pcall(Game.GetPlayerHorse, Game); if ok then ent = asEnt(h) end
+        if not ent then
+            ok, h = pcall(Game.GetPlayerHorse, Game); if ok then ent = asEnt(h) end
+        end
+    end
+    if not ent and g_gameRules and g_gameRules.game and g_gameRules.game.GetPlayerHorse then
+        local ok, h = pcall(g_gameRules.game.GetPlayerHorse, g_gameRules.game); if ok then ent = asEnt(h) end
+    end
+
+    -- 3) fallback: player.actor:GetHorseId() → entity id
     if not ent and player and player.actor and player.actor.GetHorseId then
-        local hid = player.actor:GetHorseId()
-        if hid then ent = System.GetEntity(hid) end
+        local ok, hid = pcall(player.actor.GetHorseId, player.actor)
+        if ok then ent = asEnt(hid) end
     end
 
     if ent and ent.id then
-        CuraEqui.Horse.playerHorseId = ent.id -- keep it fresh
+        CuraEqui.Horse.playerHorseId = ent.id
+        return ent
     end
-    return ent
+    return nil
 end
+
+-- Logs what the various helpers return at this moment (WUID vs id vs nil)
 
 do
     local H = _G.Horse

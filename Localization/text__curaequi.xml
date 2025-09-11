@@ -23,10 +23,10 @@
 </Row>
 
 <Row>
-    <Cell>buff_ce_mild</Cell><Cell>Mild Hunger</Cell><Cell>Mild Hunger</Cell>
+    <Cell>buff_ce_minor</Cell><Cell>Minor Hunger</Cell><Cell>Minor Hunger</Cell>
 </Row>
 <Row>
-    <Cell>buff_ce_mild_desc</Cell>
+    <Cell>buff_ce_minor_desc</Cell>
     <Cell>A little hungry. Slight drop in responsiveness—feed soon to prevent worsening effects.</Cell><Cell>A little hungry. Slight drop in responsiveness—feed soon to prevent worsening effects.</Cell>
 </Row>
 

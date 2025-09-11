@@ -38,6 +38,28 @@ local function ProbeOnce(h)
     for k, v in pairs(caps) do System.LogAlways(("[CuraEqui][Probe] cap %-11s = %s"):format(k, tostring(v))) end
 end
 
+-- Scripts/CuraEqui/Hunger.lua
+function CuraEqui.StartProbing()
+    if CuraEqui.state.probeTimer then Script.KillTimer(CuraEqui.state.probeTimer) end
+    local periodMs = 10000 -- every 10s; make configurable later if you want
+    _G["CuraEqui_HorseProbeTick"] = function()
+        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        if h then
+            CuraEqui.StopProbing()
+            return CuraEqui.StartWatching()
+        end
+        CuraEqui.state.probeTimer = Script.SetTimerForFunction(periodMs, "CuraEqui_HorseProbeTick")
+    end
+    CuraEqui.state.probeTimer = Script.SetTimerForFunction(500, "CuraEqui_HorseProbeTick") -- first probe in 0.5s
+    CuraEqui.Log("poll", "Probe started.")
+end
+
+function CuraEqui.StopProbing()
+    if CuraEqui.state.probeTimer then Script.KillTimer(CuraEqui.state.probeTimer) end
+    CuraEqui.state.probeTimer = nil
+    CuraEqui.Log("poll", "Probe stopped.")
+end
+
 -- ---------- TICK BODY (MAY THROW) ----------
 function CuraEqui._HungerTickBody()
     local h = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
@@ -168,9 +190,19 @@ end
 function CuraEqui_HungerTick()
     System.LogAlways("[CuraEqui][Tick] fired")
     local ok, err = xpcall(CuraEqui._HungerTickBody, debug.traceback)
-    if not ok then
-        System.LogAlways("[CuraEqui][Tick][ERROR] " .. tostring(err))
+    if not ok then System.LogAlways("[CuraEqui][Tick][ERROR] " .. tostring(err)) end
+
+    local hasHorse = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) and true or false
+    if not hasHorse then
+        CuraEqui._noHorseStrikes = (CuraEqui._noHorseStrikes or 0) + 1
+    else
+        CuraEqui._noHorseStrikes = 0
     end
+    if (CuraEqui._noHorseStrikes or 0) >= 3 then
+        CuraEqui.StopWatching()
+        return CuraEqui.StartProbing()
+    end
+
     CuraEqui.state.hungerTimer =
         Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
 end

@@ -262,17 +262,13 @@ end
 
 -- expects FC = CuraEqui.Config.FeedScan (alias defined near top of file)
 local function CE_ConsumeAfterDelay(ent, diet, label)
-    -- stop the scan window immediately so we can't re-pick the same entity
-    if CuraEqui._InvClose_Disarm then pcall(CuraEqui._InvClose_Disarm) end
-    CuraEqui._scanActive = false
-
-    local F              = CuraEqui.Config and CuraEqui.Config.FeedScan or nil
-    local delay          = tonumber(FC and FC.landDelayMs) or 0
-    local msg            = (F and F.toastOnEat) or "@curaequi_horse_munch"
-    local toastMs        = (F and F.toastMs) or 1800
-    local toastPrio      = (F and F.toastPrio) or 0
-    local toastLane      = (F and F.toastLane) or "tutorial" -- "tutorial" (tiny right) | "notification" (center)
-    local sfxId          = F and F.munchSfx
+    local F         = CuraEqui.Config and CuraEqui.Config.FeedScan or nil
+    local delay     = tonumber(FC and FC.landDelayMs) or 0
+    local msg       = (F and F.toastOnEat) or "@curaequi_horse_munch"
+    local toastMs   = (F and F.toastMs) or 1800
+    local toastPrio = (F and F.toastPrio) or 0
+    local toastLane = (F and F.toastLane) or "tutorial"      -- "tutorial" (tiny right) | "notification" (center)
+    local sfxId     = F and F.munchSfx
 
     -- single place that actually consumes + feedback
     local function doConsume()
@@ -401,16 +397,21 @@ _G["CuraEqui_FeedScan_Tick"] = CuraEqui_FeedScan_Tick
 -- Action entry point (keeps your action button behavior intact)
 -- ------------------------------------------------------------
 function Horse:OnFeedHorse(user)
-    System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
-    RegisterInventoryCloseHooks()
-    if FEED_ARM_ON_CLOSE then
-        CuraEqui._InvClose_ArmOnce(FEED_ARM_TIMEOUT)
-        if CuraEqui.UI and CuraEqui.UI.ShowInfo and FEED_TOAST then
-            pcall(function() CuraEqui.UI.ShowInfo(FEED_TOAST, 2.2) end)
+    local my = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+    if my and self and my.id == self.id then
+        System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
+        RegisterInventoryCloseHooks()
+        if FEED_ARM_ON_CLOSE then
+            CuraEqui._InvClose_ArmOnce(FEED_ARM_TIMEOUT)
+            if CuraEqui.UI and CuraEqui.UI.ShowInfo and FEED_TOAST then
+                pcall(function() CuraEqui.UI.ShowInfo(FEED_TOAST, 2.2) end)
+            end
+        else
+            -- alternative mode: start scan immediately (no inv-close arm)
+            CuraEqui.Feed_StartScan(FEED_WINDOW_SEC)
         end
     else
-        -- alternative mode: start scan immediately (no inv-close arm)
-        CuraEqui.Feed_StartScan(FEED_WINDOW_SEC)
+        System.LogAlways("[CuraEqui][Feed] blocked: not your horse")
     end
 end
 
@@ -455,6 +456,14 @@ do
             for i = 1, #actions do
                 local a = actions[i]
                 if a and a.func == H.OnFeedHorse then return actions end
+            end
+
+            local allowAny = CuraEqui.Config and CuraEqui.Config.FeedScan and CuraEqui.Config.FeedScan.allowAnyHorse
+            if not allowAny then
+                local mine = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                if not (mine and self and mine.id == self.id) then
+                    return actions
+                end
             end
 
             -- compute max uiOrder to append after existing actions

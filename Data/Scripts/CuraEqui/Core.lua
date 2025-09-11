@@ -47,10 +47,30 @@ if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBo
     CuraEqui.__eventsBound = true
 end
 
+-- Core.lua (OnGameplayStarted)
 function CuraEqui.OnGameplayStarted()
-    CuraEqui.Log("init", "OnGameplayStarted")
-    -- one-time init bits go here if needed
     CuraEqui.Initialize(true)
+
+    -- one-shot: log what APIs return
+    if CuraEqui.Horse.Debug_LogPlayerHorseHandles then CuraEqui.Horse.Debug_LogPlayerHorseHandles() end
+
+    -- staggered resolve attempts: 0ms, 300ms, 1200ms
+    local tries = { 0, 300, 1200 }
+    local function try(i)
+        local h = CuraEqui.Horse.Resolve()
+        if h then
+            System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
+                :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
+            CuraEqui.StopProbing(); CuraEqui.StartWatching()
+        else
+            if i < #tries then
+                Script.SetTimer(tries[i + 1], function() try(i + 1) end)
+            else
+                CuraEqui.StartProbing()
+            end                        -- light 10s probe until a horse appears
+        end
+    end
+    try(1)
 end
 
 -- Sleep / fade handling (same idea as your UWH example)
@@ -75,5 +95,11 @@ function CuraEqui.Initialize(fullInit)
     else
         CuraEqui.state.started = true
     end
-    CuraEqui.StartWatching()
+
+    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    if h then
+        CuraEqui.StartWatching()
+    else
+        CuraEqui.StartProbing() -- new (see below)
+    end
 end
