@@ -24,3 +24,6 @@ Script.ReloadScript("Scripts/CuraEqui/BuffLogic.lua")
 Script.ReloadScript("Scripts/CuraEqui/Horse.lua")
 Script.ReloadScript("Scripts/CuraEqui/Feeding.lua")
 Script.ReloadScript("Scripts/CuraEqui/Hunger.lua")
+
+-- CuraEqui_init.lua (after loading Config & Core)
+if CuraEqui.ValidateBuffGuids then CuraEqui.ValidateBuffGuids() end

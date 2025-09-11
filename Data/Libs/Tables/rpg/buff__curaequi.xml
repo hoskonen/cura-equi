@@ -9,6 +9,9 @@
 		hml = DerivStat_HorseThrowDownMoraleLimit
 		-->
 		
+		<!-- Cura Equi / Player Horse Hunger Status Buff: Ok -->
+		<buff buff_class_id="4" buff_exclusivity_id="1" buff_id="f3d4b5e2-7f8a-4d6b-9a31-8b0d1c9a7c52" buff_lifetime_id="1" buff_name="buff_ce_ok" buff_params="" buff_ui_type_id="1" duration="-1" icon_id="buff_ce_ok" implementation="Cpp:Constant" is_persistent="true" buff_desc="buff_ce_ok_desc" buff_ui_name="buff_ce_ok" buff_ui_visibility_id="3" />
+
 		<!-- Cura Equi / Player Horse Hunger Status Buff: Sated -->
 		<buff buff_class_id="4" buff_exclusivity_id="1" buff_id="1a638e4c-e931-415d-b3bd-c8402ed836ea" buff_lifetime_id="1" buff_name="buff_ce_sated" buff_params="" buff_ui_type_id="1" duration="-1" icon_id="buff_ce_sated" implementation="Cpp:Constant" is_persistent="true" buff_desc="buff_ce_sated_desc" buff_ui_name="buff_ce_sated" buff_ui_visibility_id="3" />
 

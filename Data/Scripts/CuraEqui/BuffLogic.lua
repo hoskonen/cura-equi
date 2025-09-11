@@ -103,6 +103,26 @@ function M.SyncHorseDebuff(horseEnt, S)
         return
     end
 
+    -- get the player row for same tier
+    local plist = CuraEqui.Config.HUD and CuraEqui.Config.HUD.playerStatusTiers
+    local pGuid = ""
+    if plist then
+        for i = 1, #plist do
+            local r = plist[i]; if r.name == tier then
+                pGuid = r.uidd or ""
+                break
+            end
+        end
+    end
+
+    if pGuid ~= "" and uuid == pGuid then
+        if CuraEqui.Config.Debug and CuraEqui.Config.Debug.enabled then
+            CuraEqui.Log("buff", "HorseDebuff skipped: GUID clashes with player tier (%s)", uuid)
+        end
+        return
+    end
+
+
     if uuid ~= last then
         CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
         CuraEqui.Effects.ApplyHorse(horseEnt, uuid)
@@ -114,6 +134,6 @@ function M.SyncHorseDebuff(horseEnt, S)
 end
 
 function M.SyncAll(horseEnt, S)
-    M.SyncPlayerStatus(horseEnt, S)
     M.SyncHorseDebuff(horseEnt, S)
+    M.SyncPlayerStatus(horseEnt, S)
 end

@@ -67,7 +67,7 @@ function CuraEqui.OnGameplayStarted()
                 Script.SetTimer(tries[i + 1], function() try(i + 1) end)
             else
                 CuraEqui.StartProbing()
-            end                        -- light 10s probe until a horse appears
+            end -- light 10s probe until a horse appears
         end
     end
     try(1)
@@ -101,5 +101,34 @@ function CuraEqui.Initialize(fullInit)
         CuraEqui.StartWatching()
     else
         CuraEqui.StartProbing() -- new (see below)
+    end
+end
+
+function CuraEqui.ValidateBuffGuids()
+    local HUD = CuraEqui.Config and CuraEqui.Config.HUD or {}
+    local seen, dups = {}, {}
+    local function add(list, label)
+        for _, row in ipairs(list or {}) do
+            local g = row and row.uidd
+            if g and g ~= "" then
+                if seen[g] then
+                    dups[#dups + 1] = { guid = g, a = seen[g], b = label .. "." .. (row.name or "?") }
+                else
+                    seen[g] = label .. "." .. (row.name or "?")
+                end
+            end
+        end
+    end
+    add(HUD.playerStatusTiers, "player")
+    add(HUD.horseDebuffTiers, "horse")
+
+    if #dups > 0 then
+        System.LogAlways("[CuraEqui][Buff][ERROR] Duplicate GUIDs across player/horse tiers:")
+        for _, d in ipairs(dups) do
+            System.LogAlways(("[CuraEqui][Buff][ERROR] %s used by %s and %s")
+                :format(d.guid, d.a, d.b))
+        end
+    else
+        System.LogAlways("[CuraEqui][Buff] GUIDs validated (no cross-channel duplicates).")
     end
 end

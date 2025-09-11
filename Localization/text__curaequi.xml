@@ -23,6 +23,14 @@
 </Row>
 
 <Row>
+    <Cell>buff_ce_ok</Cell><Cell>Content</Cell><Cell>Content</Cell>
+</Row>
+<Row>
+    <Cell>buff_ce_ok_desc</Cell>
+    <Cell>Your horse is comfortable and well.</Cell><Cell>Your horse is comfortable and well.</Cell>
+</Row>
+
+<Row>
     <Cell>buff_ce_minor</Cell><Cell>Minor Hunger</Cell><Cell>Minor Hunger</Cell>
 </Row>
 <Row>
