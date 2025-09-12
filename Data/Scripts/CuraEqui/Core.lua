@@ -51,6 +51,8 @@ end
 function CuraEqui.OnGameplayStarted()
     CuraEqui.Initialize(true)
 
+    CuraEqui.Bootstrap("OnGameplayStarted")
+
     -- one-shot: log what APIs return
     if CuraEqui.Horse.Debug_LogPlayerHorseHandles then CuraEqui.Horse.Debug_LogPlayerHorseHandles() end
 
@@ -130,5 +132,27 @@ function CuraEqui.ValidateBuffGuids()
         end
     else
         System.LogAlways("[CuraEqui][Buff] GUIDs validated (no cross-channel duplicates).")
+    end
+end
+
+-- Call this whenever we think gameplay (re)started or a save was loaded.
+function CuraEqui.Bootstrap(reason)
+    CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
+    -- kill any stale timers, then start fresh
+    if CuraEqui.StopWatching then CuraEqui.StopWatching() end
+    if CuraEqui.Initialize then CuraEqui.Initialize(false) end
+
+    -- force next tick to re-apply buffs (don’t rely on last-known)
+    if CuraEqui.Buffs then CuraEqui.Buffs._lastPlayerUuid = nil end
+    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    if S then S._lastHorseDebuffUuid = nil end
+
+    -- kick an immediate tick a hair later so souls/HUD are definitely up
+    if Script and Script.SetTimerForFunction then
+        _G["CuraEqui_HungerTick_Once"] = function()
+            if CuraEqui_HungerTick then pcall(CuraEqui_HungerTick) end
+        end
+        Script.SetTimerForFunction(200, "CuraEqui_HungerTick_Once")
     end
 end
