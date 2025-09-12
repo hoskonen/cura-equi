@@ -30,16 +30,48 @@ function CuraEqui.Debug_PingTick()
             tonumber(S and S.totalDist or 0.0)))
 end
 
-function CuraEqui.Debug.ShowHUDLine(text, ms)
-    local hud  = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud or {}
-    local dur  = tonumber(ms) or tonumber(hud.refresh) or tonumber(hud.refreshMs) or 1200
-    local id   = hud.id or "CuraEqui_DebugHUD"
-    local lane = hud.lane or "notification"
-    if CuraEqui.UI and CuraEqui.UI.Toast then
-        CuraEqui.UI.Toast(tostring(text or ""), dur, 999, id, lane)
-    elseif Game and Game.SendInfoText then
-        Game.SendInfoText(tostring(text or ""), false, "", dur / 1000)
+-- function CuraEqui.Debug.ShowHUDLine(text, ms)
+--     local hud  = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud or {}
+--     local dur  = tonumber(ms) or tonumber(hud.refresh) or tonumber(hud.refreshMs) or 1200
+--     local id   = hud.id or "CuraEqui_DebugHUD"
+--     local lane = hud.lane or "notification"
+--     if CuraEqui.UI and CuraEqui.UI.Toast then
+--         CuraEqui.UI.Toast(tostring(text or ""), dur, 999, id, lane)
+--     elseif Game and Game.SendInfoText then
+--         Game.SendInfoText(tostring(text or ""), false, "", dur / 1000)
+--     end
+-- end
+
+-- Central HUD emitter: respects Config.Debug.hud.{lane,refresh,id}
+CuraEqui.Debug = CuraEqui.Debug or {}
+function CuraEqui.Debug.ShowHUDLine(text, ms, lane, prio, id)
+    local t   = tostring(text or "")
+    local H   = (CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud) or {}
+    local dur = math.max(1, tonumber(ms or H.refresh or 1200) or 1200)
+    local ln  = lane or H.lane or "notification" -- "notification" | "tutorial" | "infotext"
+    local tag = tostring(id or H.id or "CuraEqui_DebugHUD")
+    local pr  = tonumber(prio or 0) or 0
+
+    -- Special: engine center text
+    if ln == "infotext" and Game and Game.SendInfoText then
+        pcall(Game.SendInfoText, t, false, tag, dur)
+        return true
     end
+
+    -- Preferred: Scaleform lanes via our UI shim
+    if CuraEqui.UI and CuraEqui.UI.Toast then
+        local ok = pcall(function() CuraEqui.UI.Toast(t, dur, pr, tag, ln) end)
+        if ok then return true end
+    end
+
+    -- Fallback: engine info text
+    if Game and Game.SendInfoText then
+        pcall(Game.SendInfoText, t, false, tag, dur)
+        return true
+    end
+
+    System.LogAlways("[CuraEqui][HUD] " .. t)
+    return false
 end
 
 function CuraEqui.Debug.SetHorseHunger(n)

@@ -2,6 +2,11 @@
 CuraEqui = CuraEqui or {}
 
 CuraEqui.Config = {
+    UI = {
+        hudElement = "HUD",
+        fallbackToNotification = true,
+
+    },
     Debug = {
         enabled = true,
         distanceTrace = true,
@@ -10,14 +15,22 @@ CuraEqui.Config = {
     },
 
     Hunger = {
-        hungerMax            = 100,
-        hungerStart          = 30,
         tickSec              = 10,
-        ratePerMin           = 1.0,  -- hunger per minute
-        ratePerKm            = 15.0, -- hunger per kilometer
+        hungerStart          = 30,
+        hungerMax            = 100,
         debuffAt             = 70,
+        -- Rates
+        ratePerMinIdle       = 0.5, -- horse idle (includes unmounted or mounted-but-standing)
+        ratePerMinMounted    = 1.0, -- horse mounted & moving: time drift while ridden
+        ratePerKmMounted     = 4.0, -- extra drain per ridden kilometer
+        speedIdleMps         = 0.2, -- below this → idle
+        -- Sated
+        satedDrainMul        = 0.75,
         satedSecPerNutrition = 6,    -- x per nutrition
         satedCapSec          = 600,  -- 10 min max
+        -- Legacy - To Be Removed
+        ratePerMin           = 1.0,  -- hunger per minute
+        ratePerKm            = 15.0, -- hunger per kilometer
     },
 
     Diet = {
@@ -71,6 +84,6 @@ CuraEqui.Config = {
         -- Toast Settings
         toastMs                = 1800,       -- duration in ms for tutorial lane
         toastPrio              = 0,          -- priority for tutorial lane
-        toastLane              = "infotext", -- "tutorial" (tiny) or "notification"
+        toastLane              = "tutorial", -- "infotext" | "tutorial" | "notification"
     }
 }

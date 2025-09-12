@@ -38,7 +38,19 @@ local function ProbeOnce(h)
     for k, v in pairs(caps) do System.LogAlways(("[CuraEqui][Probe] cap %-11s = %s"):format(k, tostring(v))) end
 end
 
--- Scripts/CuraEqui/Hunger.lua
+-- ONE source of truth for hunger dials (+ legacy fallbacks)
+local function _H()
+    local H = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+    return {
+        tickSec       = tonumber(H.tickSec) or 10,
+        rateIdle      = tonumber(H.ratePerMinIdle or H.ratePerMin) or 0.5,    -- fallback -> ratePerMin
+        rateMounted   = tonumber(H.ratePerMinMounted or H.ratePerMin) or 1.0, -- fallback -> ratePerMin
+        rateKmMounted = tonumber(H.ratePerKmMounted or H.ratePerKm) or 4.0,   -- fallback -> ratePerKm
+        speedIdle     = tonumber(H.speedIdleMps) or 0.2,
+        satedMul      = tonumber(H.satedDrainMul) or 0.75,
+    }
+end
+
 function CuraEqui.StartProbing()
     if CuraEqui.state.probeTimer then Script.KillTimer(CuraEqui.state.probeTimer) end
     local periodMs = 10000 -- every 10s; make configurable later if you want
@@ -163,16 +175,47 @@ function CuraEqui._HungerTickBody()
         S._dbgNextLogAt = S._dbgNextLogAt + step
     end
 
-    -- per-km hunger
-    if (S.dist or 0) > 1000 then
-        local km = (S.dist or 0) / 1000.0
-        S.hunger = U.clamp((S.hunger or 0) + km * CuraEqui.HorseCfg.ratePerKm, 0, CuraEqui.HorseCfg.hungerMax)
-        S.dist = (S.dist or 0) % 1000
+    -- idle vs mounted-moving
+    do
+        local C       = _H()
+
+        local dt      = C.tickSec
+        local distM   = (S._posSrc and (S.dist or 0)) or 0
+        local speed   = distM / math.max(dt, 0.001)
+
+        -- mounted?
+        local mounted = false
+        pcall(function()
+            mounted = player and player.actor and player.actor.IsMounted and player.actor:IsMounted() or false
+        end)
+
+        -- idle if not mounted OR mounted but below movement threshold
+        local idle       = (not mounted) or (speed < C.speedIdle)
+
+        -- time drift
+        local timePerMin = idle and C.rateIdle or C.rateMounted
+        local timeDrain  = timePerMin * (dt / 60.0)
+
+        -- per-km only when mounted-moving
+        local distDrain  = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
+
+        -- sated multiplier
+        local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
+
+        local totalDrain = (timeDrain + distDrain) * mul
+
+        local before     = tonumber(S.hunger or 0) or 0
+        local after      = U.clamp(before + totalDrain, 0, CuraEqui.HorseCfg.hungerMax or 100)
+        S.hunger         = after
+
+        -- optional telemetry
+        S._lastTimeDrain = timeDrain
+        S._lastDistDrain = distDrain
+        S._lastDrainMul  = mul
+        S._lastSpeedMps  = speed
     end
 
-    -- time-based hunger
-    S.hunger = U.clamp((S.hunger or 0) + (CuraEqui.HorseCfg.ratePerMin * (CuraEqui.HorseCfg.tickSec / 60.0)), 0,
-        CuraEqui.HorseCfg.hungerMax)
 
     do
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
@@ -183,30 +226,23 @@ function CuraEqui._HungerTickBody()
     end
 
     do
-        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud and CuraEqui.Config.Debug.hud.enabled then
+        local D = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud
+        if D and D.enabled and CuraEqui.Debug and CuraEqui.Debug.ShowHUDLine then
             local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
             local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
             if S then
-                local hud = CuraEqui.Config.HUD or {}
-                local tier = (CuraEqui.Buffs and CuraEqui.Buffs._pickTierName) and
-                    CuraEqui.Buffs._pickTierName(tonumber(S.hunger or 0) or 0, S.satedUntil) or "?"
-                local pUuid = ""
-                local listP = hud.playerStatusTiers
-                if listP then for i = 1, #listP do if listP[i].name == tier then pUuid = listP[i].uidd or "" end end end
-                local hUuid = ""
-                local listH = hud.horseDebuffTiers
-                if listH then for i = 1, #listH do if listH[i].name == tier then hUuid = listH[i].uidd or "" end end end
-                local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-                local rem = math.max(0, (S.satedUntil or 0) - now)
-                CuraEqui.Debug.ShowHUDLine(
-                    string.format("Horse: %d%% | Sated %.0fs | %s | P:%s H:%s",
-                        math.floor(tonumber(S.hunger or 0) or 0),
-                        rem,
-                        tier,
-                        (pUuid == "" and "-" or pUuid:sub(1, 8) .. "…"),
-                        (hUuid == "" and "-" or hUuid:sub(1, 8) .. "…")
-                    )
-                )
+                local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                local tier   = (CuraEqui.Buffs and CuraEqui.Buffs._pickTierName)
+                    and CuraEqui.Buffs._pickTierName(tonumber(S.hunger or 0) or 0, S.satedUntil) or "?"
+                local line   = string.format("Horse: %d%% | Sated %.0fs | %s",
+                    math.floor(tonumber(S.hunger or 0) or 0),
+                    math.max(0, (tonumber(S.satedUntil or 0) or 0) - now),
+                    tier)
+                S._hudNextAt = S._hudNextAt or 0
+                if now >= S._hudNextAt then
+                    CuraEqui.Debug.ShowHUDLine(line, D.refresh or 1200, D.lane or "notification")
+                    S._hudNextAt = now + ((D.refresh or 1200) / 1000)
+                end
             end
         end
     end
@@ -282,7 +318,7 @@ function CuraEqui._ApplyNutrition(diet, label)
     local H      = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
     local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
     local perSec = tonumber(H.satedSecPerNutrition or 6) -- dial
-    local capSec = tonumber(H.satedCapSec or 600)      -- dial
+    local capSec = tonumber(H.satedCapSec or 600)        -- dial
     local addSec = n * perSec
     local base   = math.max(now, tonumber(S.satedUntil or 0) or 0)
     S.satedUntil = math.min(base + addSec, now + capSec)
