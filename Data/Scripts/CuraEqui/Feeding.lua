@@ -43,6 +43,117 @@ local function CE_Log(fmt, ...)
     end
 end
 
+local function _pcall1(f, ent)
+    local ok, res = pcall(f, ent)
+    return ok and res or nil
+end
+
+local function _getGuid(ent)
+    if ent and type(ent.GetGuid) == "function" then
+        local g = _pcall1(ent.GetGuid, ent)
+        if g and g ~= "" then return tostring(g) end
+    end
+    return nil
+end
+
+local function _getUIName(ent)
+    if ent and type(ent.GetUIName) == "function" then
+        local n = _pcall1(ent.GetUIName, ent)
+        if n and n ~= "" then return tostring(n) end
+    end
+    if ent and type(ent.GetName) == "function" then
+        local n = _pcall1(ent.GetName, ent)
+        if n and n ~= "" then return tostring(n) end
+    end
+    return nil
+end
+
+local function _toToken(uiName)
+    if not uiName then return nil end
+    local t = tostring(uiName)
+    t = t:gsub("^@", "")       -- strip localization marker
+        :gsub("^ui_nm_", "")   -- strip ui key prefix
+    t = t:lower()
+    t = t:gsub("[%s_%-]+", "") -- remove spaces/underscores/hyphens
+    t = t:gsub("%d+$", "")     -- strip trailing digits (e.g., carrot002550 -> carrot)
+    return t
+end
+
+-- Feeding.lua (near the top, with your other helpers)
+local function _logEat(diet, uiName)
+    local mode = (CuraEqui.Config and CuraEqui.Config.Diet and CuraEqui.Config.Diet.strict) or "?"
+    if not diet then
+        System.LogAlways(("[CuraEqui][Diet] skip (unmapped, strict=%s) ui=%s")
+            :format(mode, tostring(uiName or "?")))
+        return
+    end
+    local tok  = diet.token or (uiName and _toToken(uiName)) or "?"
+    local src  = diet.source or "?"
+    local guid = diet.guid or "-"
+    local n    = tonumber(diet.nutrition) or 0
+    -- use %s everywhere so nils never explode; pre-coerce numbers
+    System.LogAlways(("[CuraEqui][Diet] eat token=%s src=%s n=%s guid=%s strict=%s")
+        :format(tostring(tok), tostring(src), tostring(n), tostring(guid), tostring(mode)))
+end
+
+-- STRICT resolver
+local function CE_ResolveDiet(ent)
+    local cfg  = CuraEqui.Config and CuraEqui.Config.Diet or {}
+    local mode = tostring(cfg.strict or "guid+token") -- "guid-only" | "guid+token" | "guid+token+keywords"
+    local Diet = CuraEqui.Diet or {}
+    local byG  = Diet.byGuid or {}
+    local byT  = Diet.byToken or {}
+
+    -- 1) GUID
+    local guid = _getGuid(ent)
+    if guid and byG[guid] then
+        local r = byG[guid]
+        return { source = "guid", guid = guid, token = r.token, nutrition = r.nutrition }
+    end
+
+    -- 2) Token (exact, no substrings)
+    if mode ~= "guid-only" then
+        local token = _toToken(_getUIName(ent))
+        if token and byT[token] then
+            local r = byT[token]
+            return { source = "token", guid = r.guid, token = token, nutrition = r.nutrition }
+        end
+    end
+
+    -- 3) Optional keyword fallback (dev convenience)
+    if mode == "guid+token+keywords" then
+        local ui  = _getUIName(ent) or ""
+        local s   = string.lower(ui)
+        local kws = cfg.allowKeywords or { "apple", "bread", "carrot", "cabbage" }
+        for i = 1, #kws do
+            if s:find(kws[i], 1, true) then
+                return {
+                    source = "keyword",
+                    guid = guid,
+                    token = _toToken(ui),
+                    nutrition = tonumber(cfg
+                        .keywordNutrition) or 10
+                }
+            end
+        end
+    end
+
+    -- 4) Unmapped (log once per key)
+    local seen = CuraEqui.Diet and CuraEqui.Diet._unmappedSeen
+    local token = _toToken(_getUIName(ent))
+    local k = guid or ("token:" .. (token or "?"))
+    if seen and not seen[k] then
+        seen[k] = true
+        System.LogAlways(("[CuraEqui][Diet] unmapped: guid=%s token=%s ui=%s")
+            :format(tostring(guid), tostring(token), tostring(_getUIName(ent))))
+        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.enabled
+            and CuraEqui.Debug and CuraEqui.Debug.ShowHUDLine then
+            CuraEqui.Debug.ShowHUDLine(("Unmapped food: %s"):format(token or "?"), 1400)
+        end
+    end
+    return nil
+end
+
 -- ------------------------------------------------------------
 -- Inventory close arming (one removal window)
 -- ------------------------------------------------------------
@@ -267,7 +378,7 @@ local function CE_ConsumeAfterDelay(ent, diet, label)
     local msg       = (F and F.toastOnEat) or "@curaequi_horse_munch"
     local toastMs   = (F and F.toastMs) or 1800
     local toastPrio = (F and F.toastPrio) or 0
-    local toastLane = (F and F.toastLane) or "tutorial"      -- "tutorial" (tiny right) | "notification" (center)
+    local toastLane = (F and F.toastLane) or "tutorial" -- "tutorial" (tiny right) | "notification" (center)
     local sfxId     = F and F.munchSfx
 
     -- single place that actually consumes + feedback
@@ -288,6 +399,7 @@ local function CE_ConsumeAfterDelay(ent, diet, label)
             if not ok and g_localActor then ok = CuraEqui.Audio.PlayAtEntity(sfxId, g_localActor) end
             if not ok and ent then ok = CuraEqui.Audio.PlayAtEntity(sfxId, ent) end
         end
+
         return CuraEqui._ApplyNutrition and CuraEqui._ApplyNutrition(diet, diet.token or label or "?")
     end
 
@@ -334,20 +446,25 @@ local function _scan_once()
                 :format(tostring(ent.id), tostring(name), tostring(guid), tostring(className)))
 
             -- Diet: prefer GUID, then byClass table (if provided), then keyword fallback (test)
-            local diet = (guid and CuraEqui.Diet and CuraEqui.Diet.byGuid and CuraEqui.Diet.byGuid[guid])
-                or (className and CuraEqui.Diet and CuraEqui.Diet.byClass and CuraEqui.Diet.byClass[className])
-                or nil
+            local uiName = _getUIName(ent)
+            local diet = CE_ResolveDiet(ent)
 
-            if not diet and name then
+            local mode = (CuraEqui.Config and CuraEqui.Config.Diet and CuraEqui.Config.Diet.strict) or "guid+token"
+
+            -- Diet: only run when strict allows keywords
+            if (not diet) and name and (mode == "guid+token+keywords") then
                 local s = string.lower(name)
                 for i = 1, #ALLOW_KWS do
                     if s:find(ALLOW_KWS[i], 1, true) then
                         System.LogAlways("[CuraEqui][Scan] keyword-allow → edible (test)")
-                        diet = { nutrition = KW_NUTRITION, token = name }
+                        diet = { nutrition = KW_NUTRITION, token = _toToken(name) }
                         break
                     end
                 end
             end
+
+            -- Diet: see what path wins
+            _logEat(diet, uiName)
 
             if diet then
                 if CuraEqui._scanToken ~= CuraEqui._armToken or not CuraEqui._scanActive then

@@ -57,3 +57,39 @@ function CuraEqui.Debug.SetSated(sec)
     S.satedUntil = now + add
     System.LogAlways("[CuraEqui][DBG] sated set to +" .. tostring(add) .. "s")
 end
+
+function CuraEqui.Debug.DietBind(key, nutrition)
+    local D = CuraEqui.Diet or {}; if not D then return end
+    nutrition = tonumber(nutrition) or 10
+    key = tostring(key or "")
+    if key:find("%-") then
+        -- looks like a GUID
+        D.byGuid[key] = D.byGuid[key] or { token = "dev" }
+        D.byGuid[key].nutrition = nutrition
+        System.LogAlways(("[CuraEqui][Diet][DEV] bind GUID %s → %d"):format(key, nutrition))
+    else
+        local token = string.lower(key)
+        D.byToken[token] = D.byToken[token] or { guid = nil }
+        D.byToken[token].nutrition = nutrition
+        System.LogAlways(("[CuraEqui][Diet][DEV] bind token %s → %d"):format(token, nutrition))
+    end
+end
+
+function CuraEqui.Debug.DietLookup(entOrKey)
+    local D = CuraEqui.Diet or {}; if not D then return end
+    if type(entOrKey) == "userdata" then
+        local diet = pcall and (CE_ResolveDiet and CE_ResolveDiet(entOrKey))
+        System.LogAlways("[CuraEqui][Diet] resolve → " ..
+            tostring(diet and
+                (diet.source .. " " .. (diet.token or "?") .. " " .. (diet.guid or "-") .. " n=" .. diet.nutrition) or
+                "nil"))
+    else
+        local key = tostring(entOrKey or "")
+        local row = D.byGuid[key] or D.byToken[string.lower(key)]
+        if row then
+            System.LogAlways(("[CuraEqui][Diet] lookup %s → n=%s"):format(key, tostring(row.nutrition)))
+        else
+            System.LogAlways(("[CuraEqui][Diet] lookup %s → nil"):format(key))
+        end
+    end
+end

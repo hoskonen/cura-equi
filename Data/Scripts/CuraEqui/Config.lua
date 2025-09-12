@@ -10,18 +10,22 @@ CuraEqui.Config = {
     },
 
     Hunger = {
-        hungerMax   = 100,
-        hungerStart = 30,
-        tickSec     = 10,
-        ratePerMin  = 1.0,  -- hunger per minute
-        ratePerKm   = 15.0, -- hunger per kilometer
-        debuffAt    = 70,
+        hungerMax            = 100,
+        hungerStart          = 30,
+        tickSec              = 10,
+        ratePerMin           = 1.0,  -- hunger per minute
+        ratePerKm            = 15.0, -- hunger per kilometer
+        debuffAt             = 70,
+        satedSecPerNutrition = 6,    -- x per nutrition
+        satedCapSec          = 600,  -- 10 min max
     },
 
     Diet = {
-        denyKeywords     = { "sword", "mace", "axe", "arrow", "meat_raw", "spoiled", "quest" },
-        allowKeywords    = { "ui_nm_", "apple", "bread", "carrot" },
-        keywordNutrition = 10
+        strict               = "guid+token", -- "guid-only" | "guid+token" | "guid+token+keywords"
+        allowKeywordFallback = false,        -- set false to require explicit map from DietData.lua
+        allowKeywords        = { "ui_nm_", "apple", "bread", "carrot" },
+        denyKeywords         = { "sword", "mace", "axe", "arrow", "meat_raw", "spoiled", "quest" },
+        keywordNutrition     = 10
     },
 
     HUD = {
@@ -47,8 +51,8 @@ CuraEqui.Config = {
         }
     },
     FeedScan = {
-        radius                 = 3.0,
-        windowSec              = 8.0,
+        radius                 = 2.0,
+        windowSec              = 5.0,
         tickMs                 = 250,
         groundProbe            = true,
         groundOffsetDown       = 1.2,   -- meters below mouth to sample

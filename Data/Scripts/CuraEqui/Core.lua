@@ -1,12 +1,13 @@
 -- Scripts/CuraEqui/Core.lua
 CuraEqui                     = CuraEqui or {}
-CuraEqui.VERSION             = "0.1.0"
+CuraEqui.VERSION             = "0.2.0"
 CuraEqui.state               = CuraEqui.state or { hungerTimer = nil, pausedForSleep = false, started = false }
 
 -- Safe config (defaults if Config.lua not loaded yet)
 local C                      = CuraEqui.Config or {
-    Debug = { enabled = true, distanceTrace = true, distanceTraceStepM = 100.0 },
+    Debug  = { enabled = true, distanceTrace = true, distanceTraceStepM = 100.0, hud = { enabled = false, refresh = 1200 } },
     Hunger = { hungerMax = 100, hungerStart = 30, tickSec = 10, ratePerMin = 1.0, ratePerKm = 15.0, debuffAt = 70 },
+    Diet   = { strict = "guid+token", allowKeywords = { "ui_nm_", "apple", "bread", "carrot" }, keywordNutrition = 10 },
 }
 
 -- Wire flags/tunables
@@ -23,89 +24,96 @@ CuraEqui.HorseCfg            = {
     debuffAt    = C.Hunger.debuffAt,
 }
 
-CuraEqui.Diet                = CuraEqui.Diet or {}
-CuraEqui.Diet.aliasByLabel   = CuraEqui.Diet.aliasByLabel or {}
-
-function CuraEqui.Feed_Bind(label, classGuid)
-    if not label or not classGuid then
-        System.LogAlways("[CuraEqui][Diet] Bind usage: lua CuraEqui.Feed_Bind('<labelFromLog>', '<guid-from-DietData>')")
-        return
-    end
-    local key = tostring(label):lower():gsub("%s+", "")
-    CuraEqui.Diet.aliasByLabel[key] = tostring(classGuid)
-    System.LogAlways(("[CuraEqui][Diet] bound %s → %s"):format(key, classGuid))
-end
-
+-- ---------------------------------------------------------------------------
+-- Logging helper (safe varargs)
+-- ---------------------------------------------------------------------------
 function CuraEqui.Log(tag, fmt, ...)
-    if CuraEqui.DEBUG then System.LogAlways(("[CuraEqui]%s %s"):format(tag and ("[" .. tag .. "]") or "", fmt:format(...))) end
+    if not CuraEqui.DEBUG then return end
+    local prefix = "[CuraEqui]" .. (tag and ("[" .. tostring(tag) .. "]") or "")
+    local ok, msg = pcall(string.format, tostring(fmt or ""), ...)
+    System.LogAlways(prefix .. " " .. (ok and msg or tostring(fmt)))
 end
 
--- Event glue (register once in init file or here)
-if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBound then
-    UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnGameplayStarted", "OnGameplayStarted")
-    UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
-    CuraEqui.__eventsBound = true
-end
+-- ---------------------------------------------------------------------------
+-- Runtime Diet maps (hydrated once from DietData.lua)
+-- ---------------------------------------------------------------------------
+CuraEqui.Diet = CuraEqui.Diet or {}
 
--- Core.lua (OnGameplayStarted)
-function CuraEqui.OnGameplayStarted()
-    CuraEqui.Initialize(true)
+do
+    CuraEqui.Config      = CuraEqui.Config or {}
+    CuraEqui.Config.Diet = CuraEqui.Config.Diet or {}
+    if not CuraEqui.Config.Diet.strict then
+        CuraEqui.Config.Diet.strict = "guid+token" -- "guid-only" | "guid+token" | "guid+token+keywords"
+    end
 
-    CuraEqui.Bootstrap("OnGameplayStarted")
+    CuraEqui.Diet.byGuid        = {}
+    CuraEqui.Diet.byToken       = {}
+    CuraEqui.Diet._unmappedSeen = {} -- once-per-session guard for unmapped logs
 
-    -- one-shot: log what APIs return
-    if CuraEqui.Horse.Debug_LogPlayerHorseHandles then CuraEqui.Horse.Debug_LogPlayerHorseHandles() end
+    local DD                    = CuraEqui.DietData or {}
 
-    -- staggered resolve attempts: 0ms, 300ms, 1200ms
-    local tries = { 0, 300, 1200 }
-    local function try(i)
-        local h = CuraEqui.Horse.Resolve()
-        if h then
-            System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
-                :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
-            CuraEqui.StopProbing(); CuraEqui.StartWatching()
-        else
-            if i < #tries then
-                Script.SetTimer(tries[i + 1], function() try(i + 1) end)
-            else
-                CuraEqui.StartProbing()
-            end -- light 10s probe until a horse appears
+    -- 1) byGuid ← source
+    if DD.byGuid then
+        for guid, row in pairs(DD.byGuid) do
+            CuraEqui.Diet.byGuid[tostring(guid)] = {
+                token     = row.token,
+                nutrition = tonumber(row.nutrition) or 0,
+            }
         end
     end
-    try(1)
-end
 
--- Sleep / fade handling (same idea as your UWH example)
-function CuraEqui.OnSetFaderState(_actionName, eventName, argTable)
-    -- argTable[1] usually "sleep" when starting sleep fade
-    if eventName == "OnSetFaderState" and argTable and argTable[1] == "sleep" then
-        CuraEqui.Log("poll", "Sleep starting → stopping hunger watcher")
-        CuraEqui.StopWatching()
-        CuraEqui.state.pausedForSleep = true
-    elseif eventName == "OnHide" then
-        -- UI fade finished (covers post-load and wake-up)
-        CuraEqui.Log("poll", "UI resumed → ensuring hunger watcher is running")
-        CuraEqui.Initialize(false)
-        CuraEqui.state.pausedForSleep = false
-    end
-end
-
--- Idempotent init that (re)starts polling
-function CuraEqui.Initialize(fullInit)
-    if fullInit and CuraEqui.state.started then
-        CuraEqui.Log("init", "Already initialized → skipping reload")
+    -- 2) byToken ← source (or fold from byGuid; choose highest nutrition on dup tokens)
+    if DD.byToken then
+        for token, row in pairs(DD.byToken) do
+            CuraEqui.Diet.byToken[string.lower(token)] = {
+                guid      = row.guid and tostring(row.guid) or nil,
+                nutrition = tonumber(row.nutrition) or 0,
+            }
+        end
     else
-        CuraEqui.state.started = true
+        for guid, row in pairs(DD.byGuid or {}) do
+            local t = row.token and string.lower(row.token) or nil
+            if t and t ~= "" then
+                local curr = CuraEqui.Diet.byToken[t]
+                if (not curr) or ((tonumber(row.nutrition) or 0) > (curr.nutrition or 0)) then
+                    CuraEqui.Diet.byToken[t] = {
+                        guid      = tostring(guid),
+                        nutrition = tonumber(row.nutrition) or 0,
+                    }
+                end
+            end
+        end
     end
 
-    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
-    if h then
-        CuraEqui.StartWatching()
+    local function _count(t)
+        local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n
+    end
+    System.LogAlways(("[CuraEqui][Diet] byGuid=%d byToken=%d ready")
+        :format(_count(CuraEqui.Diet.byGuid), _count(CuraEqui.Diet.byToken)))
+end
+
+-- (DEV) Optional quick binder: update runtime map without reload (GUID or token).
+function CuraEqui.Debug_DietBind(key, nutrition)
+    if not key then return end
+    nutrition = tonumber(nutrition) or 10
+    local k = tostring(key)
+    if k:find("%-") then
+        -- GUID
+        CuraEqui.Diet.byGuid[k] = CuraEqui.Diet.byGuid[k] or { token = "dev" }
+        CuraEqui.Diet.byGuid[k].nutrition = nutrition
+        System.LogAlways(("[CuraEqui][Diet][DEV] GUID %s → %d"):format(k, nutrition))
     else
-        CuraEqui.StartProbing() -- new (see below)
+        -- token
+        local t = string.lower(k:gsub("^@", ""):gsub("^ui_nm_", ""):gsub("%s+", ""))
+        CuraEqui.Diet.byToken[t] = CuraEqui.Diet.byToken[t] or { guid = nil }
+        CuraEqui.Diet.byToken[t].nutrition = nutrition
+        System.LogAlways(("[CuraEqui][Diet][DEV] token %s → %d"):format(t, nutrition))
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- GUID validator (player status vs horse debuffs)
+-- ---------------------------------------------------------------------------
 function CuraEqui.ValidateBuffGuids()
     local HUD = CuraEqui.Config and CuraEqui.Config.HUD or {}
     local seen, dups = {}, {}
@@ -127,22 +135,33 @@ function CuraEqui.ValidateBuffGuids()
     if #dups > 0 then
         System.LogAlways("[CuraEqui][Buff][ERROR] Duplicate GUIDs across player/horse tiers:")
         for _, d in ipairs(dups) do
-            System.LogAlways(("[CuraEqui][Buff][ERROR] %s used by %s and %s")
-                :format(d.guid, d.a, d.b))
+            System.LogAlways(("[CuraEqui][Buff][ERROR] %s used by %s and %s"):format(d.guid, d.a, d.b))
         end
     else
         System.LogAlways("[CuraEqui][Buff] GUIDs validated (no cross-channel duplicates).")
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- Lifecycle glue
+-- ---------------------------------------------------------------------------
+
+-- Event glue (register once)
+if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBound then
+    UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnGameplayStarted", "OnGameplayStarted")
+    UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
+    CuraEqui.__eventsBound = true
+end
+
 -- Call this whenever we think gameplay (re)started or a save was loaded.
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
-    -- kill any stale timers, then start fresh
+
+    -- kill any stale timers, then (re)start
     if CuraEqui.StopWatching then CuraEqui.StopWatching() end
     if CuraEqui.Initialize then CuraEqui.Initialize(false) end
 
-    -- force next tick to re-apply buffs (don’t rely on last-known)
+    -- re-apply buffs once (don’t rely on last-known)
     if CuraEqui.Buffs then CuraEqui.Buffs._lastPlayerUuid = nil end
     local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
     local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
@@ -155,4 +174,61 @@ function CuraEqui.Bootstrap(reason)
         end
         Script.SetTimerForFunction(200, "CuraEqui_HungerTick_Once")
     end
+end
+
+-- Idempotent init that (re)starts polling
+function CuraEqui.Initialize(fullInit)
+    if fullInit and CuraEqui.state.started then
+        CuraEqui.Log("init", "Already initialized → skipping reload")
+    else
+        CuraEqui.state.started = true
+    end
+
+    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    if h then
+        if CuraEqui.StartWatching then CuraEqui.StartWatching() end
+    else
+        if CuraEqui.StartProbing then CuraEqui.StartProbing() end -- light 10s probe until a horse appears
+    end
+end
+
+-- Sleep / fade handling (same idea as UWH)
+function CuraEqui.OnSetFaderState(_actionName, eventName, argTable)
+    -- argTable[1] usually "sleep" when starting sleep fade
+    if eventName == "OnSetFaderState" and argTable and argTable[1] == "sleep" then
+        CuraEqui.Log("poll", "Sleep starting → stopping hunger watcher")
+        if CuraEqui.StopWatching then CuraEqui.StopWatching() end
+        CuraEqui.state.pausedForSleep = true
+    elseif eventName == "OnHide" then
+        -- UI fade finished (covers post-load and wake-up)
+        CuraEqui.Log("poll", "UI resumed → ensuring hunger watcher is running")
+        CuraEqui.Initialize(false)
+        CuraEqui.state.pausedForSleep = false
+    end
+end
+
+-- Gameplay start entry
+function CuraEqui.OnGameplayStarted()
+    CuraEqui.ValidateBuffGuids()
+    CuraEqui.Initialize(true)
+    CuraEqui.Bootstrap("OnGameplayStarted")
+
+    -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
+    local tries = { 0, 300, 1200 }
+    local function try(i)
+        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        if h then
+            System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
+                :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
+            if CuraEqui.StopProbing then CuraEqui.StopProbing() end
+            if CuraEqui.StartWatching then CuraEqui.StartWatching() end
+        else
+            if i < #tries then
+                if Script and Script.SetTimer then Script.SetTimer(tries[i + 1], function() try(i + 1) end) end
+            else
+                if CuraEqui.StartProbing then CuraEqui.StartProbing() end
+            end
+        end
+    end
+    try(1)
 end

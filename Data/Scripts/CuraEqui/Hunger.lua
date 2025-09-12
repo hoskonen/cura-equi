@@ -261,3 +261,43 @@ function CuraEqui.StopWatching()
     end
     CuraEqui.Log("poll", "Hunger watcher stopped.")
 end
+
+-- Apply a consumed item’s nutrition to the tracked horse.
+-- diet = { nutrition:number, token?:string, source?: "guid"|"token"|"keyword", guid?:string }
+function CuraEqui._ApplyNutrition(diet, label)
+    if not diet then return false end
+    local n = tonumber(diet.nutrition) or 0
+    if n <= 0 then return false end
+
+    local horse = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+    local S     = horse and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(horse)
+    if not S then return false end
+
+    -- 1) hunger drop
+    local before = tonumber(S.hunger or 0) or 0
+    local after  = math.max(0, before - n)
+    S.hunger     = after
+
+    -- 2) sated timing
+    local H      = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+    local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local perSec = tonumber(H.satedSecPerNutrition or 6) -- dial
+    local capSec = tonumber(H.satedCapSec or 600)      -- dial
+    local addSec = n * perSec
+    local base   = math.max(now, tonumber(S.satedUntil or 0) or 0)
+    S.satedUntil = math.min(base + addSec, now + capSec)
+
+    -- 3) immediate buff refresh so the HUD flips right away
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+        pcall(CuraEqui.Buffs.SyncAll, horse, S)
+    end
+
+    -- 4) log (nil-safe)
+    CuraEqui.Log("diet",
+        "consume %s src=%s n=%d → hunger %d→%d | sated +%ds (cap %ds)",
+        tostring(label or diet.token or "?"),
+        tostring(diet.source or "?"),
+        n, before, after, addSec, capSec
+    )
+    return true
+end
