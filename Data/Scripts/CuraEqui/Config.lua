@@ -85,5 +85,10 @@ CuraEqui.Config = {
         toastMs                = 1800,       -- duration in ms for tutorial lane
         toastPrio              = 0,          -- priority for tutorial lane
         toastLane              = "tutorial", -- "infotext" | "tutorial" | "notification"
+    },
+    Audio = {
+        enabled       = true,
+        allowFallback = true,               -- keep legacy fallback if ATL fails
+        feedTrigger   = "a_o_horse_eating", -- ATL trigger name (atl_name in XML)
     }
 }

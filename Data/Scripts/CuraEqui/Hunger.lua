@@ -227,20 +227,21 @@ function CuraEqui._HungerTickBody()
 
     do
         local D = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud
-        if D and D.enabled and CuraEqui.Debug and CuraEqui.Debug.ShowHUDLine then
+        if D and D.enabled and CuraEqui.UI and CuraEqui.UI.Toast then
             local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
             local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
             if S then
                 local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
                 local tier   = (CuraEqui.Buffs and CuraEqui.Buffs._pickTierName)
                     and CuraEqui.Buffs._pickTierName(tonumber(S.hunger or 0) or 0, S.satedUntil) or "?"
-                local line   = string.format("Horse: %d%% | Sated %.0fs | %s",
+                local line   = string.format("Horse: %d%% · Sated %.0fs · %s",
                     math.floor(tonumber(S.hunger or 0) or 0),
                     math.max(0, (tonumber(S.satedUntil or 0) or 0) - now),
                     tier)
+
                 S._hudNextAt = S._hudNextAt or 0
                 if now >= S._hudNextAt then
-                    CuraEqui.Debug.ShowHUDLine(line, D.refresh or 1200, D.lane or "notification")
+                    CuraEqui.UI.Toast(line, D.refresh or 1200, 0, "CuraEqui_Status", D.lane or "notification")
                     S._hudNextAt = now + ((D.refresh or 1200) / 1000)
                 end
             end

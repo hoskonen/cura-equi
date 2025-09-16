@@ -10,16 +10,13 @@ local function _dedupe(text)
     return false
 end
 
--- SFX helper (unchanged concept)
-function CuraEqui.UI.PlaySfx(sfxEnum)
-    if not sfxId or sfxId == "" then return end
-    local pos = ent and ent:GetWorldPos() or System.GetEntityPos(g_localActor.id)
-    XGenAIModule.ProduceSound(sfxEnum, pos, 1.0)
-end
-
--- === Audio (ATL + fallback) ===
+-- Audio (ATL-first, tiny fallback)
 CuraEqui.Audio = CuraEqui.Audio or {}
 local _trigCache = {}
+
+local function _cfgAudio()
+    return (CuraEqui.Config and CuraEqui.Config.Audio) or {}
+end
 
 local function _lookupTriggerId(name)
     if not name or name == "" then return 0 end
@@ -29,18 +26,18 @@ local function _lookupTriggerId(name)
         id = AudioUtils.LookupTriggerID(name) or 0
     end
     _trigCache[name] = id
-    if id == 0 then
-        System.LogAlways("[CuraEqui][Audio] trigger not found: " .. tostring(name))
-    end
+    if id == 0 then System.LogAlways("[CuraEqui][Audio] trigger not found: " .. tostring(name)) end
     return id
 end
 
--- Prefer ATL: attach to entity’s default proxy so sound follows it.
-function CuraEqui.Audio.PlayAtEntity(triggerOrEventName, ent)
+-- Play ATL trigger on an entity so the sound follows it
+function CuraEqui.Audio.PlayAtEntity(triggerName, ent)
+    local C = _cfgAudio()
+    if C.enabled == false then return false end
     if not ent then return false end
 
-    -- 1) ATL trigger route
-    local trigId = _lookupTriggerId(triggerOrEventName)
+    -- 1) ATL route
+    local trigId = _lookupTriggerId(triggerName)
     if trigId ~= 0 and ent.ExecuteAudioTrigger and ent.GetDefaultAuxAudioProxyID then
         local ok = pcall(function()
             ent:ExecuteAudioTrigger(trigId, ent:GetDefaultAuxAudioProxyID())
@@ -48,12 +45,11 @@ function CuraEqui.Audio.PlayAtEntity(triggerOrEventName, ent)
         if ok then return true end
     end
 
-    -- 2) Fallback: legacy PlaySoundEvent (as seen in Lockpickable)
-    if ent.PlaySoundEvent then
-        local sndFlags = _G.SOUND_DEFAULT_3D or 0
-        local fwd = (ent.GetDirectionVector and ent:GetDirectionVector(1)) or g_Vectors.v010 or { x = 0, y = 1, z = 0 }
+    -- 2) Optional legacy route (if ATL unavailable on this entity/build)
+    if C.allowFallback and ent.PlaySoundEvent then
         local ok = pcall(function()
-            ent:PlaySoundEvent(tostring(triggerOrEventName), g_Vectors.v000 or { x = 0, y = 0, z = 0 }, fwd, sndFlags,
+            ent:PlaySoundEvent(tostring(triggerName), g_Vectors.v000 or { x = 0, y = 0, z = 0 },
+                g_Vectors.v010 or { x = 0, y = 1, z = 0 }, _G.SOUND_DEFAULT_3D or 0,
                 _G.SOUND_SEMANTIC_MECHANIC_ENTITY or 0)
         end)
         if ok then return true end
@@ -62,24 +58,19 @@ function CuraEqui.Audio.PlayAtEntity(triggerOrEventName, ent)
     return false
 end
 
--- Optional: AI hearing ping (not guaranteed audible to player)
-function CuraEqui.Audio.ProduceAIsound(soundEnum, pos, mult)
-    if not (XGenAIModule and XGenAIModule.ProduceSound) then return false end
-    local p = pos or (g_localActor and g_localActor:GetWorldPos()) or { x = 0, y = 0, z = 0 }
-    local m = tonumber(mult or 1.0) or 1.0
-    local ok = pcall(function() XGenAIModule.ProduceSound(soundEnum, p, m) end)
-    return ok and true or false
-end
-
--- Debug helpers: try names on the fly
-function CuraEqui.Audio.TestOnHorse(name)
+-- Convenience
+function CuraEqui.Audio.PlayOnHorse(triggerName)
     local horse = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
-    return CuraEqui.Audio.PlayAtEntity(name, horse or g_localActor)
+    return CuraEqui.Audio.PlayAtEntity(triggerName, horse or g_localActor)
 end
 
-function CuraEqui.Audio.TestOnPlayer(name)
-    return CuraEqui.Audio.PlayAtEntity(name, g_localActor)
+function CuraEqui.Audio.PlayOnPlayer(triggerName)
+    return CuraEqui.Audio.PlayAtEntity(triggerName, g_localActor)
 end
+
+-- Debug quick-tests from console:
+--   lua CuraEqui.Audio.PlayOnHorse("a_o_horse_eating")
+--   lua CuraEqui.Audio.PlayOnHorse("special_horse_competition")
 
 -- ── config helpers ──────────────────────────────────────────────────────────
 local function _cfg()

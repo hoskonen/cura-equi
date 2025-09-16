@@ -391,13 +391,12 @@ local function CE_ConsumeAfterDelay(ent, diet, label)
                 CuraEqui.UI.Toast(msg, toastMs, toastPrio, "CuraEquiFeed", toastLane)
             end)
         end
-        -- Prefer playing at the horse (moves with it); fallback to player; finally the food's last pos
-        if sfxId and sfxId ~= "" and CuraEqui.Audio then
-            local horse = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
-            local ok = false
-            if horse then ok = CuraEqui.Audio.PlayAtEntity(sfxId, horse) end
-            if not ok and g_localActor then ok = CuraEqui.Audio.PlayAtEntity(sfxId, g_localActor) end
-            if not ok and ent then ok = CuraEqui.Audio.PlayAtEntity(sfxId, ent) end
+        do
+            local A    = CuraEqui.Config and CuraEqui.Config.Audio
+            local trig = A and A.feedTrigger
+            if trig and CuraEqui.Audio and CuraEqui.Audio.PlayOnHorse then
+                CuraEqui.Audio.PlayOnHorse(trig)
+            end
         end
 
         return CuraEqui._ApplyNutrition and CuraEqui._ApplyNutrition(diet, diet.token or label or "?")
