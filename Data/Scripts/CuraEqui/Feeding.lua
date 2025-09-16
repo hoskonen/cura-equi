@@ -379,8 +379,6 @@ local function CE_ConsumeAfterDelay(ent, diet, label)
     local toastMs   = (F and F.toastMs) or 1800
     local toastPrio = (F and F.toastPrio) or 0
     local toastLane = (F and F.toastLane) or "tutorial" -- "tutorial" (tiny right) | "notification" (center)
-    local sfxId     = F and F.munchSfx
-
     -- single place that actually consumes + feedback
     local function doConsume()
         -- delete the world drop
@@ -394,8 +392,18 @@ local function CE_ConsumeAfterDelay(ent, diet, label)
         do
             local A    = CuraEqui.Config and CuraEqui.Config.Audio
             local trig = A and A.feedTrigger
-            if trig and CuraEqui.Audio and CuraEqui.Audio.PlayOnHorse then
-                CuraEqui.Audio.PlayOnHorse(trig)
+            if trig and CuraEqui.Audio then
+                -- Try preload+play on the player (closest to camera → most audible)
+                local ok = false
+                if CuraEqui.Audio.PreloadAndPlayAtEntity then
+                    ok = CuraEqui.Audio.PreloadAndPlayAtEntity(trig, g_localActor) -- note the namespace
+                end
+                if (not ok) and CuraEqui.Audio.PlayOnPlayer then
+                    ok = CuraEqui.Audio.PlayOnPlayer(trig) -- fallback without preload
+                end
+                if (not ok) and CuraEqui.Debug and CuraEqui.Debug.ShowHUDLine then
+                    CuraEqui.Debug.ShowHUDLine("Horse munch: audio failed", 1000, "infotext", 0, "CuraEqui_AudioWarn")
+                end
             end
         end
 

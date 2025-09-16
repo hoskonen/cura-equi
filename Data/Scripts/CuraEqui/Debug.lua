@@ -30,18 +30,6 @@ function CuraEqui.Debug_PingTick()
             tonumber(S and S.totalDist or 0.0)))
 end
 
--- function CuraEqui.Debug.ShowHUDLine(text, ms)
---     local hud  = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud or {}
---     local dur  = tonumber(ms) or tonumber(hud.refresh) or tonumber(hud.refreshMs) or 1200
---     local id   = hud.id or "CuraEqui_DebugHUD"
---     local lane = hud.lane or "notification"
---     if CuraEqui.UI and CuraEqui.UI.Toast then
---         CuraEqui.UI.Toast(tostring(text or ""), dur, 999, id, lane)
---     elseif Game and Game.SendInfoText then
---         Game.SendInfoText(tostring(text or ""), false, "", dur / 1000)
---     end
--- end
-
 -- Central HUD emitter: respects Config.Debug.hud.{lane,refresh,id}
 CuraEqui.Debug = CuraEqui.Debug or {}
 function CuraEqui.Debug.ShowHUDLine(text, ms, lane, prio, id)
@@ -124,4 +112,16 @@ function CuraEqui.Debug.DietLookup(entOrKey)
             System.LogAlways(("[CuraEqui][Diet] lookup %s → nil"):format(key))
         end
     end
+end
+
+function CuraEqui.Debug_EnableHungerTrace(enabled, everyNTicks)
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    D.hungerTrace = (enabled ~= false)
+    D.hungerTraceEvery = tonumber(everyNTicks) or D.hungerTraceEvery or 1
+    -- reset per-horse counters so schedules align immediately
+    for _, S in pairs(CuraEqui.HorseState or {}) do
+        S._dbgHungerTick = 0
+    end
+    System.LogAlways(("[CuraEqui][Debug] hunger trace %s (every=%d ticks)")
+        :format(D.hungerTrace and "ON" or "OFF", D.hungerTraceEvery or 1))
 end

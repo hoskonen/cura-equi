@@ -10,8 +10,10 @@ CuraEqui.Config = {
     Debug = {
         enabled = true,
         distanceTrace = true,
-        distanceTraceStepM = 100.0,
-        hud = { enabled = true, refresh = 1200, lane = "notification", id = "CuraEqui_DebugHUD" }
+        distanceTraceStepM = 500.0,
+        hud = { enabled = true, refresh = 1200, lane = "notification", id = "CuraEqui_DebugHUD" },
+        hungerTrace = true,   -- log a compact hunger line each tick
+        hungerTraceEvery = 1, -- log every N ticks (e.g., 3 = once every 3 ticks)
     },
 
     Hunger = {
@@ -20,17 +22,14 @@ CuraEqui.Config = {
         hungerMax            = 100,
         debuffAt             = 70,
         -- Rates
-        ratePerMinIdle       = 0.5, -- horse idle (includes unmounted or mounted-but-standing)
+        ratePerMinIdle       = 0.3, -- horse idle (includes unmounted or mounted-but-standing)
         ratePerMinMounted    = 1.0, -- horse mounted & moving: time drift while ridden
         ratePerKmMounted     = 4.0, -- extra drain per ridden kilometer
         speedIdleMps         = 0.2, -- below this → idle
         -- Sated
         satedDrainMul        = 0.75,
-        satedSecPerNutrition = 6,    -- x per nutrition
-        satedCapSec          = 600,  -- 10 min max
-        -- Legacy - To Be Removed
-        ratePerMin           = 1.0,  -- hunger per minute
-        ratePerKm            = 15.0, -- hunger per kilometer
+        satedSecPerNutrition = 6,   -- x per nutrition
+        satedCapSec          = 600, -- 10 min max
     },
 
     Diet = {
@@ -77,7 +76,6 @@ CuraEqui.Config = {
         postCloseWindowSec     = 10.0,  -- scan window after close
         postCloseDelayMs       = 2000,  -- how long after the inventory closes before the scan starts at all
         landDelayMs            = 1000,  -- how long after detecting a valid item before the delete+consume actually happens
-        munchSfx               = "a_o_horse_eating",
         -- Toasts
         toastOnStart           = "@curaequi_drop_food",
         toastOnEat             = "@curaequi_horse_munch",
@@ -88,7 +86,11 @@ CuraEqui.Config = {
     },
     Audio = {
         enabled       = true,
-        allowFallback = true,               -- keep legacy fallback if ATL fails
-        feedTrigger   = "a_o_horse_eating", -- ATL trigger name (atl_name in XML)
+        allowFallback = true,                     -- keep legacy fallback if ATL fails
+        feedTrigger   = "a_o_horse_eating",       -- ATL trigger name (atl_name in XML)
+        feedTrigger1  = "a_o_horse_eating_grass", -- ATL trigger name (atl_name in XML)
+        feedTrigger3  = "a_o_horse_snort2",       -- ATL trigger name (atl_name in XML)
+        feedTrigger4  = "a_o_horse_snort3",       -- ATL trigger name (atl_name in XML)
+        pathHints     = { "horse" },              -- NEW: folders to try as prefixes
     }
 }

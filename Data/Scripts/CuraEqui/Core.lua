@@ -6,7 +6,18 @@ CuraEqui.state               = CuraEqui.state or { hungerTimer = nil, pausedForS
 -- Safe config (defaults if Config.lua not loaded yet)
 local C                      = CuraEqui.Config or {
     Debug  = { enabled = true, distanceTrace = true, distanceTraceStepM = 100.0, hud = { enabled = false, refresh = 1200 } },
-    Hunger = { hungerMax = 100, hungerStart = 30, tickSec = 10, ratePerMin = 1.0, ratePerKm = 15.0, debuffAt = 70 },
+    Hunger = {
+        hungerMax         = 100,
+        hungerStart       = 30,
+        tickSec           = 10,
+        -- NEW dials (no legacy names here):
+        ratePerMinIdle    = 0.5,   -- idle (unmounted or mounted-but-standing)
+        ratePerMinMounted = 1.0,   -- mounted & moving: time drift
+        ratePerKmMounted  = 4.0,   -- mounted & moving: per-km
+        speedIdleMps      = 0.2,   -- movement threshold
+        satedDrainMul     = 0.75,  -- Sated multiplier
+        debuffAt          = 70,
+    },
     Diet   = { strict = "guid+token", allowKeywords = { "ui_nm_", "apple", "bread", "carrot" }, keywordNutrition = 10 },
 }
 
@@ -15,12 +26,11 @@ CuraEqui.DEBUG               = C.Debug.enabled
 CuraEqui.DEBUG_DISTANCE      = C.Debug.distanceTrace
 CuraEqui.DEBUG_DISTANCE_STEP = C.Debug.distanceTraceStepM
 
+-- Keep HorseCfg minimal (only what scheduler/clamp needs)
 CuraEqui.HorseCfg            = {
     hungerMax   = C.Hunger.hungerMax,
     hungerStart = C.Hunger.hungerStart,
     tickSec     = C.Hunger.tickSec,
-    ratePerMin  = C.Hunger.ratePerMin,
-    ratePerKm   = C.Hunger.ratePerKm,
     debuffAt    = C.Hunger.debuffAt,
 }
 

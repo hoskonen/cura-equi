@@ -7,6 +7,7 @@ Q("init")
 
 -- Config first (Core reads it)
 Script.ReloadScript("Scripts/CuraEqui/Config.lua")
+Script.ReloadScript("Scripts/CuraEqui/Audio.lua")
 Script.ReloadScript("Scripts/CuraEqui/DietData.lua")
 Script.ReloadScript("Scripts/CuraEqui/Core.lua")
 

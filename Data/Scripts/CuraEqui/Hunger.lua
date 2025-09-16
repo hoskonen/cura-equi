@@ -43,9 +43,9 @@ local function _H()
     local H = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
     return {
         tickSec       = tonumber(H.tickSec) or 10,
-        rateIdle      = tonumber(H.ratePerMinIdle or H.ratePerMin) or 0.5,    -- fallback -> ratePerMin
-        rateMounted   = tonumber(H.ratePerMinMounted or H.ratePerMin) or 1.0, -- fallback -> ratePerMin
-        rateKmMounted = tonumber(H.ratePerKmMounted or H.ratePerKm) or 4.0,   -- fallback -> ratePerKm
+        rateIdle      = tonumber(H.ratePerMinIdle or H.ratePerMin) or 0.5,
+        rateMounted   = tonumber(H.ratePerMinMounted or H.ratePerMinActive or H.ratePerMin) or 1.0,
+        rateKmMounted = tonumber(H.ratePerKmMounted or H.ratePerKm) or 4.0,
         speedIdle     = tonumber(H.speedIdleMps) or 0.2,
         satedMul      = tonumber(H.satedDrainMul) or 0.75,
     }
@@ -214,6 +214,27 @@ function CuraEqui._HungerTickBody()
         S._lastDistDrain = distDrain
         S._lastDrainMul  = mul
         S._lastSpeedMps  = speed
+
+        -- dev console trace (compact)
+        do
+            local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+            if D.hungerTrace then
+                S._dbgHungerTick = (S._dbgHungerTick or 0) + 1
+                local N = tonumber(D.hungerTraceEvery) or 1
+                if (S._dbgHungerTick % N) == 0 then
+                    local state = idle and "idle" or "mounted"
+                    local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                    local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+                    System.LogAlways(("[CuraEqui][Hunger] %s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f mul=%.2f " ..
+                            "total=+%.2f → %d→%d (sated %.0fs)")
+                        :format(state, speed, dt, distM, timeDrain, distDrain, mul, totalDrain,
+                            math.floor(before), math.floor(after), remS))
+                end
+            end
+        end
+
+        -- consume this tick's distance so next tick doesn't double-count
+        S.dist = 0
     end
 
 

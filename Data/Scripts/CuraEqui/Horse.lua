@@ -3,7 +3,7 @@ local QH = function(fmt, ...) CuraEqui.Log("Horse", fmt, ...) end
 CuraEqui.Horse = CuraEqui.Horse or { playerHorseId = nil }
 CuraEqui.HorseState = CuraEqui.HorseState or {}
 CuraEqui.HorseCfg = CuraEqui.HorseCfg or
-    { hungerMax = 100, hungerStart = 30, tickSec = 10, ratePerMin = 1.0, ratePerKm = 15.0, debuffAt = 70 }
+    { hungerMax = 100, hungerStart = 30, tickSec = 10, debuffAt = 70 }
 
 function CuraEqui.Horse.Debug_LogPlayerHorseHandles()
     local function log(label, ok, val)
