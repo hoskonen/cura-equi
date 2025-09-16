@@ -177,33 +177,34 @@ function CuraEqui._HungerTickBody()
 
     -- idle vs mounted-moving
     do
-        local C       = _H()
+        local C          = _H()
 
-        local dt      = C.tickSec
-        local distM   = (S._posSrc and (S.dist or 0)) or 0
-        local speed   = distM / math.max(dt, 0.001)
-
-        -- mounted?
-        local mounted = false
-        pcall(function()
-            mounted = player and player.actor and player.actor.IsMounted and player.actor:IsMounted() or false
-        end)
+        local dt         = (CuraEqui.HorseCfg.tickSec or C.tickSec)
+        local distM      = (S._posSrc and (S.dist or 0)) or 0
+        local speed      = distM / math.max(dt, 0.001)
 
         -- idle if not mounted OR mounted but below movement threshold
         local idle       = (not mounted) or (speed < C.speedIdle)
 
         -- time drift
-        local timePerMin = idle and C.rateIdle or C.rateMounted
+        local timePerMin = (mounted and (idle and C.rateIdle or C.rateMounted)) or 0
         local timeDrain  = timePerMin * (dt / 60.0)
 
         -- per-km only when mounted-moving
         local distDrain  = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
 
+        -- grazing recovery when unmounted & idle (negative reduces hunger)
+        local Hcfg       = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+        local gP         = tonumber(Hcfg.grazePerMinIdleUnmtd) or 0
+        local gM         = tonumber(Hcfg.grazeSatedMul) or 1.0
+        local graze      = ((not mounted) and idle) and (gP * (dt / 60.0) * gM) or 0
+
         -- sated multiplier
         local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
         local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
 
-        local totalDrain = (timeDrain + distDrain) * mul
+        -- By design, sated does NOT change grazing by default → apply mul to drains only
+        local totalDrain = (timeDrain + distDrain) * mul + graze
 
         local before     = tonumber(S.hunger or 0) or 0
         local after      = U.clamp(before + totalDrain, 0, CuraEqui.HorseCfg.hungerMax or 100)
@@ -214,6 +215,7 @@ function CuraEqui._HungerTickBody()
         S._lastDistDrain = distDrain
         S._lastDrainMul  = mul
         S._lastSpeedMps  = speed
+        S._lastGraze     = graze
 
         -- dev console trace (compact)
         do
@@ -225,9 +227,9 @@ function CuraEqui._HungerTickBody()
                     local state = idle and "idle" or "mounted"
                     local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
                     local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                    System.LogAlways(("[CuraEqui][Hunger] %s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f mul=%.2f " ..
+                    System.LogAlways(("[CuraEqui][Hunger] %s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f " ..
                             "total=+%.2f → %d→%d (sated %.0fs)")
-                        :format(state, speed, dt, distM, timeDrain, distDrain, mul, totalDrain,
+                        :format(state, speed, dt, distM, timeDrain, distDrain, graze, mul, totalDrain,
                             math.floor(before), math.floor(after), remS))
                 end
             end
@@ -236,7 +238,6 @@ function CuraEqui._HungerTickBody()
         -- consume this tick's distance so next tick doesn't double-count
         S.dist = 0
     end
-
 
     do
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
