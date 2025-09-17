@@ -224,56 +224,71 @@ function Horse:OnInventoryClosed()
 
     local kws   = DCFG.allowKeywords or { "apple", "bread", "carrot" }
     local perKW = tonumber(DCFG.keywordNutrition or 10) or 10
-    local function nutrition_for(info)
+    -- 1) per-unit nutrition
+    local function per_unit_nutrition(info)
+        -- exact class mapping wins (if you add it), else keyword fallback
         local v = 0
         if info.classId and classNut[info.classId] then v = classNut[info.classId] end
         if v == 0 then
             local name = tostring(info.uiName or info.dbName or ""):lower()
             for _, kw in ipairs(kws) do
-                kw = tostring(kw):lower()
-                if kw ~= "" and name:find(kw, 1, true) then
+                if name:find(tostring(kw):lower(), 1, true) then
                     v = perKW; break
                 end
             end
         end
-        return v
+        return v -- per *unit*
     end
 
-    local over          = (FCFG.overfeedPolicy or "allow")
-    local used, details = 0, {}
-    local consumed      = {} -- ← which picks actually contributed (for removal)
+    -- 2) plan how many UNITS to consume per WUID (respect need, qty)
+    local removePlan = {} -- map: wuidStr -> { wuid=id, units=N, label="Carrot", per=v }
+    local used = 0
 
     for _, info in ipairs(picks) do
         if need <= 0 then break end
-        local gain = nutrition_for(info)
-        if gain > 0 then
-            if gain > need and over == "skip" then
-                -- skip
-            else
-                local take = math.min(gain, need)
-                used = used + take
-                need = need - take
-                details[#details + 1] = string.format("%s +%d", info.uiName or info.dbName or "food", take)
-                consumed[#consumed + 1] = info -- ← mark one unit of this pick to remove
+        local per = per_unit_nutrition(info)
+        if per > 0 then
+            local maxUnitsFromThis = tonumber(info.qty or 1) or 1
+            -- how many units do we still need from this item?
+            local wantUnits = math.floor(need / per)
+            if (wantUnits * per) < need and (over == "allow") then
+                -- allow taking 1 extra unit to cover the remainder
+                wantUnits = wantUnits + 1
+            end
+            wantUnits = math.max(0, math.min(wantUnits, maxUnitsFromThis))
+            if wantUnits > 0 then
+                local wkey = info.wuidStr or tostring(info._wuid)
+                local rec  = removePlan[wkey]
+                if not rec then
+                    rec = { wuid = info._wuid, units = 0, label = (info.uiName or info.dbName or "food"), per = per }
+                    removePlan[wkey] = rec
+                end
+                rec.units = rec.units + wantUnits
+                local gain = wantUnits * per
+                used = used + gain
+                need = math.max(0, need - gain)
             end
         end
     end
 
+    -- 3) apply hunger
     if used > 0 then
         S.hunger = math.min(maxH, curH + used)
-        local msg = string.format("Fed %d item(s) (+%d).", #details, used)
+        -- details line like: "Carrot x2 (+20), Beet x1 (+8)"
+        local parts = {}
+        for _, rec in pairs(removePlan) do
+            parts[#parts + 1] = string.format("%s x%d (+%d)", rec.label, rec.units, rec.units * rec.per)
+        end
+        local msg = string.format("Fed %d type(s) (+%d).", #parts, used)
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
             CuraEqui.UI.Toast(msg, 2000, 0, "CuraEqui_Status", "center")
         end
-        System.LogAlways("[CuraEqui][Feed] " .. msg .. " details: " .. table.concat(details, ", "))
+        System.LogAlways("[CuraEqui][Feed] " .. msg .. " details: " .. table.concat(parts, ", "))
     else
-        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-            CuraEqui.UI.Toast("No edible items in selection.", 1600, 0, "CuraEqui_Status", "center")
-        end
-        return
+        -- unchanged “no edible items” toast
     end
 
-    -- Optional: real removal (1 unit per contributing pick)
+    -- 4) delete planned units (one call per WUID) — only if removeItems = true
     if FCFG.removeItems then
         local inv = (player and (player.inventory or (player.actor and player.actor.inventory))) or nil
         if not inv or not inv.DeleteItem then
@@ -281,10 +296,13 @@ function Horse:OnInventoryClosed()
             return
         end
         local removed, failed = 0, 0
-        for _, info in ipairs(consumed) do
-            local ok = pcall(inv.DeleteItem, inv, info._wuid, 1)
-            if ok then removed = removed + 1 else failed = failed + 1 end
+        for _, rec in pairs(removePlan) do
+            if rec.units and rec.units > 0 then
+                local ok = pcall(inv.DeleteItem, inv, rec.wuid, rec.units)
+                if ok then removed = removed + rec.units else failed = failed + rec.units end
+            end
         end
-        System.LogAlways(("[CuraEqui][Feed] Remove: %d ok, %d fail via inventory:DeleteItem"):format(removed, failed))
+        System.LogAlways(("[CuraEqui][Feed] Remove: %d unit(s) ok, %d fail via inventory:DeleteItem"):format(removed,
+            failed))
     end
 end
