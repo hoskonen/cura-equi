@@ -147,23 +147,110 @@ function CuraEqui.Horse.IsMounted()
     return (ok and v) and true or false
 end
 
--- Called once per chosen stack in the picker
+-- 1) collect picks
 function Horse:OnInventoryItemUsed(id)
     self._feedSel = self._feedSel or {}
     table.insert(self._feedSel, id)
-    System.LogAlways(("[CuraEqui][Feed] OnInventoryItemUsed id=%s"):format(tostring(id)))
+
+    -- optional debug: print a readable name if available
+    local readable = nil
+    pcall(function() readable = Framework and Framework.WUIDToMsg and Framework.WUIDToMsg(id) or nil end)
+    System.LogAlways(("[CuraEqui][Feed] OnInventoryItemUsed id=%s name=%s")
+        :format(tostring(id), tostring(readable)))
 end
 
--- Called when the picker closes (after all selections)
+-- 2) finalize on close (vanilla simulation)
 function Horse:OnInventoryClosed()
-    local picks = self._feedSel or {}
+    local picks   = self._feedSel or {}
     self._feedSel = nil
-    System.LogAlways(("[CuraEqui][Feed] OnInventoryClosed; %d item(s) picked"):format(#picks))
 
-    -- keep your existing post-close flow for now
-    if CuraEqui._InvClose_Disarm then CuraEqui._InvClose_Disarm("picker_used") end
-    if CuraEqui.Feed_StartScan then
-        CuraEqui.Feed_StartScan((CuraEqui.Config and CuraEqui.Config.FeedScan and CuraEqui.Config.FeedScan.postCloseWindowSec) or
-            10.0)
+    local CFG     = CuraEqui.Config or {}
+    local FCFG    = CFG.Feeding or {}
+    local DCFG    = CFG.Diet or {}
+
+    -- only run the vanilla path when selected
+    if (FCFG.style or "vanilla") ~= "vanilla" then
+        -- keep your existing post-close scan path for other styles
+        if CuraEqui._InvClose_Disarm then CuraEqui._InvClose_Disarm("picker_used") end
+        if CuraEqui.Feed_StartScan then
+            local post = (CFG.FeedScan and CFG.FeedScan.postCloseWindowSec) or 10.0
+            CuraEqui.Feed_StartScan(post)
+        end
+        return
     end
+
+    local hS = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self)
+    if not hS then
+        System.LogAlways("[CuraEqui][Feed] OnInventoryClosed: no horse state")
+        return
+    end
+
+    local hungerMax = CuraEqui.HorseCfg and (CuraEqui.HorseCfg.hungerMax or 100) or 100
+    local hungerNow = tonumber(hS.hunger or 0) or 0
+    local cap       = tonumber(FCFG.needCapPerFeed or 25) or 25
+    local need      = math.max(0, math.min(cap, hungerMax - hungerNow))
+    if need <= 0 then
+        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
+            CuraEqui.UI.Toast("Horse is full.", 1800, 0, "CuraEqui_Status", "center")
+        end
+        return
+    end
+
+    -- simple nutrition from Diet keywords using the readable WUID string
+    local kws     = DCFG.allowKeywords or { "apple", "bread", "carrot" }
+    local perKW   = tonumber(DCFG.keywordNutrition or 10) or 10
+    local used    = 0
+    local fedFrom = {}
+
+    local function nutrition_from_wuid(wuid)
+        local name = ""
+        pcall(function()
+            name = Framework and Framework.WUIDToMsg and (Framework.WUIDToMsg(wuid) or "") or ""
+        end)
+        name = tostring(name):lower()
+        for _, kw in ipairs(kws) do
+            kw = tostring(kw):lower()
+            if kw ~= "" and name:find(kw, 1, true) then
+                return perKW, kw
+            end
+        end
+        return 0, nil
+    end
+
+    -- Iterate selected items in order (no removal yet, just simulate)
+    local overPolicy = (FCFG.overfeedPolicy or "allow")
+    for _, wuid in ipairs(picks) do
+        if need <= 0 then break end
+        local gain, tag = nutrition_from_wuid(wuid)
+        if gain > 0 then
+            if gain > need and overPolicy == "skip" then
+                -- skip too-strong single items if policy demands
+            else
+                local take          = math.min(gain, need)
+                used                = used + take
+                need                = need - take
+                fedFrom[#fedFrom + 1] = { kw = tag or "food", val = take }
+            end
+        end
+    end
+
+    if used > 0 then
+        local newH  = math.min(hungerMax, hungerNow + used)
+        hS.hunger   = newH
+
+        -- toast + log
+        local parts = {}
+        for i, f in ipairs(fedFrom) do parts[#parts + 1] = string.format("%s +%d", f.kw, f.val) end
+        local msg = string.format("Fed %d item(s) (+%d).", #fedFrom, used)
+        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
+            CuraEqui.UI.Toast(msg, 2000, 0, "CuraEqui_Status", "center")
+        end
+        System.LogAlways("[CuraEqui][Feed] " .. msg .. " details: " .. table.concat(parts, ", "))
+    else
+        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
+            CuraEqui.UI.Toast("No edible items in selection.", 1800, 0, "CuraEqui_Status", "center")
+        end
+    end
+
+    -- NOTE: we did NOT remove items yet. That’s Phase 2 once we confirm removal API.
 end

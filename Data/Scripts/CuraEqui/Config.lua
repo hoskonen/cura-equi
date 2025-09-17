@@ -66,6 +66,12 @@ CuraEqui.Config = {
             critical = 90
         }
     },
+    Feeding = {
+        style = "vanilla",  -- "vanilla" (picker → instant feed), "experimental", "hybrid" (later)
+        needCapPerFeed = 25, -- max hunger you try to restore per feed action
+        overfeedPolicy = "allow", -- "allow" | "skip"  (what to do if a single item would overshoot need)
+        toastOnDone = true,
+    },
     FeedScan = {
         radius                 = 2.0,
         windowSec              = 5.0,
