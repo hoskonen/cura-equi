@@ -32,7 +32,7 @@ CuraEqui.Config = {
         satedSecPerNutrition = 6,    -- x per nutrition
         satedCapSec          = 600,  -- 10 min max
         -- Grazing
-        grazePerMinIdleUnmtd = -0.3, -- negative recovers while unmounted & idle
+        grazePerMinIdleUnmtd = -0.1, -- negative recovers while unmounted & idle
         grazeSatedMul        = 1.0,  -- sated multiplier applied to grazing
     },
 
