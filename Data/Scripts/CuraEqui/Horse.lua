@@ -146,3 +146,24 @@ function CuraEqui.Horse.IsMounted()
     end)
     return (ok and v) and true or false
 end
+
+-- Called once per chosen stack in the picker
+function Horse:OnInventoryItemUsed(id)
+    self._feedSel = self._feedSel or {}
+    table.insert(self._feedSel, id)
+    System.LogAlways(("[CuraEqui][Feed] OnInventoryItemUsed id=%s"):format(tostring(id)))
+end
+
+-- Called when the picker closes (after all selections)
+function Horse:OnInventoryClosed()
+    local picks = self._feedSel or {}
+    self._feedSel = nil
+    System.LogAlways(("[CuraEqui][Feed] OnInventoryClosed; %d item(s) picked"):format(#picks))
+
+    -- keep your existing post-close flow for now
+    if CuraEqui._InvClose_Disarm then CuraEqui._InvClose_Disarm("picker_used") end
+    if CuraEqui.Feed_StartScan then
+        CuraEqui.Feed_StartScan((CuraEqui.Config and CuraEqui.Config.FeedScan and CuraEqui.Config.FeedScan.postCloseWindowSec) or
+            10.0)
+    end
+end

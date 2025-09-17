@@ -524,6 +524,33 @@ function Horse:OnFeedHorse(user)
     local my = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
     if my and self and my.id == self.id then
         System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
+
+        -- Multi-select picker: vegetables only
+        do
+            -- accept both taxonomies you’ve seen in XMLs
+            local filter = "food.vegetable.*|food.vegetable.vegetable"
+
+            local opened = false
+            if user and user.actor and user.actor.OpenItemMultiselectionFilter then
+                opened = pcall(user.actor.OpenItemMultiselectionFilter, user.actor, self.id, filter)
+                System.LogAlways("[CuraEqui][Feed] OpenItemMultiselectionFilter → " ..
+                tostring(opened) .. " filter=" .. filter)
+            end
+
+            -- fallback: open general inventory if the API is missing
+            if not opened and UIAction and UIAction.CallFunction then
+                local ok = pcall(UIAction.CallFunction, "ApseInventoryList", -1, "fc_activate")
+                System.LogAlways("[CuraEqui][Feed] ApseInventoryList.fc_activate → " .. tostring(ok))
+            end
+
+            -- UX: center toast so player knows they can select multiple items
+            if CuraEqui.UI and CuraEqui.UI.Toast then
+                CuraEqui.UI.Toast("Pick vegetables to feed (you can select multiple).", 2200, 0, "CuraEqui_Status",
+                    "center")
+            end
+        end
+
+
         RegisterInventoryCloseHooks()
         if FEED_ARM_ON_CLOSE then
             CuraEqui._InvClose_ArmOnce(FEED_ARM_TIMEOUT)
@@ -533,6 +560,7 @@ function Horse:OnFeedHorse(user)
         else
             -- alternative mode: start scan immediately (no inv-close arm)
             CuraEqui.Feed_StartScan(FEED_WINDOW_SEC)
+            -- inside Horse:OnFeedHorse(user), after your "[CuraEqui][Feed] OnFeedHorse" log:
         end
     else
         System.LogAlways("[CuraEqui][Feed] blocked: not your horse")

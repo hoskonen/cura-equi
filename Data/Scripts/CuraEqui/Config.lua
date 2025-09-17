@@ -77,9 +77,10 @@ CuraEqui.Config = {
         armCooldownSec         = 10.0,  -- don’t re-arm too often
         armOnInventoryClose    = true,  -- start scan after inv closes
         armTimeoutSec          = 25.0,  -- give up if no close within this time
-        postCloseWindowSec     = 10.0,  -- scan window after close
+        openInventoryOnFeed    = true,  -- if true, pressing Feed opens inventory for you
+        postCloseWindowSec     = 5.0,   -- scan window after close
         postCloseDelayMs       = 2000,  -- how long after the inventory closes before the scan starts at all
-        landDelayMs            = 1000,  -- how long after detecting a valid item before the delete+consume actually happens
+        landDelayMs            = 2000,  -- how long after detecting a valid item before the delete+consume actually happens
         -- Toasts
         toastOnStart           = "@curaequi_drop_food",
         toastOnEat             = "@curaequi_horse_munch",

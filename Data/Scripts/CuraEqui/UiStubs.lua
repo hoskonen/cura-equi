@@ -107,3 +107,48 @@ end
 function UI.AnnounceInit()
     return UI.Toast("Cura Equi initialized", 1800, 0, "CuraEqui_Init", _cfg().laneDefault)
 end
+
+-- Scripts/CuraEqui/UiStubs.lua
+
+-- Open inventory using the Actor API:
+--   Actor:OpenInventory(entityId, mode, otherInventoryId, filter)
+-- We try Human first, then Actor, and probe a couple of common modes.
+function CuraEqui.UI.OpenInventoryActorAPI()
+    local function openWith(actor, entityId, mode, otherId, filter)
+        return pcall(function()
+            return actor:OpenInventory(entityId, mode, otherId, filter)
+        end)
+    end
+
+    local actor = (player and (player.human or player.actor)) or nil
+    local pid   = player and player.id
+    if not (actor and pid) then
+        System.LogAlways("[CuraEqui][UI] OpenInventoryActorAPI: no player/actor")
+        return false
+    end
+
+    -- Heuristics:
+    --  - mode 0: "default" (most builds)
+    --  - mode 1: alternate view (seen in some mods)
+    --  - otherInventoryId: 0 (none) for “just player inventory”
+    --  - filter: nil (no filter)
+    local modesToTry = { 0, 1 }
+    for i = 1, #modesToTry do
+        local m = modesToTry[i]
+        local ok, res = openWith(actor, pid, m, 0, nil)
+        if ok then
+            System.LogAlways(("[CuraEqui][UI] Actor:OpenInventory(pid=%s, mode=%d) → ok"):format(tostring(pid), m))
+            return true
+        end
+    end
+
+    -- As a last resort, try with a permissive filter (some builds expect it)
+    local ok, res = openWith(actor, pid, 0, 0, "*.*.*")
+    if ok then
+        System.LogAlways("[CuraEqui][UI] Actor:OpenInventory(..., mode=0, filter='*.*.*') → ok")
+        return true
+    end
+
+    System.LogAlways("[CuraEqui][UI] OpenInventoryActorAPI: all attempts failed")
+    return false
+end
