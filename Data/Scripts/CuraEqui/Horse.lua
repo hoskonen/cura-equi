@@ -132,3 +132,17 @@ function CuraEqui.HorseStateGet(horse)
     end
     return S
 end
+
+function CuraEqui.Horse.IsMounted()
+    local ok, v = pcall(function()
+        if player and player.human and player.human.IsMounted then
+            return player.human:IsMounted()
+        end
+        -- fallback if needed
+        if player and player.actor and player.actor.IsMounted then
+            return player.actor:IsMounted()
+        end
+        return false
+    end)
+    return (ok and v) and true or false
+end

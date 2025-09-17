@@ -1,8 +1,11 @@
--- Scripts/CuraEqui/Utils.lua
 CuraEqui = CuraEqui or {}
-local U = {}
+local U = CuraEqui.Utils or {}
 
-function U.clamp(x, lo, hi) return (x < lo) and lo or ((x > hi) and hi or x) end
+function U.clamp(x, lo, hi)
+    if x < lo then return lo end
+    if x > hi then return hi end
+    return x
+end
 
 function U.vlen2(a, b)
     if not (a and b) then return 0 end

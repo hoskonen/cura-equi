@@ -1,11 +1,16 @@
 -- Scripts/CuraEqui/Hunger.lua
-
-local U         = CuraEqui.Utils
-local HGetState = CuraEqui.HorseStateGet
 local function Q(...) CuraEqui.Log("Horse", ...) end
 
 -- ---------- ONE-TIME PROBE ----------
 local _probeDone = false
+
+local U = CuraEqui.Utils or {}
+local function clamp(x, lo, hi)
+    local f = U and U.clamp
+    if f then return f(x, lo, hi) end
+    return (x < lo) and lo or ((x > hi) and hi or x)
+end
+
 local function ProbeOnce(h)
     if _probeDone or not h then return end
     _probeDone = true
@@ -80,10 +85,10 @@ function CuraEqui._HungerTickBody()
         System.LogAlways("[CuraEqui][Tick] no player horse yet")
         return
     end
-    if not h then return end
+
     ProbeOnce(h)
 
-    local S = HGetState(h)
+    local S = (CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)) or nil
     if not S then return end
 
     -- one-shot sampler budget so we don't spam
@@ -105,8 +110,9 @@ function CuraEqui._HungerTickBody()
 
     local mounted = false
     pcall(function()
-        mounted = player and player.actor and player.actor.IsMounted and player.actor:IsMounted() or false
+        mounted = (CuraEqui.Horse and CuraEqui.Horse.IsMounted and CuraEqui.Horse.IsMounted()) or false
     end)
+    S._mountedNow = mounted
 
     local hp = getPos(h)                           -- preferred
     local pp = (mounted and getPos(player)) or nil -- fallback when mounted
@@ -177,17 +183,33 @@ function CuraEqui._HungerTickBody()
 
     -- idle vs mounted-moving
     do
-        local C          = _H()
+        local C     = _H()
 
-        local dt         = (CuraEqui.HorseCfg.tickSec or C.tickSec)
-        local distM      = (S._posSrc and (S.dist or 0)) or 0
-        local speed      = distM / math.max(dt, 0.001)
+        local dt    = (CuraEqui.HorseCfg.tickSec or C.tickSec)
+        local distM = (S._posSrc and (S.dist or 0)) or 0
+        local speed = distM / math.max(dt, 0.001)
 
         -- idle if not mounted OR mounted but below movement threshold
-        local idle       = (not mounted) or (speed < C.speedIdle)
+        local idle  = (not mounted) or (speed < C.speedIdle)
+
+        -- log mount flips once (optional)
+        do
+            local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+            if D.mountTrace then
+                if S._dbgMountedPrev == nil then
+                    S._dbgMountedPrev = mounted
+                elseif mounted ~= S._dbgMountedPrev then
+                    System.LogAlways(("[CuraEqui][Mount] changed: %s → %s (spd=%.2f)")
+                        :format(S._dbgMountedPrev and "mounted" or "unmounted",
+                            mounted and "mounted" or "unmounted",
+                            speed or 0))
+                    S._dbgMountedPrev = mounted
+                end
+            end
+        end
 
         -- time drift
-        local timePerMin = (mounted and (idle and C.rateIdle or C.rateMounted)) or 0
+        local timePerMin = idle and C.rateIdle or C.rateMounted
         local timeDrain  = timePerMin * (dt / 60.0)
 
         -- per-km only when mounted-moving
@@ -207,7 +229,7 @@ function CuraEqui._HungerTickBody()
         local totalDrain = (timeDrain + distDrain) * mul + graze
 
         local before     = tonumber(S.hunger or 0) or 0
-        local after      = U.clamp(before + totalDrain, 0, CuraEqui.HorseCfg.hungerMax or 100)
+        local after      = clamp(before + totalDrain, 0, CuraEqui.HorseCfg.hungerMax or 100)
         S.hunger         = after
 
         -- optional telemetry
@@ -227,9 +249,9 @@ function CuraEqui._HungerTickBody()
                     local state = idle and "idle" or "mounted"
                     local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
                     local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                    System.LogAlways(("[CuraEqui][Hunger] %s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f " ..
-                            "total=+%.2f → %d→%d (sated %.0fs)")
-                        :format(state, speed, dt, distM, timeDrain, distDrain, graze, mul, totalDrain,
+                    System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
+                        :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, mul,
+                            totalDrain,
                             math.floor(before), math.floor(after), remS))
                 end
             end
