@@ -209,7 +209,7 @@ function CuraEqui._HungerTickBody()
         end
 
         -- time drift
-        local timePerMin = idle and C.rateIdle or C.rateMounted
+        local timePerMin = (mounted and (idle and C.rateIdle or C.rateMounted)) or 0
         local timeDrain  = timePerMin * (dt / 60.0)
 
         -- per-km only when mounted-moving
