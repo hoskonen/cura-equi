@@ -179,10 +179,12 @@ end
 -- Collect selected items (store light info for logs & nutrition)
 function Horse:OnInventoryItemUsed(id)
     self._feedSel = self._feedSel or {}
-    local info = _inv_get_info(id)
+    local info    = _inv_get_info(id)
+    info._wuid    = id           -- keep the real handle for DeleteItem
+    info.wuidStr  = tostring(id) -- for logs
     table.insert(self._feedSel, info)
     System.LogAlways(("[CuraEqui][Feed] Picked: %s (class=%s, qty=%s)")
-        :format(tostring(info.uiName or info.dbName or info.wuid), tostring(info.classId), tostring(info.qty)))
+        :format(tostring(info.uiName or info.dbName or info.wuidStr), tostring(info.classId), tostring(info.qty)))
 end
 
 -- Vanilla-style: simulate feeding on close (no removal yet)
@@ -193,9 +195,8 @@ function Horse:OnInventoryClosed()
     local CFG      = CuraEqui.Config or {}
     local FCFG     = CFG.Feeding or {}
     local DCFG     = CFG.Diet or {}
-    local classNut = (FCFG.classNutrition or {}) -- optional precise mapping: ["food.vegetable.carrot"]=12
+    local classNut = (FCFG.classNutrition or {})
 
-    -- Only run in vanilla style; otherwise fall back to your existing scan-on-close
     if (FCFG.style or "vanilla") ~= "vanilla" then
         if CuraEqui._InvClose_Disarm then CuraEqui._InvClose_Disarm("picker_used") end
         if CuraEqui.Feed_StartScan then
@@ -210,7 +211,7 @@ function Horse:OnInventoryClosed()
         System.LogAlways("[CuraEqui][Feed] close: no horse state"); return
     end
 
-    local maxH = CuraEqui.HorseCfg and (CuraEqui.HorseCfg.hungerMax or 100) or 100
+    local maxH = (CuraEqui.HorseCfg and (CuraEqui.HorseCfg.hungerMax or 100)) or 100
     local curH = tonumber(S.hunger or 0) or 0
     local cap  = tonumber(FCFG.needCapPerFeed or 25) or 25
     local need = math.max(0, math.min(cap, maxH - curH))
@@ -221,10 +222,8 @@ function Horse:OnInventoryClosed()
         return
     end
 
-    -- Nutrition resolver: prefer exact classId mapping, else Diet keywords fallback
     local kws   = DCFG.allowKeywords or { "apple", "bread", "carrot" }
     local perKW = tonumber(DCFG.keywordNutrition or 10) or 10
-
     local function nutrition_for(info)
         local v = 0
         if info.classId and classNut[info.classId] then v = classNut[info.classId] end
@@ -240,20 +239,22 @@ function Horse:OnInventoryClosed()
         return v
     end
 
-    local over = (FCFG.overfeedPolicy or "allow")
+    local over          = (FCFG.overfeedPolicy or "allow")
     local used, details = 0, {}
+    local consumed      = {} -- ← which picks actually contributed (for removal)
 
     for _, info in ipairs(picks) do
         if need <= 0 then break end
         local gain = nutrition_for(info)
         if gain > 0 then
             if gain > need and over == "skip" then
-                -- skip too-strong single items if policy says so
+                -- skip
             else
                 local take = math.min(gain, need)
                 used = used + take
                 need = need - take
                 details[#details + 1] = string.format("%s +%d", info.uiName or info.dbName or "food", take)
+                consumed[#consumed + 1] = info -- ← mark one unit of this pick to remove
             end
         end
     end
@@ -269,7 +270,21 @@ function Horse:OnInventoryClosed()
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
             CuraEqui.UI.Toast("No edible items in selection.", 1600, 0, "CuraEqui_Status", "center")
         end
+        return
     end
 
-    -- NOTE: still simulation. We did not remove any items yet (Phase 2).
+    -- Optional: real removal (1 unit per contributing pick)
+    if FCFG.removeItems then
+        local inv = (player and (player.inventory or (player.actor and player.actor.inventory))) or nil
+        if not inv or not inv.DeleteItem then
+            System.LogAlways("[CuraEqui][Feed][WARN] inventory:DeleteItem not available; keeping items.")
+            return
+        end
+        local removed, failed = 0, 0
+        for _, info in ipairs(consumed) do
+            local ok = pcall(inv.DeleteItem, inv, info._wuid, 1)
+            if ok then removed = removed + 1 else failed = failed + 1 end
+        end
+        System.LogAlways(("[CuraEqui][Feed] Remove: %d ok, %d fail via inventory:DeleteItem"):format(removed, failed))
+    end
 end

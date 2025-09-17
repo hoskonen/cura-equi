@@ -67,10 +67,11 @@ CuraEqui.Config = {
         }
     },
     Feeding = {
-        style = "vanilla",  -- "vanilla" (picker → instant feed), "experimental", "hybrid" (later)
-        needCapPerFeed = 25, -- max hunger you try to restore per feed action
+        style = "vanilla",        -- "vanilla" (picker → instant feed), "experimental", "hybrid" (later)
+        needCapPerFeed = 25,      -- max hunger you try to restore per feed action
         overfeedPolicy = "allow", -- "allow" | "skip"  (what to do if a single item would overshoot need)
         toastOnDone = true,
+        removeItems = true        -- ← keep false until you verify removal works on your build
     },
     FeedScan = {
         radius                 = 2.0,
