@@ -91,6 +91,7 @@ CuraEqui.Config = {
         -- Toasts
         toastOnStart           = "@curaequi_drop_food",
         toastOnEat             = "@curaequi_horse_munch",
+        toastOnFull            = "@curaequi_horse_full",
         -- Toast Settings
         toastMs                = 1800,       -- duration in ms for tutorial lane
         toastPrio              = 0,          -- priority for tutorial lane

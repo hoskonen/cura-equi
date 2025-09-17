@@ -525,6 +525,34 @@ function Horse:OnFeedHorse(user)
     if my and self and my.id == self.id then
         System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
 
+        do
+            local F    = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+            local skip = (F.skipPickerWhenFull ~= false) -- default: true
+
+            if skip then
+                local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+                if S then
+                    -- need for this feed (hunger-mode): you can only remove what you have
+                    local cap  = tonumber(F.needCapPerFeed or 25) or 25
+                    local curH = tonumber(S.hunger or 0) or 0
+                    local need = math.max(0, math.min(cap, curH))
+
+                    if need <= 0 then
+                        -- big center message
+                        if CuraEqui.UI and CuraEqui.UI.Toast then
+                            -- swap the string to your localized key later
+                            CuraEqui.UI.Toast("@curaequi_horse_full", 1800, 0, "CuraEquiFeed", "infotext")
+                        else
+                            System.LogAlways("[CuraEqui][Feed] Horse is full; skipping picker.")
+                        end
+                        return -- <<< EARLY EXIT: do not arm scan or open any inventory
+                    end
+                end
+            end
+        end
+
+
         -- Multi-select picker: vegetables only
         do
             -- accept both taxonomies you’ve seen in XMLs
@@ -534,7 +562,7 @@ function Horse:OnFeedHorse(user)
             if user and user.actor and user.actor.OpenItemMultiselectionFilter then
                 opened = pcall(user.actor.OpenItemMultiselectionFilter, user.actor, self.id, filter)
                 System.LogAlways("[CuraEqui][Feed] OpenItemMultiselectionFilter → " ..
-                tostring(opened) .. " filter=" .. filter)
+                    tostring(opened) .. " filter=" .. filter)
             end
 
             -- fallback: open general inventory if the API is missing

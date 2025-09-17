@@ -13,6 +13,10 @@
     <Cell>curaequi_horse_munch</Cell><Cell>Horse eats happily</Cell><Cell>Horse eats happily</Cell>
 </Row>
 
+<Row>
+    <Cell>curaequi_horse_full</Cell><Cell>Your horse is well fed</Cell><Cell>Your horse is well fed</Cell>
+</Row>
+
 <!-- Buffs & Debuffs -->
 <Row>
     <Cell>buff_ce_sated</Cell><Cell>Sated</Cell><Cell>Sated</Cell>
