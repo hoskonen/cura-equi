@@ -5,6 +5,35 @@ CuraEqui.HorseState = CuraEqui.HorseState or {}
 CuraEqui.HorseCfg = CuraEqui.HorseCfg or
     { hungerMax = 100, hungerStart = 30, tickSec = 10, debuffAt = 70 }
 
+-- ——— WUID → item info (classId, names, qty) ———
+local function _inv_get_info(wuid)
+    local t = nil
+    if ItemManager and ItemManager.GetItem then
+        local ok, obj = pcall(ItemManager.GetItem, wuid); if ok and type(obj) == "table" then t = obj end
+    end
+    if not t then return { wuid = tostring(wuid) } end
+
+    local classId = t.classId or t.class or t.class_id or t.type or t.kind
+    local ui, db = nil, nil
+    if classId and ItemManager then
+        pcall(function() ui = ItemManager.GetItemUIName(classId) end)
+        pcall(function() db = ItemManager.GetItemName(classId) end)
+    end
+
+    -- qty: prefer field 'amount', then method 'GetAmount' (Smith’s Reach pattern)
+    local amt = rawget(t, "amount") or rawget(t, "Amount")
+    if amt == nil then
+        local getter = rawget(t, "GetAmount") or rawget(t, "getAmount")
+        if type(getter) == "function" then
+            local ok, q = pcall(getter, t); if ok then amt = q end
+        end
+    end
+    if type(amt) ~= "number" then amt = tonumber(amt) or 1 end
+    if amt < 1 then amt = 1 end
+
+    return { wuid = tostring(wuid), classId = classId, uiName = ui, dbName = db, qty = amt }
+end
+
 function CuraEqui.Horse.Debug_LogPlayerHorseHandles()
     local function log(label, ok, val)
         local t = type(val)
@@ -147,30 +176,27 @@ function CuraEqui.Horse.IsMounted()
     return (ok and v) and true or false
 end
 
--- 1) collect picks
+-- Collect selected items (store light info for logs & nutrition)
 function Horse:OnInventoryItemUsed(id)
     self._feedSel = self._feedSel or {}
-    table.insert(self._feedSel, id)
-
-    -- optional debug: print a readable name if available
-    local readable = nil
-    pcall(function() readable = Framework and Framework.WUIDToMsg and Framework.WUIDToMsg(id) or nil end)
-    System.LogAlways(("[CuraEqui][Feed] OnInventoryItemUsed id=%s name=%s")
-        :format(tostring(id), tostring(readable)))
+    local info = _inv_get_info(id)
+    table.insert(self._feedSel, info)
+    System.LogAlways(("[CuraEqui][Feed] Picked: %s (class=%s, qty=%s)")
+        :format(tostring(info.uiName or info.dbName or info.wuid), tostring(info.classId), tostring(info.qty)))
 end
 
--- 2) finalize on close (vanilla simulation)
+-- Vanilla-style: simulate feeding on close (no removal yet)
 function Horse:OnInventoryClosed()
-    local picks   = self._feedSel or {}
-    self._feedSel = nil
+    local picks    = self._feedSel or {}
+    self._feedSel  = nil
 
-    local CFG     = CuraEqui.Config or {}
-    local FCFG    = CFG.Feeding or {}
-    local DCFG    = CFG.Diet or {}
+    local CFG      = CuraEqui.Config or {}
+    local FCFG     = CFG.Feeding or {}
+    local DCFG     = CFG.Diet or {}
+    local classNut = (FCFG.classNutrition or {}) -- optional precise mapping: ["food.vegetable.carrot"]=12
 
-    -- only run the vanilla path when selected
+    -- Only run in vanilla style; otherwise fall back to your existing scan-on-close
     if (FCFG.style or "vanilla") ~= "vanilla" then
-        -- keep your existing post-close scan path for other styles
         if CuraEqui._InvClose_Disarm then CuraEqui._InvClose_Disarm("picker_used") end
         if CuraEqui.Feed_StartScan then
             local post = (CFG.FeedScan and CFG.FeedScan.postCloseWindowSec) or 10.0
@@ -179,78 +205,71 @@ function Horse:OnInventoryClosed()
         return
     end
 
-    local hS = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self)
-    if not hS then
-        System.LogAlways("[CuraEqui][Feed] OnInventoryClosed: no horse state")
-        return
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self)
+    if not S then
+        System.LogAlways("[CuraEqui][Feed] close: no horse state"); return
     end
 
-    local hungerMax = CuraEqui.HorseCfg and (CuraEqui.HorseCfg.hungerMax or 100) or 100
-    local hungerNow = tonumber(hS.hunger or 0) or 0
-    local cap       = tonumber(FCFG.needCapPerFeed or 25) or 25
-    local need      = math.max(0, math.min(cap, hungerMax - hungerNow))
+    local maxH = CuraEqui.HorseCfg and (CuraEqui.HorseCfg.hungerMax or 100) or 100
+    local curH = tonumber(S.hunger or 0) or 0
+    local cap  = tonumber(FCFG.needCapPerFeed or 25) or 25
+    local need = math.max(0, math.min(cap, maxH - curH))
     if need <= 0 then
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-            CuraEqui.UI.Toast("Horse is full.", 1800, 0, "CuraEqui_Status", "center")
+            CuraEqui.UI.Toast("Horse is full.", 1600, 0, "CuraEqui_Status", "center")
         end
         return
     end
 
-    -- simple nutrition from Diet keywords using the readable WUID string
-    local kws     = DCFG.allowKeywords or { "apple", "bread", "carrot" }
-    local perKW   = tonumber(DCFG.keywordNutrition or 10) or 10
-    local used    = 0
-    local fedFrom = {}
+    -- Nutrition resolver: prefer exact classId mapping, else Diet keywords fallback
+    local kws   = DCFG.allowKeywords or { "apple", "bread", "carrot" }
+    local perKW = tonumber(DCFG.keywordNutrition or 10) or 10
 
-    local function nutrition_from_wuid(wuid)
-        local name = ""
-        pcall(function()
-            name = Framework and Framework.WUIDToMsg and (Framework.WUIDToMsg(wuid) or "") or ""
-        end)
-        name = tostring(name):lower()
-        for _, kw in ipairs(kws) do
-            kw = tostring(kw):lower()
-            if kw ~= "" and name:find(kw, 1, true) then
-                return perKW, kw
+    local function nutrition_for(info)
+        local v = 0
+        if info.classId and classNut[info.classId] then v = classNut[info.classId] end
+        if v == 0 then
+            local name = tostring(info.uiName or info.dbName or ""):lower()
+            for _, kw in ipairs(kws) do
+                kw = tostring(kw):lower()
+                if kw ~= "" and name:find(kw, 1, true) then
+                    v = perKW; break
+                end
             end
         end
-        return 0, nil
+        return v
     end
 
-    -- Iterate selected items in order (no removal yet, just simulate)
-    local overPolicy = (FCFG.overfeedPolicy or "allow")
-    for _, wuid in ipairs(picks) do
+    local over = (FCFG.overfeedPolicy or "allow")
+    local used, details = 0, {}
+
+    for _, info in ipairs(picks) do
         if need <= 0 then break end
-        local gain, tag = nutrition_from_wuid(wuid)
+        local gain = nutrition_for(info)
         if gain > 0 then
-            if gain > need and overPolicy == "skip" then
-                -- skip too-strong single items if policy demands
+            if gain > need and over == "skip" then
+                -- skip too-strong single items if policy says so
             else
-                local take          = math.min(gain, need)
-                used                = used + take
-                need                = need - take
-                fedFrom[#fedFrom + 1] = { kw = tag or "food", val = take }
+                local take = math.min(gain, need)
+                used = used + take
+                need = need - take
+                details[#details + 1] = string.format("%s +%d", info.uiName or info.dbName or "food", take)
             end
         end
     end
 
     if used > 0 then
-        local newH  = math.min(hungerMax, hungerNow + used)
-        hS.hunger   = newH
-
-        -- toast + log
-        local parts = {}
-        for i, f in ipairs(fedFrom) do parts[#parts + 1] = string.format("%s +%d", f.kw, f.val) end
-        local msg = string.format("Fed %d item(s) (+%d).", #fedFrom, used)
+        S.hunger = math.min(maxH, curH + used)
+        local msg = string.format("Fed %d item(s) (+%d).", #details, used)
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
             CuraEqui.UI.Toast(msg, 2000, 0, "CuraEqui_Status", "center")
         end
-        System.LogAlways("[CuraEqui][Feed] " .. msg .. " details: " .. table.concat(parts, ", "))
+        System.LogAlways("[CuraEqui][Feed] " .. msg .. " details: " .. table.concat(details, ", "))
     else
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-            CuraEqui.UI.Toast("No edible items in selection.", 1800, 0, "CuraEqui_Status", "center")
+            CuraEqui.UI.Toast("No edible items in selection.", 1600, 0, "CuraEqui_Status", "center")
         end
     end
 
-    -- NOTE: we did NOT remove items yet. That’s Phase 2 once we confirm removal API.
+    -- NOTE: still simulation. We did not remove any items yet (Phase 2).
 end
