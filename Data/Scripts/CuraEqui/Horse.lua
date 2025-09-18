@@ -5,6 +5,12 @@ CuraEqui.HorseState = CuraEqui.HorseState or {}
 CuraEqui.HorseCfg = CuraEqui.HorseCfg or
     { hungerMax = 100, hungerStart = 30, tickSec = 10, debuffAt = 70 }
 
+local function FeedLog(fmt, ...)
+    local D = CuraEqui.Config and CuraEqui.Config.Debug
+    if not (D and D.feedTrace) then return end
+    CuraEqui.Log("Feed", fmt, ...)
+end
+
 -- ——— WUID → item info (classId, names, qty) ———
 local function _inv_get_info(wuid)
     local t = nil
@@ -253,7 +259,6 @@ function Horse:OnInventoryClosed()
         System.LogAlways("[CuraEqui][Feed] close: no horse state"); return
     end
 
-    local maxH = (CuraEqui.HorseCfg and (CuraEqui.HorseCfg.hungerMax or 100)) or 100
     local curH = tonumber(S.hunger or 0) or 0
     local cap  = tonumber(FCFG.needCapPerFeed or 25) or 25
     local need = math.max(0, math.min(cap, curH)) -- you can only reduce what you have
@@ -293,7 +298,7 @@ function Horse:OnInventoryClosed()
     -- apply hunger & report
     if used <= 0 then
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-            CuraEqui.UI.Toast("@curaequi_horse_full", 1600, 0, "CuraEquiFeed", "infotext")
+            CuraEqui.UI.Toast("@curaequi_horse_full", 3, 0, "CuraEquiFeed", "infotext")
         end
         return
     end

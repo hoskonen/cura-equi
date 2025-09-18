@@ -12,15 +12,24 @@ end
 
 -- ── config helpers ──────────────────────────────────────────────────────────
 local function _cfg()
-    local D  = (CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud) or {}
-    local CU = (CuraEqui.Config and CuraEqui.Config.UI) or {}
+    local D        = (CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud) or {}
+    local CU       = (CuraEqui.Config and CuraEqui.Config.UI) or {}
+
+    -- prefer an explicit UI.toastSec; else try to auto-convert legacy ms 'refresh'
+    local toastSec = tonumber(CU.toastSec)
+    if not toastSec then
+        local r = tonumber(D.refresh)
+        if r then toastSec = (r > 60) and (r / 1000) or r end
+    end
+    toastSec = toastSec or 3
+
     return {
         enabled                = (D.enabled ~= false),
-        laneDefault            = D.lane or "notification", -- "notification"|"tutorial"|"infotext"
-        defaultTimeoutMs       = tonumber(D.refresh or 1200) or 1200,
+        laneDefault            = D.lane or "notification",
+        defaultTimeoutS        = toastSec,
         defaultPriority        = 0,
-        hudElement             = CU.hudElement or "HUD",               -- <- match your game HUD movie name here
-        fallbackToNotification = (CU.fallbackToNotification ~= false), -- true by default
+        hudElement             = CU.hudElement or "HUD",
+        fallbackToNotification = (CU.fallbackToNotification ~= false),
         tagId                  = D.id or "CuraEqui_Toast",
     }
 end
@@ -42,73 +51,54 @@ local function _sendNotification(text)
 end
 
 -- HUD.ShowTutorial(Id, Text, DurationMS, InDialogue, Priority, Layout, ActionHintEnable, OverlayLink)
-local function _sendTutorial(text, ms, prio, id)
+local function _sendTutorial(text, s, prio, id)
     text       = tostring(text or "")
     local Id   = tostring(id or _cfg().tagId)
-    local Dur  = math.max(1, tonumber(ms or _cfg().defaultTimeoutMs) or 0)
+    local Ssec = tonumber(s or _cfg().defaultTimeoutS) or 3 -- seconds
+    local Dur  = math.max(100, math.floor(Ssec * 1000))     -- ms (min 100ms)
     local Prio = tonumber(prio or _cfg().defaultPriority) or 0
     return _call("ShowTutorial", Id, text, Dur, false, Prio, 0, false, "")
 end
 
 -- ── public API ──────────────────────────────────────────────────────────────
--- Toast(text, ms, prio, id, lane) → true/false
-function UI.Toast(text, ms, prio, id, lane)
-    local C = _cfg()
-    if not C.enabled then return false end
+-- Toast(text, s, prio, id, lane) → true/false
+function CuraEqui.UI.Toast(text, ms, prio, id, lane)
+    text = tostring(text or "")
+    if _dedupe(text) then return true end
 
-    local ln = lane or C.laneDefault
-    local ok = false
+    local which = (lane == "center" or lane == "info" or lane == "infotext") and "infotext"
+        or (lane or "tutorial")
 
-    if ln == "tutorial" then
-        ok = _sendTutorial(text, ms, prio, id)
-        if (not ok) and C.fallbackToNotification then
-            ok = _sendNotification(text)
-        end
-        if not ok and Game and Game.SendInfoText then
-            pcall(Game.SendInfoText, tostring(text or ""), false, (id or C.tagId),
-                tonumber(ms or C.defaultTimeoutMs) or 1500)
-            ok = true
-        end
-        return ok
-    elseif ln == "notification" then
-        ok = _sendNotification(text)
-        if not ok and Game and Game.SendInfoText then
-            pcall(Game.SendInfoText, tostring(text or ""), false, (id or C.tagId),
-                tonumber(ms or C.defaultTimeoutMs) or 1500)
-            ok = true
-        end
-        return ok
-    elseif ln == "infotext" then
-        if Game and Game.SendInfoText then
-            pcall(Game.SendInfoText, tostring(text or ""), false, (id or C.tagId),
-                tonumber(ms or C.defaultTimeoutMs) or 1500)
-            return true
-        end
-        -- fallback to notification if engine infotekst not available
-        return _sendNotification(text)
-    else
-        -- unknown lane → try notification, then engine
-        ok = _sendNotification(text)
-        if not ok and Game and Game.SendInfoText then
-            pcall(Game.SendInfoText, tostring(text or ""), false, (id or C.tagId),
-                tonumber(ms or C.defaultTimeoutMs) or 1500)
-            ok = true
-        end
-        return ok
-    end
+    -- primary
+    if which == "infotext" and CuraEqui.UI.SendInfoText(text, ms, true) then return true end
+    if which == "tutorial" and CuraEqui.UI.SendTutorial(text, ms, prio, id) then return true end
+    if which == "notification" and CuraEqui.UI.SendNotification(text) then return true end
+
+    -- fallbacks
+    if which ~= "infotext" and CuraEqui.UI.SendInfoText(text, ms, true) then return true end
+    if which ~= "tutorial" and CuraEqui.UI.SendTutorial(text, ms, prio, id) then return true end
+    if which ~= "notification" and CuraEqui.UI.SendNotification(text) then return true end
+
+    System.LogAlways("[CuraEqui][UI] " .. text)
+end
+
+function CuraEqui.UI.SendInfoText(text, ms, forceClear, category)
+    if not (Game and Game.SendInfoText) then return false end
+    local durSec = (tonumber(ms) or 1800) / 1000.0 -- ms → seconds
+    local clear  = (forceClear ~= false)           -- default: true
+    local ok     = pcall(Game.SendInfoText, tostring(text or ""), clear, category or 0, durSec)
+    return ok and true or false
 end
 
 -- Convenience testers (optional)
 function UI.DebugToast(text, lane)
-    return UI.Toast(text or "CuraEqui toast test", _cfg().defaultTimeoutMs, 0, "CuraEqui_Debug",
+    return UI.Toast(text or "CuraEqui toast test", _cfg().defaultTimeoutS, 0, "CuraEqui_Debug",
         lane or _cfg().laneDefault)
 end
 
 function UI.AnnounceInit()
     return UI.Toast("Cura Equi initialized", 1800, 0, "CuraEqui_Init", _cfg().laneDefault)
 end
-
--- Scripts/CuraEqui/UiStubs.lua
 
 -- Open inventory using the Actor API:
 --   Actor:OpenInventory(entityId, mode, otherInventoryId, filter)

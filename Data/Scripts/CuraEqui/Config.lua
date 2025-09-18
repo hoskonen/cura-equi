@@ -11,10 +11,11 @@ CuraEqui.Config = {
         enabled = true,
         distanceTrace = true,
         distanceTraceStepM = 500.0,
-        hud = { enabled = true, refresh = 1200, lane = "notification", id = "CuraEqui_DebugHUD" },
+        hud = { enabled = true, refresh = 3, lane = "notification", id = "CuraEqui_DebugHUD" },
         hungerTrace = true,   -- log a compact hunger line each tick
         hungerTraceEvery = 1, -- log every N ticks (e.g., 3 = once every 3 ticks)
         mountTrace = true,
+        feedTrace = true,
     },
 
     Hunger = {
