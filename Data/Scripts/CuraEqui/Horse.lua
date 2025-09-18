@@ -11,6 +11,13 @@ local function FeedLog(fmt, ...)
     CuraEqui.Log("Feed", fmt, ...)
 end
 
+local function _feed_toast_cfg()
+    local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+    local lane = F.toastLane or "tutorial"
+    local ms = math.max(200, math.floor((tonumber(F.toastSec) or 2.0) * 1000))
+    return lane, ms
+end
+
 -- ——— WUID → item info (classId, names, qty) ———
 local function _inv_get_info(wuid)
     local t = nil
@@ -318,13 +325,35 @@ function Horse:OnInventoryClosed()
 
     local parts = {}
     for _, rec in pairs(removePlan) do
-        parts[#parts + 1] = string.format("%s x%d (-%d)", rec.label, rec.units, rec.units * rec.per)
+        parts[#parts + 1] = { label = rec.label, units = rec.units, total = rec.units * rec.per }
     end
-    local msg = string.format("Fed %d type(s) (-%d) → %d%%", #parts, used, math.floor(newH))
-    if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-        CuraEqui.UI.Toast(msg, 2000, 0, "CuraEqui_Status", "center")
+
+    -- right-corner dev toasts per type, then a compact summary
+    do
+        local lane, ms = _feed_toast_cfg()
+        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
+            -- per-type lines: "carrot x2 (-24)"
+            for i = 1, #parts do
+                local p = parts[i]
+                CuraEqui.UI.Toast(string.format("%s x%d (-%d)", p.label, p.units, p.total),
+                    ms, 0, "CuraEqui_FeedType", lane)
+            end
+            -- summary: "Fed 3 type(s) (-36) → 12%"
+            local msg = string.format("Fed %d type(s) (-%d) → %d%%", #parts, used, math.floor(newH))
+            CuraEqui.UI.Toast(msg, ms, 0, "CuraEqui_FeedSummary", lane)
+        end
     end
-    FeedLog("%s details: %s", msg, table.concat(parts, ", "))
+
+    -- quieter console unless feedTrace=true
+    do
+        local details = {}
+        for i = 1, #parts do
+            local p = parts[i]
+            details[#details + 1] = string.format("%s x%d (-%d)", p.label, p.units, p.total)
+        end
+        FeedLog("Fed %d type(s) (-%d) → %d%% | %s",
+            #parts, used, math.floor(newH), table.concat(details, ", "))
+    end
 
     -- delete planned units (one call per WUID)
     if FCFG.removeItems then

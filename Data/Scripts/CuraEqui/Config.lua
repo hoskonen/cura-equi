@@ -11,9 +11,9 @@ CuraEqui.Config = {
         enabled = true,
         distanceTrace = true,
         distanceTraceStepM = 500.0,
-        hud = { enabled = true, refresh = 3, lane = "notification", id = "CuraEqui_DebugHUD" },
-        hungerTrace = true,   -- log a compact hunger line each tick
-        hungerTraceEvery = 1, -- log every N ticks (e.g., 3 = once every 3 ticks)
+        hud = { enabled = true, lane = "notification", id = "CuraEqui_DebugHUD", refresh = 10000 },
+        hungerTrace = true, -- log a compact hunger line each tick
+        hungerTraceEvery = 10000,
         mountTrace = true,
         feedTrace = true,
     },
@@ -48,6 +48,7 @@ CuraEqui.Config = {
     HUD = {
         showWhenMounted   = true,
         nearRadiusM       = 20.0,
+        refresh           = 5,
         playerStatusTiers = {
             { name = "sated",    uidd = "1a638e4c-e931-415d-b3bd-c8402ed836ea" },
             { name = "minor",    uidd = "3329d630-3aa6-4d65-b7bb-8257fdecb66c" },
@@ -93,10 +94,11 @@ CuraEqui.Config = {
         toastOnStart           = "@curaequi_drop_food",
         toastOnEat             = "@curaequi_horse_munch",
         toastOnFull            = "@curaequi_horse_full",
+        toastWindowEnded       = "@curaequi_feed_window_ended",
         -- Toast Settings
-        toastMs                = 1800,       -- duration in ms for tutorial lane
-        toastPrio              = 0,          -- priority for tutorial lane
-        toastLane              = "tutorial", -- "infotext" | "tutorial" | "notification"
+        toastSec               = 2.0,            -- duration in s for tutorial lane
+        toastPrio              = 0,              -- priority for tutorial lane
+        toastLane              = "notification", -- "infotext" | "tutorial" | "notification"
     },
     Audio = {
         enabled       = true,

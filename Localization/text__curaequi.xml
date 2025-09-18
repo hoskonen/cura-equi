@@ -17,6 +17,10 @@
     <Cell>curaequi_horse_full</Cell><Cell>Your horse is well fed</Cell><Cell>Your horse is well fed</Cell>
 </Row>
 
+<Row>
+    <Cell>curaequi_feed_window_ended</Cell><Cell>Drop edibles window ended</Cell><Cell>Drop edibles windows ended</Cell>
+</Row>
+
 <!-- Buffs & Debuffs -->
 <Row>
     <Cell>buff_ce_sated</Cell><Cell>Sated</Cell><Cell>Sated</Cell>

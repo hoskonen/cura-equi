@@ -178,8 +178,8 @@ function CuraEqui._InvClose_Disarm(reason)
             CuraEqui._windowEndedNotified = true
             pcall(function()
                 local F = CuraEqui.Config.FeedScan
-                CuraEqui.UI.Toast("@curaequi_feed_window_ended", (F and F.toastMs) or 1200, 0, "CuraEquiFeed",
-                    (F and F.toastLane) or "infotext")
+                CuraEqui.UI.Toast(toastWindowEnded, (F and F.toastMs) or 1200, 0, "CuraEquiFeed",
+                    (F and F.toastLane) or "notification")
             end)
         end
     end
@@ -378,7 +378,7 @@ local function CE_ConsumeAfterDelay(ent, diet, label)
     local msg       = (F and F.toastOnEat) or "@curaequi_horse_munch"
     local toastMs   = (F and F.toastMs) or 1800
     local toastPrio = (F and F.toastPrio) or 0
-    local toastLane = (F and F.toastLane) or "tutorial" -- "tutorial" (tiny right) | "notification" (center)
+    local toastLane = (F and F.toastLane) or "tutorial" -- "tutorial" | "notification" (center)
     -- single place that actually consumes + feedback
     local function doConsume()
         -- delete the world drop
@@ -552,7 +552,6 @@ function Horse:OnFeedHorse(user)
             end
         end
 
-
         -- Multi-select picker: vegetables only
         do
             -- accept both taxonomies you’ve seen in XMLs
@@ -570,14 +569,7 @@ function Horse:OnFeedHorse(user)
                 local ok = pcall(UIAction.CallFunction, "ApseInventoryList", -1, "fc_activate")
                 System.LogAlways("[CuraEqui][Feed] ApseInventoryList.fc_activate → " .. tostring(ok))
             end
-
-            -- UX: center toast so player knows they can select multiple items
-            if CuraEqui.UI and CuraEqui.UI.Toast then
-                CuraEqui.UI.Toast("Pick vegetables to feed (you can select multiple).", 2200, 0, "CuraEqui_Status",
-                    "center")
-            end
         end
-
 
         RegisterInventoryCloseHooks()
         if FEED_ARM_ON_CLOSE then

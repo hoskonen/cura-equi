@@ -243,16 +243,20 @@ function CuraEqui._HungerTickBody()
         do
             local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
             if D.hungerTrace then
-                S._dbgHungerTick = (S._dbgHungerTick or 0) + 1
-                local N = tonumber(D.hungerTraceEvery) or 1
-                if (S._dbgHungerTick % N) == 0 then
+                local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                local interval = (CuraEqui.Utils and CuraEqui.Utils.ms_to_s and CuraEqui.Utils.ms_to_s(D.hungerTraceEvery or 5000)) or
+                    5
+                S._dbgNextConsoleAt = S._dbgNextConsoleAt or 0
+
+                if now >= S._dbgNextConsoleAt then
                     local state = idle and "idle" or "mounted"
-                    local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
                     local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
                     System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
                         :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, mul,
-                            totalDrain,
-                            math.floor(before), math.floor(after), remS))
+                            totalDrain, math.floor(before), math.floor(after), remS))
+
+                    S._dbgNextConsoleAt = now + interval
                 end
             end
         end
@@ -285,8 +289,10 @@ function CuraEqui._HungerTickBody()
 
                 S._hudNextAt = S._hudNextAt or 0
                 if now >= S._hudNextAt then
-                    CuraEqui.UI.Toast(line, D.refresh or 1200, 0, "CuraEqui_Status", D.lane or "notification")
-                    S._hudNextAt = now + ((D.refresh or 1200) / 1000)
+                    local r = (CuraEqui.Utils and CuraEqui.Utils.ms_to_s and CuraEqui.Utils.ms_to_s(D.refresh or 1200)) or
+                        1.2
+                    CuraEqui.UI.Toast(line, r * 1000, 0, "CuraEqui_Status", D.lane or "notification")
+                    S._hudNextAt = now + r
                 end
             end
         end
