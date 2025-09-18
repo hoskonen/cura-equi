@@ -542,7 +542,7 @@ function Horse:OnFeedHorse(user)
                         -- big center message
                         if CuraEqui.UI and CuraEqui.UI.Toast then
                             -- swap the string to your localized key later
-                            CuraEqui.UI.Toast("@curaequi_horse_full", 1800, 0, "CuraEquiFeed", "infotext")
+                            CuraEqui.UI.Toast("@curaequi_horse_full", 3600, 0, "CuraEquiFeed", "infotext")
                         else
                             System.LogAlways("[CuraEqui][Feed] Horse is full; skipping picker.")
                         end

@@ -53,27 +53,30 @@ local function _per_unit_from_info(info)
         if v > 0 then return v, (rec.token or label) end
     end
 
-    -- 2) keywords (supports either a list or a {kw=value} map)
+    -- 2) keywords (supports either a list or a {kw=value} map), only if allowed
     local DCFG = (CuraEqui.Config and CuraEqui.Config.Diet) or {}
-    local kws  = DCFG.allowKeywords or { "apple", "bread", "carrot" }
-    local name = tostring(label):lower()
+    local allowKW = (DCFG.allowKeywordFallback == true)
+    if allowKW then
+        local kws  = DCFG.allowKeywords or { "apple", "bread", "carrot" }
+        local name = tostring(label):lower()
 
-    if #kws > 0 then
-        -- list → use keywordNutrition
-        local perKW = tonumber(DCFG.keywordNutrition or 10) or 10
-        for _, kw in ipairs(kws) do
-            kw = tostring(kw):lower()
-            if kw ~= "" and name:find(kw, 1, true) then
-                return perKW, kw
+        if #kws > 0 then
+            -- list → use keywordNutrition
+            local perKW = tonumber(DCFG.keywordNutrition or 10) or 10
+            for _, kw in ipairs(kws) do
+                kw = tostring(kw):lower()
+                if kw ~= "" and name:find(kw, 1, true) then
+                    return perKW, kw
+                end
             end
-        end
-    else
-        -- map → per-keyword values
-        for kw, val in pairs(kws) do
-            local kwl = tostring(kw):lower()
-            if kwl ~= "" and name:find(kwl, 1, true) then
-                local v = tonumber(val) or 0
-                if v > 0 then return v, kw end
+        else
+            -- map → per-keyword values
+            for kw, val in pairs(kws) do
+                local kwl = tostring(kw):lower()
+                if kwl ~= "" and name:find(kwl, 1, true) then
+                    local v = tonumber(val) or 0
+                    if v > 0 then return v, kw end
+                end
             end
         end
     end
@@ -175,7 +178,6 @@ function CuraEqui.Horse.Resolve()
 end
 
 -- Logs what the various helpers return at this moment (WUID vs id vs nil)
-
 do
     local H = _G.Horse
     if H and type(H.OnMount) == "function" and not H.__curaequi_mount then
@@ -224,14 +226,14 @@ function CuraEqui.Horse.IsMounted()
     return (ok and v) and true or false
 end
 
--- Collect selected items (store light info for logs & nutrition)
+-- Collect selected items - store light info for logs & nutrition
 function Horse:OnInventoryItemUsed(id)
     self._feedSel = self._feedSel or {}
     local info    = _inv_get_info(id)
     info._wuid    = id           -- keep the real handle for DeleteItem
     info.wuidStr  = tostring(id) -- for logs
     table.insert(self._feedSel, info)
-    System.LogAlways(("[CuraEqui][Feed] Picked: %s (class=%s, qty=%s)")
+    FeedLog(("[CuraEqui][Feed] Picked: %s (class=%s, qty=%s)")
         :format(tostring(info.uiName or info.dbName or info.wuidStr), tostring(info.classId), tostring(info.qty)))
 end
 
@@ -262,6 +264,7 @@ function Horse:OnInventoryClosed()
     local curH = tonumber(S.hunger or 0) or 0
     local cap  = tonumber(FCFG.needCapPerFeed or 25) or 25
     local need = math.max(0, math.min(cap, curH)) -- you can only reduce what you have
+
     if need <= 0 then
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
             CuraEqui.UI.Toast("@curaequi_horse_full", 300, 0, "CuraEquiFeed", "infotext")
@@ -297,9 +300,11 @@ function Horse:OnInventoryClosed()
 
     -- apply hunger & report
     if used <= 0 then
+        -- No summary; just the full message (already shown above if triggered)
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
             CuraEqui.UI.Toast("@curaequi_horse_full", 3, 0, "CuraEquiFeed", "infotext")
         end
+        FeedLog("Nothing applicable selected → no consumption")
         return
     end
 
@@ -319,7 +324,7 @@ function Horse:OnInventoryClosed()
     if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
         CuraEqui.UI.Toast(msg, 2000, 0, "CuraEqui_Status", "center")
     end
-    System.LogAlways("[CuraEqui][Feed] " .. msg .. " details: " .. table.concat(parts, ", "))
+    FeedLog("%s details: %s", msg, table.concat(parts, ", "))
 
     -- delete planned units (one call per WUID)
     if FCFG.removeItems then
@@ -335,7 +340,11 @@ function Horse:OnInventoryClosed()
                 if ok then removed = removed + rec.units else failed = failed + rec.units end
             end
         end
-        System.LogAlways(("[CuraEqui][Feed] Remove: %d unit(s) ok, %d fail via inventory:DeleteItem"):format(removed,
-            failed))
+        if failed > 0 then
+            System.LogAlways(("[CuraEqui][Feed][WARN] Remove: %d ok, %d fail via inventory:DeleteItem"):format(removed,
+                failed))
+        else
+            FeedLog("Remove: %d unit(s) ok via inventory:DeleteItem", removed)
+        end
     end
 end
