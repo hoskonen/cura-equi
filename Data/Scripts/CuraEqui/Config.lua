@@ -16,6 +16,8 @@ CuraEqui.Config = {
         hungerTraceEvery = 10000,
         mountTrace = true,
         feedTrace = true,
+        buffTraceVerbose = false, -- false = log only when buff changes
+        tickTrace = true,
     },
 
     Hunger = {
@@ -66,14 +68,32 @@ CuraEqui.Config = {
             minor = 50,
             moderate = 70,
             critical = 90
-        }
+        },
+        -- pretty names per tier (fallbacks provided in code if you skip this)
+        hungerNames       = {
+            ok       = "OK",
+            minor    = "Mild",
+            moderate = "Hungry",
+            critical = "Starving",
+            sated    = "Sated",
+        },
     },
     Feeding = {
-        style = "vanilla",        -- "vanilla" (picker → instant feed), "experimental", "hybrid" (later)
-        needCapPerFeed = 25,      -- max hunger you try to restore per feed action
-        overfeedPolicy = "allow", -- "allow" | "skip"  (what to do if a single item would overshoot need)
-        toastOnDone = true,
-        removeItems = true        -- ← keep false until you verify removal works on your build
+        style                  = "vanilla", -- "vanilla" (picker → instant feed), "experimental", "hybrid" (later)
+        overfeedPolicy         = "allow",   -- "allow" | "skip"  (what to do if a single item would overshoot need)
+        removeItems            = true,      -- ← keep false until you verify removal works on your build
+        -- Sated Mode (goal-based planning; picker path)
+        needMode               = "sated",   -- "hunger" | "sated"
+        needCapPerFeed         = 25,
+        satedMinSec            = 300,
+        satedMaxSec            = 900,
+        satedSecPerPoint       = 6,
+        satedAlsoReducesHunger = true,
+        -- Toasts (dev-style, no localization)
+        toastOnDone            = true,
+        toastLane              = "notification", -- "notification" (right) | "tutorial" | "infotext"
+        toastSec               = 2.0,
+
     },
     FeedScan = {
         radius                 = 2.0,
@@ -108,5 +128,8 @@ CuraEqui.Config = {
         feedTrigger3  = "a_o_horse_snort2",       -- ATL trigger name (atl_name in XML)
         feedTrigger4  = "a_o_horse_snort3",       -- ATL trigger name (atl_name in XML)
         pathHints     = { "horse" },              -- NEW: folders to try as prefixes
+    },
+    Buffs = {
+        applyDelaySec = 1.2,
     }
 }

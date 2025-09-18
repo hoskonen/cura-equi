@@ -13,7 +13,7 @@ end
 
 local function _feed_toast_cfg()
     local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
-    local lane = F.toastLane or "tutorial"
+    local lane = F.toastLane or "notification"
     local ms = math.max(200, math.floor((tonumber(F.toastSec) or 2.0) * 1000))
     return lane, ms
 end
@@ -90,6 +90,135 @@ local function _per_unit_from_info(info)
 
     -- 3) default (nothing matched)
     return 0, label
+end
+
+local function _sated_cfg()
+    local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+    return {
+        minSec  = tonumber(F.satedMinSec) or 300,
+        maxSec  = tonumber(F.satedMaxSec) or 900,
+        perPt   = tonumber(F.satedSecPerPoint) or 6,
+        capPts  = tonumber(F.needCapPerFeed) or 25,
+        alsoHun = (F.satedAlsoReducesHunger ~= false),
+    }
+end
+
+local function _calc_need_points(S, mode)
+    local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+    local cap = tonumber(F.needCapPerFeed or 25) or 25
+    if mode == "sated" then
+        local C          = _sated_cfg()
+        local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local remS       = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+        local target     = math.max(C.minSec, math.min(C.maxSec, C.minSec))
+        local missingSec = math.max(0, target - remS)
+        local pts        = math.ceil(missingSec / math.max(1, C.perPt))
+        return math.max(0, math.min(pts, C.capPts))
+    else
+        local h = math.max(0, tonumber(S.hunger or 0) or 0)
+        return math.min(h, cap)
+    end
+end
+
+local function _plan_remove(picks, needPoints, over)
+    local removePlan, used = {}, 0
+    for _, info in ipairs(picks or {}) do
+        if used >= needPoints then break end
+
+        local per, label = _per_unit_from_info(info)
+        if per > 0 then
+            local maxUnits  = tonumber(info.qty or 1) or 1
+            local remaining = math.max(0, needPoints - used)
+            local wantUnits = math.floor(remaining / per)
+
+            -- allow slight overshoot by one unit if policy says so
+            if (wantUnits * per) < remaining and (over == "allow") then
+                wantUnits = wantUnits + 1
+            end
+
+            wantUnits = math.max(0, math.min(wantUnits, maxUnits))
+            if wantUnits > 0 then
+                local key = info.wuidStr or tostring(info._wuid)
+                local rec = removePlan[key]
+                if not rec then
+                    rec = { wuid = info._wuid, units = 0, label = label, per = per }
+                    removePlan[key] = rec
+                end
+                rec.units = rec.units + wantUnits
+                used = used + wantUnits * per
+            end
+        end
+    end
+
+    -- final clamp in case of overshoot
+    if used > needPoints then
+        local excess = used - needPoints
+        for k, rec in pairs(removePlan) do
+            if excess <= 0 then break end
+            if rec.per > 0 and rec.units > 0 then
+                local drop = math.min(rec.units, math.ceil(excess / rec.per))
+                if drop > 0 then
+                    rec.units = rec.units - drop
+                    used = used - drop * rec.per
+                    if rec.units == 0 then removePlan[k] = nil end
+                    excess = used - needPoints
+                end
+            end
+        end
+    end
+
+    return removePlan, used
+end
+
+
+local function _apply_feed(S, mode, used)
+    local beforeH = math.max(0, tonumber(S.hunger or 0) or 0)
+    local newH    = beforeH
+    if mode == "sated" then
+        local C     = _sated_cfg()
+        local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local add   = used * C.perPt
+        local base  = math.max(now, tonumber(S.satedUntil or 0) or 0)
+        local capA  = now + C.maxSec
+        local next  = math.min(base + add, capA)
+        local floor = now + C.minSec
+        if next < floor then next = math.min(floor, capA) end
+        S.satedUntil = next
+        if C.alsoHun then
+            newH = math.max(0, beforeH - used); S.hunger = newH
+        end
+    else
+        newH = math.max(0, beforeH - used); S.hunger = newH
+    end
+    return newH
+end
+
+local function _emit_feed_toasts(removePlan, used, mode, S)
+    local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+    if not (F.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast) then return end
+    local lane, ms = _feed_toast_cfg()
+    local parts = {}
+    for _, rec in pairs(removePlan) do
+        parts[#parts + 1] = {
+            label = rec.label,
+            units = rec.units,
+            total = rec.units *
+                rec.per
+        }
+    end
+    for i = 1, #parts do
+        local p = parts[i]
+        CuraEqui.UI.Toast(string.format("%s x%d (-%d)", p.label, p.units, p.total), ms, 0, "CuraEqui_FeedType", lane)
+    end
+    local msg
+    if mode == "sated" then
+        local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+        msg        = string.format("Fed %d type(s) (-%d) → Sated %.0fs", #parts, used, remS)
+    else
+        msg = string.format("Fed %d type(s) (-%d) → %d%%", #parts, used, math.floor(tonumber(S.hunger or 0) or 0))
+    end
+    CuraEqui.UI.Toast(msg, ms, 0, "CuraEqui_FeedSummary", lane)
 end
 
 function CuraEqui.Horse.Debug_LogPlayerHorseHandles()
@@ -246,14 +375,8 @@ end
 
 -- Vanilla-style: simulate feeding on close (no removal yet)
 function Horse:OnInventoryClosed()
-    local picks   = self._feedSel or {}
-    self._feedSel = nil
-
-    local CFG     = CuraEqui.Config or {}
-    local FCFG    = CFG.Feeding or {}
-    local over    = (FCFG.overfeedPolicy or "allow")
-
-    -- fall back to your old path if not in "vanilla" mode
+    local picks   = self._feedSel or {}; self._feedSel = nil
+    local CFG     = CuraEqui.Config or {}; local FCFG = CFG.Feeding or {}
     if (FCFG.style or "vanilla") ~= "vanilla" then
         if CuraEqui._InvClose_Disarm then CuraEqui._InvClose_Disarm("picker_used") end
         if CuraEqui.Feed_StartScan then
@@ -263,51 +386,19 @@ function Horse:OnInventoryClosed()
         return
     end
 
-    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self)
-    if not S then
-        System.LogAlways("[CuraEqui][Feed] close: no horse state"); return
-    end
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self); if not S then return end
+    local mode = (FCFG.needMode or "hunger")
 
-    local curH = tonumber(S.hunger or 0) or 0
-    local cap  = tonumber(FCFG.needCapPerFeed or 25) or 25
-    local need = math.max(0, math.min(cap, curH)) -- you can only reduce what you have
-
-    if need <= 0 then
+    local needPoints = _calc_need_points(S, mode)
+    if needPoints <= 0 then
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
             CuraEqui.UI.Toast("@curaequi_horse_full", 300, 0, "CuraEquiFeed", "infotext")
         end
         return
     end
 
-    -- plan how many UNITS to take per WUID
-    local removePlan, used = {}, 0 -- removePlan[key] = { wuid, units, label, per }
-
-    for _, info in ipairs(picks) do
-        if need <= 0 then break end
-        local per, label = _per_unit_from_info(info)
-        if per > 0 then
-            local maxUnits = tonumber(info.qty or 1) or 1
-            local want     = math.floor(need / per)
-            if (want * per) < need and over == "allow" then want = want + 1 end
-            want = math.max(0, math.min(want, maxUnits))
-            if want > 0 then
-                local key = info.wuidStr or tostring(info._wuid)
-                local rec = removePlan[key]
-                if not rec then
-                    rec = { wuid = info._wuid, units = 0, label = label, per = per }
-                    removePlan[key] = rec
-                end
-                rec.units = rec.units + want
-                local gain = want * per
-                used = used + gain
-                need = math.max(0, need - gain)
-            end
-        end
-    end
-
-    -- apply hunger & report
+    local removePlan, used = _plan_remove(picks, needPoints, FCFG.overfeedPolicy or "allow")
     if used <= 0 then
-        -- No summary; just the full message (already shown above if triggered)
         if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
             CuraEqui.UI.Toast("@curaequi_horse_full", 3, 0, "CuraEquiFeed", "infotext")
         end
@@ -315,47 +406,16 @@ function Horse:OnInventoryClosed()
         return
     end
 
-    local newH = math.max(0, curH - used)
-    S.hunger   = newH
+    local newH = _apply_feed(S, mode, used)
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, self, S) end
 
-    -- (optional) immediate buff sync so HUD updates now
-    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-        CuraEqui.Buffs.SyncAll(self, S)
-    end
+    _emit_feed_toasts(removePlan, used, mode, S)
+    FeedLog("Fed %d type(s) (-%d) mode=%s",
+        (function()
+            local n = 0
+            for _ in pairs(removePlan) do n = n + 1 end; return n
+        end)(), used, mode)
 
-    local parts = {}
-    for _, rec in pairs(removePlan) do
-        parts[#parts + 1] = { label = rec.label, units = rec.units, total = rec.units * rec.per }
-    end
-
-    -- right-corner dev toasts per type, then a compact summary
-    do
-        local lane, ms = _feed_toast_cfg()
-        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-            -- per-type lines: "carrot x2 (-24)"
-            for i = 1, #parts do
-                local p = parts[i]
-                CuraEqui.UI.Toast(string.format("%s x%d (-%d)", p.label, p.units, p.total),
-                    ms, 0, "CuraEqui_FeedType", lane)
-            end
-            -- summary: "Fed 3 type(s) (-36) → 12%"
-            local msg = string.format("Fed %d type(s) (-%d) → %d%%", #parts, used, math.floor(newH))
-            CuraEqui.UI.Toast(msg, ms, 0, "CuraEqui_FeedSummary", lane)
-        end
-    end
-
-    -- quieter console unless feedTrace=true
-    do
-        local details = {}
-        for i = 1, #parts do
-            local p = parts[i]
-            details[#details + 1] = string.format("%s x%d (-%d)", p.label, p.units, p.total)
-        end
-        FeedLog("Fed %d type(s) (-%d) → %d%% | %s",
-            #parts, used, math.floor(newH), table.concat(details, ", "))
-    end
-
-    -- delete planned units (one call per WUID)
     if FCFG.removeItems then
         local inv = (player and (player.inventory or (player.actor and player.actor.inventory))) or nil
         if not inv or not inv.DeleteItem then

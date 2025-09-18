@@ -3,6 +3,24 @@ CuraEqui = CuraEqui or {}
 CuraEqui.Buffs = CuraEqui.Buffs or {}
 local M = CuraEqui.Buffs
 
+local function _delay_ms()
+    local ms = 1000
+    local C  = CuraEqui.Config and CuraEqui.Config.Buffs
+    if C and C.applyDelaySec then
+        ms = math.max(0, math.floor((tonumber(C.applyDelaySec) or 0) * 1000))
+    end
+    return ms
+end
+
+local function _schedule(ms, fn)
+    if (Script and Script.SetTimer and type(fn) == "function" and ms > 0) then
+        Script.SetTimer(ms, fn)
+    else
+        -- fallback: run now if no timers available / zero delay
+        fn()
+    end
+end
+
 -- helpers
 local function _now() return (Script and Script.GetTime and Script.GetTime()) or os.clock() end
 
@@ -57,12 +75,15 @@ function M.SyncPlayerStatus(horseEnt, S)
     local tier = _pickTierName(hval, S.satedUntil)
     local uuid = _uuidFromList(list, tier)
 
-    -- decision log (runs even when uuid = "")
-    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.enabled then
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-        local rem = math.max(0, (S.satedUntil or 0) - now)
-        CuraEqui.Log("buff", "PlayerStatus pick tier=%s hunger=%d remSated=%.1f uuid=%s",
-            tier, hval, rem, _short(uuid))
+    -- decision log (verbose only)
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug
+        if D and D.enabled and D.buffTraceVerbose then
+            local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+            local rem = math.max(0, (S.satedUntil or 0) - now)
+            CuraEqui.Log("buff", "PlayerStatus pick tier=%s hunger=%d remSated=%.1f uuid=%s",
+                tier, hval, rem, _short(uuid))
+        end
     end
 
     if not uuid or uuid == "" then
@@ -73,10 +94,22 @@ function M.SyncPlayerStatus(horseEnt, S)
     end
 
     if uuid ~= M._lastPlayerUuid then
+        -- remember intended target; clear immediately
+        M._desiredPlayerUuid = uuid
         CuraEqui.Effects.ClearPlayerStatus()
-        CuraEqui.Effects.ApplyPlayer(uuid)
-        M._lastPlayerUuid = uuid
-        CuraEqui.Log("buff", "PlayerStatus → %s (%s)", tier, uuid)
+
+        local want = uuid
+        local delay = _delay_ms()
+        _schedule(delay, function()
+            -- only apply if nothing changed in the meantime
+            if M._desiredPlayerUuid == want then
+                CuraEqui.Effects.ApplyPlayer(want)
+                M._lastPlayerUuid = want
+                if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.enabled then
+                    CuraEqui.Log("buff", "PlayerStatus → %s (%s) (delayed %dms)", tier, want, delay)
+                end
+            end
+        end)
     end
 end
 
@@ -90,10 +123,13 @@ function M.SyncHorseDebuff(horseEnt, S)
     local uuid = _uuidFromList(list, tier)
     local last = S._lastHorseDebuffUuid
 
-    -- decision log
-    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.enabled then
-        CuraEqui.Log("buff", "HorseDebuff pick tier=%s hunger=%d uuid=%s last=%s",
-            tier, hval, _short(uuid), _short(last))
+    -- decision log (verbose only)
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug
+        if D and D.enabled and D.buffTraceVerbose then
+            CuraEqui.Log("buff", "HorseDebuff pick tier=%s hunger=%d uuid=%s last=%s",
+                tier, hval, _short(uuid), _short(last))
+        end
     end
 
     if not uuid or uuid == "" then
@@ -121,7 +157,6 @@ function M.SyncHorseDebuff(horseEnt, S)
         end
         return
     end
-
 
     if uuid ~= last then
         CuraEqui.Effects.ClearHorseDebuffs(horseEnt)

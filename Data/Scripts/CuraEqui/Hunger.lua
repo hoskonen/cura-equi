@@ -1,5 +1,27 @@
 -- Scripts/CuraEqui/Hunger.lua
 local function Q(...) CuraEqui.Log("Horse", ...) end
+-- Fallbacks so throttled logs/toasts work even if Utils.lua is missing pieces
+CuraEqui.Utils = CuraEqui.Utils or {}
+do
+    local U = CuraEqui.Utils
+
+    U.ms_to_s = U.ms_to_s or function(v)
+        local n = tonumber(v or 0) or 0
+        if n <= 60 then return math.max(0.1, n) end
+        return math.max(0.1, n / 1000.0)
+    end
+
+    local _next = {}
+    U.throttle = U.throttle or function(key, intervalSec)
+        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local t   = tonumber(intervalSec or 1) or 1
+        local nxt = _next[key] or 0
+        if now >= nxt then
+            _next[key] = now + t; return true
+        end
+        return false
+    end
+end
 
 -- ---------- ONE-TIME PROBE ----------
 local _probeDone = false
@@ -131,7 +153,10 @@ function CuraEqui._HungerTickBody()
         if v and (v.x or v[1]) then
             local vx    = v.x or v[1]; local vy = v.y or v[2]; local vz = v.z or v[3]
             local speed = math.sqrt((vx or 0) ^ 2 + (vy or 0) ^ 2 + (vz or 0) ^ 2) -- m/s
-            local d     = speed * (CuraEqui.HorseCfg.tickSec or 1)
+            local tickS = (CuraEqui.HorseCfg and CuraEqui.HorseCfg.tickSec)
+                or ((CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.tickSec) or 10)
+            local d     = speed * tickS
+
             S.dist      = (S.dist or 0) + d
             S.totalDist = (S.totalDist or 0) + d
             S._posSrc   = "velocity"
@@ -242,22 +267,13 @@ function CuraEqui._HungerTickBody()
         -- dev console trace (compact)
         do
             local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-            if D.hungerTrace then
-                local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-                local interval = (CuraEqui.Utils and CuraEqui.Utils.ms_to_s and CuraEqui.Utils.ms_to_s(D.hungerTraceEvery or 5000)) or
-                    5
-                S._dbgNextConsoleAt = S._dbgNextConsoleAt or 0
-
-                if now >= S._dbgNextConsoleAt then
-                    local state = idle and "idle" or "mounted"
-                    local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-
-                    System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
-                        :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, mul,
-                            totalDrain, math.floor(before), math.floor(after), remS))
-
-                    S._dbgNextConsoleAt = now + interval
-                end
+            local U = CuraEqui.Utils
+            if D.hungerTrace and U and U.throttle("hunger-trace", U.ms_to_s(D.hungerTraceEvery or 5000)) then
+                local state = idle and "idle" or "mounted"
+                local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+                System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
+                    :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, mul,
+                        totalDrain, math.floor(before), math.floor(after), remS))
             end
         end
 
@@ -274,26 +290,22 @@ function CuraEqui._HungerTickBody()
     end
 
     do
-        local D = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud
-        if D and D.enabled and CuraEqui.UI and CuraEqui.UI.Toast then
-            local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
-            local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
-            if S then
-                local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-                local tier   = (CuraEqui.Buffs and CuraEqui.Buffs._pickTierName)
-                    and CuraEqui.Buffs._pickTierName(tonumber(S.hunger or 0) or 0, S.satedUntil) or "?"
-                local line   = string.format("Horse: %d%% · Sated %.0fs · %s",
-                    math.floor(tonumber(S.hunger or 0) or 0),
-                    math.max(0, (tonumber(S.satedUntil or 0) or 0) - now),
-                    tier)
+        local DH = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud
+        if DH and DH.enabled and CuraEqui.UI and CuraEqui.UI.Toast and S then
+            local U            = CuraEqui.Utils
+            local h            = math.floor(tonumber(S.hunger or 0) or 0)
+            local now          = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+            local rem          = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
-                S._hudNextAt = S._hudNextAt or 0
-                if now >= S._hudNextAt then
-                    local r = (CuraEqui.Utils and CuraEqui.Utils.ms_to_s and CuraEqui.Utils.ms_to_s(D.refresh or 1200)) or
-                        1.2
-                    CuraEqui.UI.Toast(line, r * 1000, 0, "CuraEqui_Status", D.lane or "notification")
-                    S._hudNextAt = now + r
-                end
+            local pretty, tier = CuraEqui.Utils and CuraEqui.Utils.hunger_label
+                and CuraEqui.Utils.hunger_label(h, S.satedUntil) or "OK", "ok"
+
+            -- include it in the line (or use to pick an icon id)
+            local line         = string.format("Hunger %s (%d%%) · %s · Sated %.0fs", pretty, h, tier, rem)
+
+            local r            = (U and U.ms_to_s and U.ms_to_s(DH.refresh or 1200)) or 1.2
+            if U and U.throttle("hud-dev-toast", r) then
+                CuraEqui.UI.Toast(line, r * 1000, 0, "CuraEqui_Status", DH.lane or "notification")
             end
         end
     end
@@ -312,7 +324,14 @@ end
 
 -- ---------- TIMER WRAPPER (ALWAYS REARMS) ----------
 function CuraEqui_HungerTick()
-    System.LogAlways("[CuraEqui][Tick] fired")
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        local U = CuraEqui.Utils
+        if D.tickTrace and U and U.throttle("tick-fired", U.ms_to_s(D.hungerTraceEvery or 10000)) then
+            System.LogAlways("[CuraEqui][Tick] fired")
+        end
+    end
+
     local ok, err = xpcall(CuraEqui._HungerTickBody, debug.traceback)
     if not ok then System.LogAlways("[CuraEqui][Tick][ERROR] " .. tostring(err)) end
 
