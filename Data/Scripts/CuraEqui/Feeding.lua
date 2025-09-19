@@ -552,10 +552,10 @@ function Horse:OnFeedHorse(user)
             end
         end
 
-        -- Multi-select picker: vegetables only
+        -- Multi-select picker
         do
-            -- accept both taxonomies you’ve seen in XMLs
-            local filter = "food.vegetable.*|food.vegetable.vegetable"
+            local F = CuraEqui.Config and CuraEqui.Config.Feeding or {}
+            local filter = F.filtersMulti or "food.vegetable.*|food.fruit.*|food.nut.*"
 
             local opened = false
             if user and user.actor and user.actor.OpenItemMultiselectionFilter then

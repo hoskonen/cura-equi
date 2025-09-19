@@ -28,22 +28,20 @@ CuraEqui.Config = {
         -- Rates
         ratePerMinIdle       = 0.3, -- horse idle (includes unmounted or mounted-but-standing)
         ratePerMinMounted    = 1.0, -- horse mounted & moving: time drift while ridden
-        ratePerKmMounted     = 4.0, -- extra drain per ridden kilometer
+        ratePerKmMounted     = 6.0, -- extra drain per ridden kilometer
         speedIdleMps         = 0.2, -- below this → idle
         -- Sated
         satedDrainMul        = 0.75,
-        satedSecPerNutrition = 6,    -- x per nutrition
-        satedCapSec          = 600,  -- 10 min max
+        satedSecPerNutrition = 6,     -- x per nutrition
+        satedCapSec          = 600,   -- 10 min max
         -- Grazing
-        grazePerMinIdleUnmtd = -0.1, -- negative recovers while unmounted & idle
-        grazeSatedMul        = 1.0,  -- sated multiplier applied to grazing
+        grazePerMinIdleUnmtd = -0.01, -- negative recovers while unmounted & idle
+        grazeSatedMul        = 1.0,   -- sated multiplier applied to grazing
     },
 
     Diet = {
         strict               = "guid+token", -- "guid-only" | "guid+token" | "guid+token+keywords"
         allowKeywordFallback = false,        -- set false to require explicit map from DietData.lua
-        allowKeywords        = { "ui_nm_", "apple", "bread", "carrot" },
-        denyKeywords         = { "sword", "mace", "axe", "arrow", "meat_raw", "spoiled", "quest" },
         keywordNutrition     = 10
     },
 
@@ -80,6 +78,7 @@ CuraEqui.Config = {
     },
     Feeding = {
         style                  = "vanilla", -- "vanilla" (picker → instant feed), "experimental", "hybrid" (later)
+        filtersMulti           = "food.vegetable.*|food.fruit.*|food.nut.*",
         overfeedPolicy         = "allow",   -- "allow" | "skip"  (what to do if a single item would overshoot need)
         removeItems            = true,      -- ← keep false until you verify removal works on your build
         -- Sated Mode (goal-based planning; picker path)

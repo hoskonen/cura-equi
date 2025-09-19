@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="item.xsd">
+	<!-- Hay Bundle -->
+	<ItemClasses version="8">
+		<Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="0" Type="6" SubType="15" BuffDefinitionId="" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_hay_bundle" UIInfo="ui_curaequi_hay_bundle" UIName="ui_nm_curaequi_hay_bundle" Model="manmade/common_furniture/sacks/sack_items/sack_items.cgf" Weight="5" Price="100" FadeCoef="1" VisibilityCoef="3.54964781" Id="3e2f9a64-8c2b-4f7a-a9d3-5c1b2e7d4f90" Name="curaequi_hay_bundle" />
+	</ItemClasses>
+
+	<!-- Oat Snack / Bran Snack -->
+	<ItemClasses version="8">
+		<Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="200" Type="6" SubType="14" BuffDefinitionId="" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_oat_snack" UIInfo="ui_curaequi_oat_snack" UIName="ui_nm_curaequi_oat_snack" Model="manmade/common_furniture/sacks/sack_items/sack_items.cgf" Weight="0.5" Price="240" FadeCoef="1" VisibilityCoef="3.54964781" Id="9b7c1d20-5e43-4c8f-b1f2-0d3a6e9c8247" Name="curaequi_oat_snack" />
+	</ItemClasses>
+</database>
