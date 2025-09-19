@@ -21,6 +21,16 @@
     <Cell>curaequi_feed_window_ended</Cell><Cell>Drop edibles window ended</Cell><Cell>Drop edibles windows ended</Cell>
 </Row>
 
+<!-- Custom Food: Hay Bundle-->
+ <Row><Cell>ui_nm_curaequi_hay_bundle</Cell><Cell>Hay Bundle</Cell><Cell>Hay Bundle</Cell></Row>
+ 
+ <Row><Cell>ui_curaequi_hay_bundle_info</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell></Row>
+
+ <!-- Custom Food: Oat Snack-->
+ <Row><Cell>ui_nm_curaequi_oat_snack</Cell><Cell>Oat Snack</Cell><Cell>Oat Snack</Cell></Row>
+ 
+ <Row><Cell>ui_curaequi_oat_snack_info</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell></Row>
+
 <!-- Buffs & Debuffs -->
 <Row>
     <Cell>buff_ce_sated</Cell><Cell>Sated</Cell><Cell>Sated</Cell>
