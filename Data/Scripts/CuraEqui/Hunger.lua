@@ -23,6 +23,33 @@ do
     end
 end
 
+do
+    local U = CuraEqui.Utils
+    U.hunger_label = U.hunger_label or function(hungerPct, satedUntil)
+        local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
+        local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
+        local names = HUD.hungerNames or {
+            ok = "OK",
+            minor = "Mild",
+            moderate = "Hungry",
+            critical = "Starving",
+            sated =
+            "Sated"
+        }
+
+        local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local rem   = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
+        if rem > 0 then return names.sated, "sated" end
+
+        local h = tonumber(hungerPct or 0) or 0
+        local tier = (h >= (th.critical or 80)) and "critical"
+            or (h >= (th.moderate or 50)) and "moderate"
+            or (h >= (th.minor or 20)) and "minor"
+            or "ok"
+        return names[tier] or tier, tier
+    end
+end
+
 -- ---------- ONE-TIME PROBE ----------
 local _probeDone = false
 
@@ -240,18 +267,58 @@ function CuraEqui._HungerTickBody()
         -- per-km only when mounted-moving
         local distDrain  = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
 
+        -- NIGHT STATE (detect + reset per-night accumulator at dusk/dawn)
+        local HcfgAll    = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+        local NC         = HcfgAll.night or {}
+        local isNight    = (Calendar and Calendar.IsNightTimeOfDay and Calendar.IsNightTimeOfDay()) or false
+        S._wasNight      = S._wasNight or false
+        S._nightAdded    = S._nightAdded or 0
+
+        if isNight and not S._wasNight then
+            -- night just started
+            S._nightAdded = 0
+        elseif (not isNight) and S._wasNight then
+            -- dawn
+            S._nightAdded = 0
+        end
+        S._wasNight = isNight
+
         -- grazing recovery when unmounted & idle (negative reduces hunger)
-        local Hcfg       = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
-        local gP         = tonumber(Hcfg.grazePerMinIdleUnmtd) or 0
-        local gM         = tonumber(Hcfg.grazeSatedMul) or 1.0
-        local graze      = ((not mounted) and idle) and (gP * (dt / 60.0) * gM) or 0
+        local Hcfg  = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+        local gP    = tonumber(Hcfg.grazePerMinIdleUnmtd) or 0
+        local gM    = tonumber(Hcfg.grazeSatedMul) or 1.0
+        local graze = ((not mounted) and idle) and (gP * (dt / 60.0) * gM) or 0
+
+        -- Night rules
+        if isNight and (NC.disableGrazing ~= false) then
+            graze = 0.0
+        end
+        local nightTimeMul = (isNight and (tonumber(NC.timeDrainMul) or 1.0) or 1.0)
+        timeDrain          = timeDrain * nightTimeMul
 
         -- sated multiplier
-        local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-        local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
+        local now          = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local mul          = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
 
         -- By design, sated does NOT change grazing by default → apply mul to drains only
-        local totalDrain = (timeDrain + distDrain) * mul + graze
+        local totalDrain   = (timeDrain + distDrain) * mul + graze
+
+        -- Cap per-night hunger gain so morning isn't always 100%
+        if isNight and totalDrain > 0 then
+            local cap = tonumber(NC.maxDeltaPerNight or 0) or 0
+            if cap > 0 then
+                local remaining = math.max(0, cap - (S._nightAdded or 0))
+                if remaining <= 0 then
+                    if CuraEqui.Config.Debug and CuraEqui.Config.Debug.hungerTrace then
+                        System.LogAlways("[CuraEqui][Hunger] night cap reached; further gain suppressed")
+                    end
+                    totalDrain = 0
+                else
+                    if totalDrain > remaining then totalDrain = remaining end
+                    S._nightAdded = (S._nightAdded or 0) + totalDrain
+                end
+            end
+        end
 
         local before     = tonumber(S.hunger or 0) or 0
         local after      = clamp(before + totalDrain, 0, CuraEqui.HorseCfg.hungerMax or 100)
@@ -292,18 +359,15 @@ function CuraEqui._HungerTickBody()
     do
         local DH = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud
         if DH and DH.enabled and CuraEqui.UI and CuraEqui.UI.Toast and S then
-            local U            = CuraEqui.Utils
-            local h            = math.floor(tonumber(S.hunger or 0) or 0)
-            local now          = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-            local rem          = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+            local U      = CuraEqui.Utils
+            local h      = math.floor(tonumber(S.hunger or 0) or 0)
+            local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+            local rem    = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
-            local pretty, tier = CuraEqui.Utils and CuraEqui.Utils.hunger_label
-                and CuraEqui.Utils.hunger_label(h, S.satedUntil) or "OK", "ok"
+            local pretty = select(1, CuraEqui.Utils.hunger_label(h, S.satedUntil))
+            local line   = string.format("Hunger %s (%d%%) · Sated %.0fs", pretty, h, rem)
 
-            -- include it in the line (or use to pick an icon id)
-            local line         = string.format("Hunger %s (%d%%) · %s · Sated %.0fs", pretty, h, tier, rem)
-
-            local r            = (U and U.ms_to_s and U.ms_to_s(DH.refresh or 1200)) or 1.2
+            local r      = (U and U.ms_to_s and U.ms_to_s(DH.refresh or 1200)) or 1.2
             if U and U.throttle("hud-dev-toast", r) then
                 CuraEqui.UI.Toast(line, r * 1000, 0, "CuraEqui_Status", DH.lane or "notification")
             end

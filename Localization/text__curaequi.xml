@@ -21,6 +21,14 @@
     <Cell>curaequi_feed_window_ended</Cell><Cell>Drop edibles window ended</Cell><Cell>Drop edibles windows ended</Cell>
 </Row>
 
+<Row>
+    <Cell>curaequi_horse_refuses_eat</Cell><Cell>Horse refuses to eat</Cell><Cell>Horse refuses to eat</Cell>
+</Row>
+
+<Row>
+    <Cell>curaequi_horse_sated_fed_partly</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell>
+</Row>
+
 <!-- Custom Food: Hay Bundle-->
  <Row><Cell>ui_nm_curaequi_hay_bundle</Cell><Cell>Hay Bundle</Cell><Cell>Hay Bundle</Cell></Row>
  

@@ -150,6 +150,17 @@ local function _plan_remove(picks, needPoints, over)
         end
     end
 
+    -- totals
+    local selectedUnits = 0
+    for _, info in ipairs(picks or {}) do
+        selectedUnits = selectedUnits + (tonumber(info.qty) or 0)
+    end
+
+    local consumedUnits = 0
+    for _, rec in pairs(removePlan or {}) do
+        consumedUnits = consumedUnits + (tonumber(rec.units) or 0)
+    end
+
     -- final clamp in case of overshoot
     if used > needPoints then
         local excess = used - needPoints
@@ -167,7 +178,7 @@ local function _plan_remove(picks, needPoints, over)
         end
     end
 
-    return removePlan, used
+    return removePlan, used, selectedUnits, consumedUnits
 end
 
 
@@ -397,17 +408,31 @@ function Horse:OnInventoryClosed()
         return
     end
 
-    local removePlan, used = _plan_remove(picks, needPoints, FCFG.overfeedPolicy or "allow")
+    local removePlan, used, selectedUnits, consumedUnits = _plan_remove(picks, needPoints, FCFG.overfeedPolicy or "allow")
+
+    -- Nothing consumed this close
     if used <= 0 then
-        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-            CuraEqui.UI.Toast("@curaequi_horse_full", 3, 0, "CuraEquiFeed", "infotext")
+        local pickedAny = (selectedUnits or 0) > 0
+        if CuraEqui.UI and CuraEqui.UI.Toast then
+            if pickedAny then
+                -- They chose items but all had 0 nutrition → refusal
+                CuraEqui.UI.Toast("@curaequi_horse_refuses_eat", 500, 0, "CuraEquiFeed", "infotext")
+            else
+                -- No picks (just closed) → say nothing
+                -- (do NOT show "Horse is full" here)
+            end
         end
-        FeedLog("Nothing applicable selected → no consumption")
+        FeedLog(pickedAny and "Refusal: all selections resolved to 0." or "Picker closed without selection.")
         return
     end
 
-    local newH = _apply_feed(S, mode, used)
+    _apply_feed(S, mode, used)
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, self, S) end
+
+    -- C) Partial feed: some submitted units weren’t consumed (cap/sated limited)
+    if (consumedUnits or 0) < (selectedUnits or 0) and CuraEqui.UI and CuraEqui.UI.Toast then
+        CuraEqui.UI.Toast("@curaequi_horse_sated_fed_partly", 2200, 0, "CuraEquiFeed", "infotext")
+    end
 
     _emit_feed_toasts(removePlan, used, mode, S)
     FeedLog("Fed %d type(s) (-%d) mode=%s",

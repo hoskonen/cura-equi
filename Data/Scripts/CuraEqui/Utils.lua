@@ -36,23 +36,24 @@ do
     end
 end
 
-CuraEqui       = CuraEqui or {}
-CuraEqui.Utils = CuraEqui.Utils or {}
+function U.hunger_label(hungerPct, satedUntil)
+    local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
+    local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
+    local names = HUD.hungerNames or { ok = "OK", minor = "Mild", moderate = "Hungry", critical = "Starving", sated =
+    "Sated" }
 
-function CuraEqui.Utils.hunger_label(hungerPct, satedUntil)
-    local tier   = (CuraEqui.Buffs and CuraEqui.Buffs._pickTierName)
-        and CuraEqui.Buffs._pickTierName(tonumber(hungerPct or 0) or 0, satedUntil) or "ok"
+    -- Sated override
+    local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local rem   = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
+    if rem > 0 then return names.sated, "sated" end
 
-    local HUD    = CuraEqui.Config and CuraEqui.Config.HUD or {}
-    local names  = HUD.hungerNames or {}
-    local pretty = names[tier]
-    if not pretty then
-        -- decent defaults if config omits hungerNames
-        local defaults = { ok = "OK", minor = "Mild", moderate = "Hungry", critical = "Starving", sated = "Sated" }
-        pretty = defaults[tier] or (tier:gsub("^%l", string.upper))
-    end
+    local h = tonumber(hungerPct or 0) or 0
+    local tier = (h >= (th.critical or 80)) and "critical"
+        or (h >= (th.moderate or 50)) and "moderate"
+        or (h >= (th.minor or 20)) and "minor"
+        or "ok"
 
-    return pretty, tier
+    return names[tier] or tier, tier
 end
 
 CuraEqui.Utils = U

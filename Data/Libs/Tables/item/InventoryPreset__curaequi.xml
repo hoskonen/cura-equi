@@ -1,14 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
 <database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="InventoryPreset.xsd">
   <InventoryPresets version="2">
-    <!--Cura Equi Horse Food Preset -->
-    <InventoryPreset Name="curaequi_horsefood">
-      <PresetItem Name="curaequi_hay_bundle" Amount="2" />
-      <PresetItem Name="curaequi_oat_snack" Amount="1" />
-    </InventoryPreset>
+  <!--Cura Equi: Horse Food Preset Some -->
+  <InventoryPreset Name="curaequi_horsefood">
+    <PresetItem Name="curaequi_hay_bundle" Amount="2" />
+    <PresetItem Name="curaequi_oat_snack" Amount="1" />
+  </InventoryPreset>
 
-    <InventoryPreset Name="inventory_shop_groomTrosky" Mode="All" Health="1" >
-			<InventoryPresetRef Name="curaequi_horsefood" />
-		</InventoryPreset>
-  </InventoryPresets>
+   <!--Cura Equi: Horse Food Preset: Horse Trader -->
+  <InventoryPreset Name="curaequi_horsefood_horsetrader">
+    <PresetItem Name="curaequi_hay_bundle" Amount="8" />
+    <PresetItem Name="curaequi_oat_snack" Amount="12" />
+  </InventoryPreset>
+
+  <InventoryPreset Name="inventory_shop_groomTrosky" Mode="All" Health="1" >
+	<InventoryPresetRef Name="curaequi_horsefood" />
+  </InventoryPreset>
+
+  <!-- Common -->
+ 	<InventoryPreset Name="inventory_shop_commonGreengrocer" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+ 	</InventoryPreset>
+
+  	<InventoryPreset Name="inventory_shop_commonMerchant" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+  	</InventoryPreset>
+
+  	<InventoryPreset Name="inventory_shop_commonSaddler" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+ 	</InventoryPreset>
+
+  <!-- Horse Trader's have good stacks -->
+  	<InventoryPreset Name="inventory_shop_horseTraderGrunta" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood_horsetrader" />
+ 	</InventoryPreset>
+
+ 	<InventoryPreset Name="inventory_shop_horseTraderMalesov" Mode="All" Health="1" >
+	<InventoryPresetRef Name="curaequi_horsefood_horsetrader" />
+ 	</InventoryPreset>
+
+ 	<InventoryPreset Name="inventory_shop_horseTraderKuttenberg" Mode="All" Health="1" >
+	<InventoryPresetRef Name="curaequi_horsefood_horsetrader" />
+ 	</InventoryPreset>
+
+ 	<InventoryPreset Name="inventory_shop_horseTraderVezicko" Mode="All" Health="1" >
+	<InventoryPresetRef Name="curaequi_horsefood_horsetrader" />
+ 	</InventoryPreset>
+
+  <!-- Merchants -->
+   	<InventoryPreset Name="inventory_shop_merchantKHTarmark" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+	</InventoryPreset>
+
+ 	 <InventoryPreset Name="inventory_shop_merchantKHZidovska" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+	</InventoryPreset>
+
+  	<InventoryPreset Name="inventory_shop_merchantKHVinna" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+	</InventoryPreset>
+
+  	<InventoryPreset Name="inventory_shop_merchantMalesov" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+	</InventoryPreset>
+
+  	<InventoryPreset Name="inventory_shop_merchantPritoky" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+	</InventoryPreset>
+
+  	<InventoryPreset Name="inventory_shop_merchantBylansko" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_horsefood" />
+	</InventoryPreset>
+	</InventoryPresets>
 </database>
