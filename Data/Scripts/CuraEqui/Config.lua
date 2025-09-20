@@ -26,8 +26,8 @@ CuraEqui.Config = {
         hungerMax            = 100,
         debuffAt             = 70,
         -- Rates
-        ratePerMinIdle       = 0.3, -- horse idle (includes mounted-but-standing)
-        ratePerMinMounted    = 1.0, -- horse mounted & moving: time drift while ridden
+        ratePerMinIdle       = 0.2, -- horse idle (includes mounted-but-standing)
+        ratePerMinMounted    = 0.5, -- horse mounted & moving: time drift while ridden
         ratePerKmMounted     = 2.5, -- extra drain per ridden kilometer
         speedIdleMps         = 0.2, -- below this → idle
         -- Sated
@@ -42,7 +42,9 @@ CuraEqui.Config = {
             disableGrazing   = true,
             timeDrainMul     = 1.0, -- 1.0 keeps same time drain at night (raise if you want nights a bit harsher)
             maxDeltaPerNight = 25,  -- absolute cap on hunger gained from sunset→sunrise
-        }
+
+        },
+        waitCatchup          = { enabled = true, maxCatchupSec = 6 * 3600 }
     },
 
     Diet = {

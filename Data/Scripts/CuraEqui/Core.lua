@@ -11,11 +11,11 @@ local C                      = CuraEqui.Config or {
         hungerStart       = 30,
         tickSec           = 10,
         -- NEW dials (no legacy names here):
-        ratePerMinIdle    = 0.5,   -- idle (unmounted or mounted-but-standing)
-        ratePerMinMounted = 1.0,   -- mounted & moving: time drift
-        ratePerKmMounted  = 4.0,   -- mounted & moving: per-km
-        speedIdleMps      = 0.2,   -- movement threshold
-        satedDrainMul     = 0.75,  -- Sated multiplier
+        ratePerMinIdle    = 0.5,  -- idle (unmounted or mounted-but-standing)
+        ratePerMinMounted = 1.0,  -- mounted & moving: time drift
+        ratePerKmMounted  = 4.0,  -- mounted & moving: per-km
+        speedIdleMps      = 0.2,  -- movement threshold
+        satedDrainMul     = 0.75, -- Sated multiplier
         debuffAt          = 70,
     },
     Diet   = { strict = "guid+token", allowKeywords = { "ui_nm_", "apple", "bread", "carrot" }, keywordNutrition = 10 },
@@ -209,11 +209,26 @@ function CuraEqui.OnSetFaderState(_actionName, eventName, argTable)
         CuraEqui.Log("poll", "Sleep starting → stopping hunger watcher")
         if CuraEqui.StopWatching then CuraEqui.StopWatching() end
         CuraEqui.state.pausedForSleep = true
+
+        local tod = (Calendar and Calendar.GetTimeOfDay and Calendar.GetTimeOfDay()) or nil
+        CuraEqui.state._sleepStartTOD = tod
     elseif eventName == "OnHide" then
         -- UI fade finished (covers post-load and wake-up)
         CuraEqui.Log("poll", "UI resumed → ensuring hunger watcher is running")
+        -- apply a small hunger catch-up based on skipped world minutes
+        System.LogAlways("[CuraEqui][Sleep] waking → running hunger catch-up")
+        if CuraEqui.Hunger_CatchUpAfterSleep then
+            local ok, minutes, delta, before, after = pcall(CuraEqui.Hunger_CatchUpAfterSleep)
+            -- Always show a concise one-liner so it's obvious it ran:
+            if ok and minutes and minutes > 0 then
+                System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
+                    :format(minutes, delta or 0, math.floor(before or 0), math.floor(after or 0)))
+            end
+        end
+
         CuraEqui.Initialize(false)
         CuraEqui.state.pausedForSleep = false
+        CuraEqui.state._sleepStartTOD = nil
     end
 end
 

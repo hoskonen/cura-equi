@@ -126,6 +126,83 @@ function CuraEqui.StopProbing()
     CuraEqui.Log("poll", "Probe stopped.")
 end
 
+-- Apply a small hunger catch-up for "sleep/wait" time-skip.
+function CuraEqui.Hunger_CatchUpAfterSleep()
+    System.LogAlways("[CuraEqui][Hunger][catchup] entered")
+
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
+    if not S then return end
+
+    -- Need a valid start & current world time-of-day (0..1)
+    local startTOD = CuraEqui.state and CuraEqui.state._sleepStartTOD
+    local nowTOD   = (Calendar and Calendar.GetTimeOfDay and Calendar.GetTimeOfDay()) or nil
+    if not startTOD or not nowTOD then return end
+
+    -- minutes elapsed in world time (wrap across midnight)
+    local dFrac = nowTOD - startTOD
+    if dFrac < 0 then dFrac = dFrac + 1.0 end
+    local minutes = dFrac * 24.0 * 60.0
+    if minutes <= 0.1 then return end
+
+    -- Optional guardrails (configurable)
+    local WCFG   = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.waitCatchup) or {}
+    local maxMin = math.max(0, tonumber(WCFG.maxCatchupSec or (6 * 3600)) / 60.0) -- default cap ~6h
+    if maxMin > 0 and minutes > maxMin then minutes = maxMin end
+
+    -- Read dials
+    local H          = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+    local NC         = H.night or {}
+    local perMin     = (tonumber(H.ratePerMinIdle) or 0) -- time drain per minute (idle)
+    local gPM        = (tonumber(H.grazePerMinIdleUnmtd) or 0)
+    local gMul       = (tonumber(H.grazeSatedMul) or 1.0)
+
+    -- Day vs Night now (approximation): we don’t slice here; keep it simple.
+    local isNightNow = (Calendar and Calendar.IsNightTimeOfDay and Calendar.IsNightTimeOfDay()) or false
+
+    -- Compose a per-minute delta:
+    --   Night  : (perMin * nightTimeMul), grazing OFF
+    --   Day    : (perMin) + grazing (scaled by sated mul)
+    local timeMul    = isNightNow and (tonumber(NC.timeDrainMul) or 1.0) or 1.0
+    local perMinute  = perMin * timeMul
+    if not isNightNow then
+        -- unmounted idle assumption during sleep
+        perMinute = perMinute + (gPM * gMul)
+    end
+
+    -- total delta (points) across skipped minutes
+    local delta = perMinute * minutes
+
+    -- Night cap: if we woke up at night and delta is positive (getting hungrier), clamp by remaining cap.
+    if isNightNow and delta > 0 then
+        local cap = tonumber(NC.maxDeltaPerNight or 0) or 0
+        if cap > 0 then
+            local used = tonumber(S._nightAdded or 0) or 0
+            local remain = math.max(0, cap - used)
+            if delta > remain then delta = remain end
+            S._nightAdded = used + math.max(0, delta)
+        end
+    end
+
+    -- Apply
+    local before = tonumber(S.hunger or 0) or 0
+    local after  = math.max(0, math.min(100, before + delta))
+    S.hunger     = after
+
+    -- Keep buffs/UI coherent
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+        pcall(CuraEqui.Buffs.SyncAll, CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve(), S)
+    end
+
+    -- Optional quiet debug
+    local D = CuraEqui.Config and CuraEqui.Config.Debug
+    if D and D.hungerTrace then
+        System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
+            :format(minutes, delta, math.floor(before), math.floor(after)))
+    end
+
+    return minutes, delta, before, after
+end
+
 -- ---------- TICK BODY (MAY THROW) ----------
 function CuraEqui._HungerTickBody()
     local h = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
@@ -261,7 +338,7 @@ function CuraEqui._HungerTickBody()
         end
 
         -- time drift
-        local timePerMin = (mounted and (idle and C.rateIdle or C.rateMounted)) or 0
+        local timePerMin = (idle and C.rateIdle) or C.rateMounted
         local timeDrain  = timePerMin * (dt / 60.0)
 
         -- per-km only when mounted-moving
@@ -301,24 +378,23 @@ function CuraEqui._HungerTickBody()
         local mul          = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
 
         -- By design, sated does NOT change grazing by default → apply mul to drains only
-        local totalDrain   = (timeDrain + distDrain) * mul + graze
+        local passive      = (timeDrain * mul) + graze -- “just existing” at night
+        local active       = (distDrain * mul)         -- movement penalty (never capped)
 
-        -- Cap per-night hunger gain so morning isn't always 100%
-        if isNight and totalDrain > 0 then
+        if isNight and passive > 0 then
             local cap = tonumber(NC.maxDeltaPerNight or 0) or 0
             if cap > 0 then
                 local remaining = math.max(0, cap - (S._nightAdded or 0))
                 if remaining <= 0 then
-                    if CuraEqui.Config.Debug and CuraEqui.Config.Debug.hungerTrace then
-                        System.LogAlways("[CuraEqui][Hunger] night cap reached; further gain suppressed")
-                    end
-                    totalDrain = 0
+                    passive = 0
                 else
-                    if totalDrain > remaining then totalDrain = remaining end
-                    S._nightAdded = (S._nightAdded or 0) + totalDrain
+                    if passive > remaining then passive = remaining end
+                    S._nightAdded = (S._nightAdded or 0) + passive
                 end
             end
         end
+
+        local totalDrain = passive + active
 
         local before     = tonumber(S.hunger or 0) or 0
         local after      = clamp(before + totalDrain, 0, CuraEqui.HorseCfg.hungerMax or 100)
@@ -352,7 +428,7 @@ function CuraEqui._HungerTickBody()
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-            CuraEqui.Buffs.SyncAll(h, S)
+            pcall(CuraEqui.Buffs.SyncAll, h, S)
         end
     end
 
@@ -364,7 +440,8 @@ function CuraEqui._HungerTickBody()
             local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
             local rem    = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
-            local pretty = select(1, CuraEqui.Utils.hunger_label(h, S.satedUntil))
+            local pretty = (U and U.hunger_label) and select(1, U.hunger_label(h, S.satedUntil)) or
+                ((rem > 0) and "Sated" or "OK")
             local line   = string.format("Hunger %s (%d%%) · Sated %.0fs", pretty, h, rem)
 
             local r      = (U and U.ms_to_s and U.ms_to_s(DH.refresh or 1200)) or 1.2

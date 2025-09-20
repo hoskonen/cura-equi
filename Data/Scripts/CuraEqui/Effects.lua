@@ -18,7 +18,10 @@ function CuraEqui.Effects.RemovePlayer(guid)
         log("player remove: no soul/api"); return false
     end
     local ok = pcall(function() s:RemoveAllBuffsByGuid(guid) end)
-    log("player remove %s ok=%s", guid, tostring(ok))
+    local D = CuraEqui.Config and CuraEqui.Config.Debug
+    if D and D.buffTraceVerbose then
+        CuraEqui.Log("Buff", "player remove %s ok=%s", uuid, tostring(ok))
+    end
     return ok and true or false
 end
 
