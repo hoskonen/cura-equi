@@ -30,19 +30,19 @@
 </Row>
 
 <!-- Custom Food: Hay Bundle-->
- <Row><Cell>ui_nm_curaequi_hay_bundle</Cell><Cell>Hay Bundle</Cell><Cell>Hay Bundle</Cell></Row>
+ <Row><Cell>ui_nm_curaequi_hay_bundle</Cell><Cell>Horse - Hay Bundle</Cell><Cell>Hay Bundle</Cell></Row>
  
  <Row><Cell>ui_curaequi_hay_bundle_info</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell></Row>
 
  <!-- Custom Food: Oat Snack-->
- <Row><Cell>ui_nm_curaequi_oat_snack</Cell><Cell>Oat Snack</Cell><Cell>Oat Snack</Cell></Row>
+ <Row><Cell>ui_nm_curaequi_oat_snack</Cell><Cell>Horse - Oat Snack</Cell><Cell>Oat Snack</Cell></Row>
  
  <Row><Cell>ui_curaequi_oat_snack_info</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell></Row>
 
 <!-- Custom Food: Apple Sack -->
  <Row>
   <Cell>ui_nm_curaequi_apple_sack</Cell>
-  <Cell>Sack of Apples</Cell>
+  <Cell>Horse - Sack of Apples</Cell>
 </Row>
 <Row>
   <Cell>ui_in_curaequi_apple_sack</Cell>
@@ -53,7 +53,7 @@
 <!-- Custom Food: Pear Sack -->
  <Row>
   <Cell>ui_nm_curaequi_pear_sack</Cell>
-  <Cell>Sack of Pears</Cell>
+  <Cell>Horse - Sack of Pears</Cell>
 </Row>
 <Row>
   <Cell>ui_in_curaequi_pear_sack</Cell>
@@ -64,7 +64,7 @@
 <!-- Custom Food: Carrot Bundle -->
  <Row>
   <Cell>ui_nm_curaequi_carrot_bundle</Cell>
-  <Cell>Sack of Carrots</Cell>
+  <Cell>Horse - Sack of Carrots</Cell>
 </Row>
 <Row>
   <Cell>ui_in_curaequi_carrot_bundle</Cell>
