@@ -194,6 +194,16 @@ function CuraEqui.Initialize(fullInit)
         CuraEqui.state.started = true
     end
 
+    -- Fallback: if we still have a sleep start timestamp, run catch-up once here.
+    if CuraEqui.state and CuraEqui.state._sleepStartTOD and CuraEqui.Hunger_CatchUpAfterSleep then
+        local ok, minutes, delta, before, after = pcall(CuraEqui.Hunger_CatchUpAfterSleep)
+        if ok and minutes and minutes > 0 then
+            System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
+                :format(minutes, delta or 0, math.floor(before or 0), math.floor(after or 0)))
+        end
+        CuraEqui.state._sleepStartTOD = nil
+    end
+
     local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
     if h then
         if CuraEqui.StartWatching then CuraEqui.StartWatching() end
@@ -216,10 +226,10 @@ function CuraEqui.OnSetFaderState(_actionName, eventName, argTable)
         -- UI fade finished (covers post-load and wake-up)
         CuraEqui.Log("poll", "UI resumed → ensuring hunger watcher is running")
         -- apply a small hunger catch-up based on skipped world minutes
+        -- UI fade finished (covers post-load and wake-up)
         System.LogAlways("[CuraEqui][Sleep] waking → running hunger catch-up")
         if CuraEqui.Hunger_CatchUpAfterSleep then
             local ok, minutes, delta, before, after = pcall(CuraEqui.Hunger_CatchUpAfterSleep)
-            -- Always show a concise one-liner so it's obvious it ran:
             if ok and minutes and minutes > 0 then
                 System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
                     :format(minutes, delta or 0, math.floor(before or 0), math.floor(after or 0)))
