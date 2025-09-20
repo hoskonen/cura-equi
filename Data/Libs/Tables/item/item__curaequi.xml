@@ -1,10 +1,28 @@
 <?xml version="1.0" encoding="us-ascii"?>
 <database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="item.xsd">
-	<!-- Hay Bundle -->
 	<ItemClasses version="8">
-		<Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="0" Type="6" SubType="15" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_hay_bundle" UIInfo="ui_curaequi_hay_bundle_info" UIName="ui_nm_curaequi_hay_bundle" Model="manmade/common_furniture/sacks/sack_items/sack_items.cgf" Weight="5" Price="100" FadeCoef="1" VisibilityCoef="3.54964781" Id="3e2f9a64-8c2b-4f7a-a9d3-5c1b2e7d4f90" Name="curaequi_hay_bundle" />
+		<!-- Hay Bundle -->
+		<!-- <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="0" Type="6" SubType="15" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_hay_bundle" UIInfo="ui_curaequi_hay_bundle_info" UIName="ui_nm_curaequi_hay_bundle" Model="manmade/common_furniture/sacks/sack_items/sack_items.cgf" Weight="5" Price="100" FadeCoef="1" VisibilityCoef="3.54964781" Id="3e2f9a64-8c2b-4f7a-a9d3-5c1b2e7d4f90" Name="curaequi_hay_bundle" /> -->
 
-	<!-- Oat Snack / Bran Snack -->
-		<Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="200" Type="6" SubType="14" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_oat_snack" UIInfo="ui_curaequi_oat_snack_info" UIName="ui_nm_curaequi_oat_snack" Model="manmade/common_furniture/sacks/sack_items/sack_items.cgf" Weight="0.5" Price="240" FadeCoef="1" VisibilityCoef="3.54964781" Id="9b7c1d20-5e43-4c8f-b1f2-0d3a6e9c8247" Name="curaequi_oat_snack" />
+		<!-- Oat Snack / Bran Snack -->
+		<!-- <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="200" Type="6" SubType="14" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_oat_snack" UIInfo="ui_curaequi_oat_snack_info" UIName="ui_nm_curaequi_oat_snack" Model="manmade/common_furniture/sacks/sack_items/sack_items.cgf" Weight="0.5" Price="240" FadeCoef="1" VisibilityCoef="3.54964781" Id="9b7c1d20-5e43-4c8f-b1f2-0d3a6e9c8247" Name="curaequi_oat_snack" /> -->
+
+		<!-- Hay Bundle Small -->
+        <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="0" Type="6" SubType="15" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_hay_bundle" UIInfo="ui_in_curaequi_hay_bundle_sm" UIName="ui_nm_curaequi_hay_bundle_sm" Material="objects/manmade/structures/industrial/hay/hay_stand_a_rotten" Model="objects/manmade/structures/industrial/hay/hay_sheaf_a.cgf" Weight="5" Price="100" FadeCoef="1" VisibilityCoef="3.54964781" Id="3e2f9a64-8c2b-4f7a-a9d3-5c1b2e7d4f90" Name="curaequi_hay_bundle_sm" />
+
+		<!-- Hay Bundle Large -->
+        <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="0" Type="6" SubType="15" UiSound="ui_consume_cake" IsDivisible="true" IconId="curaequi_hay_bundle" UIInfo="ui_in_curaequi_hay_bundle_lg" UIName="ui_nm_curaequi_hay_bundle_lg" Material="objects/manmade/structures/industrial/hay/hay_stand_a_rotten" Model="objects/manmade/structures/industrial/hay/hay_sheaf_b.cgf" Weight="7" Price="100" FadeCoef="1" VisibilityCoef="3.54964781" Id="574bf779-db48-4c00-bb86-3205d4d02137" Name="curaequi_hay_bundle_lg" />
+
+		<!-- Oat Snack Sack -->
+        <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="200" Type="6" SubType="14" UiSound="ui_consume_cake" IsDivisible="true" IconId="nutmegSpice" UIInfo="ui_in_curaequi_oat_snack" UIName="ui_nm_curaequi_oat_snack" Material="manmade/common_furniture/sacks/sack_pig_feed.mtl" Model="manmade/common_furniture/sacks/sack_pig_feed.cgf" Weight="0.5" Price="280" FadeCoef="1" VisibilityCoef="3.54964781" Id="9b7c1d20-5e43-4c8f-b1f2-0d3a6e9c8247" Name="curaequi_oat_sack" />
+
+		<!-- Apple Sack -->
+        <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="100" Type="6" SubType="14" UiSound="ui_consume_cake" IsDivisible="true" IconId="estragonSpice" UIInfo="ui_in_curaequi_apple_sack" UIName="ui_nm_curaequi_apple_sack" Material="manmade/common_furniture/sacks/sack_apples.mtl" Model="manmade/common_furniture/sacks/sack_apples.cgf" Weight="4" Price="220" FadeCoef="1" VisibilityCoef="3.54964781" Id="5330951a-32e9-42c6-a21a-461c5934a074" Name="curaequi_apple_sack" />
+
+		<!-- Pear Sack -->
+        <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="60" Type="6" SubType="14" UiSound="ui_consume_cake" IsDivisible="true" IconId="saffronSpice" UIInfo="ui_in_curaequi_pear_sack" UIName="ui_nm_curaequi_pear_sack" Material="manmade/common_furniture/sacks/sack_pears.mtl" Model="manmade/common_furniture/sacks/sack_pears.cgf" Weight="4" Price="230" FadeCoef="1" VisibilityCoef="3.54964781" Id="52ecf20b-1f3f-442c-a4be-c486775654fe" Name="curaequi_pear_sack" />
+
+		<!-- Carrot Bundle -->
+        <Food HealthBenefit="0" RefreshBenefit="0" NutritionBenefit="1" ShortTermNutritionBenefitRatio="0.3" AlcoholContent="0" DecayTime="80" Type="6" SubType="14" UiSound="ui_consume_cake" IsDivisible="true" IconId="carrot" UIInfo="ui_in_curaequi_carrot_bundle" UIName="ui_nm_curaequi_carrot_bundle" Material="objects/manmade/food/food/vegetable/vegetables_market_atlas.mtl" Model="objects/manmade/food/food/vegetable/carrot_bundle.cgf" Weight="4" Price="240" FadeCoef="1" VisibilityCoef="3.54964781" Id="d1f3f3e2-2a4e-4f7c-8b2a-5c3b2e7d4f91" Name="curaequi_carrot_bundle" />
 	</ItemClasses>
 </database>

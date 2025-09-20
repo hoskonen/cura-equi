@@ -39,6 +39,39 @@
  
  <Row><Cell>ui_curaequi_oat_snack_info</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell></Row>
 
+<!-- Custom Food: Apple Sack -->
+ <Row>
+  <Cell>ui_nm_curaequi_apple_sack</Cell>
+  <Cell>Sack of Apples</Cell>
+</Row>
+<Row>
+  <Cell>ui_in_curaequi_apple_sack</Cell>
+  <Cell>Red and ripe, a sack stuffed full of apples — sweet feed for horse or man, though it keeps but a while.</Cell>
+  <Cell>Red and ripe, a sack stuffed full of apples — sweet feed for horse or man, though it keeps but a while.</Cell>
+</Row>
+
+<!-- Custom Food: Pear Sack -->
+ <Row>
+  <Cell>ui_nm_curaequi_pear_sack</Cell>
+  <Cell>Sack of Pears</Cell>
+</Row>
+<Row>
+  <Cell>ui_in_curaequi_pear_sack</Cell>
+  <Cell>A heavy sack of pears, quick to ripen and quicker to spoil — best eaten fresh before they turn soft.</Cell>
+  <Cell>A heavy sack of pears, quick to ripen and quicker to spoil — best eaten fresh before they turn soft.</Cell>
+</Row>
+
+<!-- Custom Food: Carrot Bundle -->
+ <Row>
+  <Cell>ui_nm_curaequi_carrot_bundle</Cell>
+  <Cell>Sack of Carrots</Cell>
+</Row>
+<Row>
+  <Cell>ui_in_curaequi_carrot_bundle</Cell>
+  <Cell>A bundle of earthy carrots gathered in a sack, sturdy enough to keep a while and hearty feed for any steed.</Cell>
+  <Cell>A bundle of earthy carrots gathered in a sack, sturdy enough to keep a while and hearty feed for any steed.</Cell>
+</Row>
+
 <!-- Buffs & Debuffs -->
 <Row>
     <Cell>buff_ce_sated</Cell><Cell>Sated</Cell><Cell>Sated</Cell>
