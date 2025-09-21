@@ -39,8 +39,14 @@ end
 function U.hunger_label(hungerPct, satedUntil)
     local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
     local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
-    local names = HUD.hungerNames or { ok = "OK", minor = "Mild", moderate = "Hungry", critical = "Starving", sated =
-    "Sated" }
+    local names = HUD.hungerNames or {
+        ok = "OK",
+        minor = "Mild",
+        moderate = "Hungry",
+        critical = "Starving",
+        sated =
+        "Sated"
+    }
 
     -- Sated override
     local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()

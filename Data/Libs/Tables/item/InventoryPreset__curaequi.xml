@@ -99,6 +99,27 @@
 	</InventoryPreset>
 
 	<!-- ========================= -->
+	<!-- Cura Equi:Inns and Taverns Dynamic Pool -->
+	<!-- ========================= -->
+
+	<InventoryPreset Name="curaequi_horsefood_inn_dyn" Mode="AmountCount" ModeValue="2" ModeValueVariation="0" Health="0.65" HealthVariation="0.20">
+		<PresetItem Name="curaequi_carrot_bundle" Amount="2" Weight="5"/>
+		<PresetItem Name="curaequi_apple_sack"    Amount="1" Weight="4"/>
+		<PresetItem Name="curaequi_pear_sack"     Amount="1" Weight="3"/>
+		<PresetItem Name="curaequi_hay_bundle_sm" Amount="1" Weight="1"/>
+		<PresetItem Name="curaequi_oat_snack"     Amount="1" Weight="1"/>
+	</InventoryPreset>
+
+	<!-- define once globally -->
+	<InventoryPreset Name="curaequi_none" Mode="All"/>
+
+	<!-- ~10% chance to add horse feed -->
+	<InventoryPreset Name="curaequi_inn_horsefeed_roll" Mode="AmountCount" ModeValue="1" ModeValueVariation="0">
+		<InventoryPresetRef Name="curaequi_horsefood_inn_dyn" Weight="1"/>
+		<InventoryPresetRef Name="curaequi_none" Weight="6"/>
+	</InventoryPreset>
+
+	<!-- ========================= -->
 	<!-- Cura Equi: Vanilla Horse Trader Lists -->
 	<!-- ========================= -->
 
@@ -147,6 +168,14 @@
 
 	<InventoryPreset Name="inventory_commonMerchantFood" Mode="AmountCount" ModeValue="3.5" ModeValueVariation="0.8" Health="1">
 		<InventoryPresetRef Name="curaequi_horsefood_merchant_dyn"/>
+	</InventoryPreset>
+
+	<!-- ========================= -->
+	<!-- Cura Equi: Vanilla Inns and taverns -->
+	<!-- ========================= -->
+
+	<InventoryPreset Name="inventory_shop_commonInnkeeper" Mode="All" Health="1" >
+		<InventoryPresetRef Name="curaequi_inn_horsefeed_roll"/>
 	</InventoryPreset>
 
 	<!-- ========================= -->

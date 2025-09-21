@@ -21,15 +21,16 @@ CuraEqui.Config = {
     },
 
     Hunger = {
+        preset               = "devtest", -- "hardcore" | "real_life" | "moderate" | "laidback"
         tickSec              = 10,
         hungerStart          = 30,
         hungerMax            = 100,
         debuffAt             = 70,
         -- Rates
-        ratePerMinIdle       = 0.2, -- horse idle (includes mounted-but-standing)
-        ratePerMinMounted    = 0.5, -- horse mounted & moving: time drift while ridden
-        ratePerKmMounted     = 0.7, -- extra drain per ridden kilometer
-        speedIdleMps         = 0.2, -- below this → idle
+        ratePerMinIdle       = 0.15, -- horse idle (includes mounted-but-standing)
+        ratePerMinMounted    = 0.35, -- horse mounted & moving: time drift while ridden
+        ratePerKmMounted     = 0.5,  -- extra drain per ridden kilometer
+        speedIdleMps         = 0.2,  -- below this → idle
         -- Sated
         satedDrainMul        = 0.75,
         satedSecPerNutrition = 6,     -- x per nutrition
@@ -45,6 +46,46 @@ CuraEqui.Config = {
 
         },
         waitCatchup          = { enabled = true, maxCatchupSec = 6 * 3600 }
+    },
+    Presets = {
+        Hunger = {
+            hardcore = {
+                ratePerMinIdle       = 0.35,  -- +21/h
+                ratePerMinMounted    = 0.7,   -- +42/h
+                ratePerKmMounted     = 1.0,   -- +1.0/km
+                grazePerMinIdleUnmtd = -0.08, -- -4.8/h (still helps, but weaker)
+                night                = { disableGrazing = true, timeDrainMul = 1.2, maxDeltaPerNight = 30 },
+            },
+            real_life = {
+                -- Slow passive build, forage is meaningful. Night still accumulates some hunger but capped.
+                ratePerMinIdle       = 0.12,  -- +7.2/h
+                ratePerMinMounted    = 0.35,  -- +21/h
+                ratePerKmMounted     = 0.6,   -- +0.6/km
+                grazePerMinIdleUnmtd = -0.10, -- -6/h (day grazing offsets most idle)
+                night                = { disableGrazing = false, timeDrainMul = 1.0, maxDeltaPerNight = 18 },
+            },
+            moderate = {
+                ratePerMinIdle       = 0.2,   -- +12/h
+                ratePerMinMounted    = 0.5,   -- +30/h
+                ratePerKmMounted     = 0.7,   -- +0.7/km
+                grazePerMinIdleUnmtd = -0.12, -- -7.2/h
+                night                = { disableGrazing = true, timeDrainMul = 1.0, maxDeltaPerNight = 25 },
+            },
+            laidback = {
+                ratePerMinIdle       = 0.1,   -- +6/h
+                ratePerMinMounted    = 0.25,  -- +15/h
+                ratePerKmMounted     = 0.4,   -- +0.4/km
+                grazePerMinIdleUnmtd = -0.12, -- -7.2/h (day idle nearly nets to zero)
+                night                = { disableGrazing = true, timeDrainMul = 0.9, maxDeltaPerNight = 12 },
+            },
+            devtest = {
+                ratePerMinIdle       = 0.15,
+                ratePerMinMounted    = 0.35,
+                ratePerKmMounted     = 0.5,
+                grazePerMinIdleUnmtd = -0.12,
+                night                = { disableGrazing = false, timeDrainMul = 1.0, maxDeltaPerNight = 35 },
+            },
+        },
     },
 
     Diet = {
@@ -100,6 +141,11 @@ CuraEqui.Config = {
         toastOnDone            = true,
         toastLane              = "notification", -- "notification" (right) | "tutorial" | "infotext"
         toastSec               = 2.0,
+        -- Feeding settings for Presets
+        hardcore               = { needCapPerFeed = 20, satedSecPerPoint = 5, satedMaxSec = 600 },
+        real_life              = { needCapPerFeed = 25, satedSecPerPoint = 7, satedMaxSec = 1200 },
+        moderate               = { needCapPerFeed = 25, satedSecPerPoint = 6, satedMaxSec = 900 },
+        laidback               = { needCapPerFeed = 30, satedSecPerPoint = 8, satedMaxSec = 1500 },
 
     },
     FeedScan = {
@@ -140,3 +186,7 @@ CuraEqui.Config = {
         applyDelaySec = 1.2,
     }
 }
+
+if CuraEqui and CuraEqui.ApplyPreset then
+    CuraEqui.ApplyPreset("overwrite") -- or "fill" if you prefer config wins
+end
