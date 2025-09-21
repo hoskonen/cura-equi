@@ -107,7 +107,7 @@
 		<PresetItem Name="curaequi_apple_sack"    Amount="1" Weight="4"/>
 		<PresetItem Name="curaequi_pear_sack"     Amount="1" Weight="3"/>
 		<PresetItem Name="curaequi_hay_bundle_sm" Amount="1" Weight="1"/>
-		<PresetItem Name="curaequi_oat_snack"     Amount="1" Weight="1"/>
+		<PresetItem Name="curaequi_oat_sack"     Amount="1" Weight="1"/>
 	</InventoryPreset>
 
 	<!-- define once globally -->

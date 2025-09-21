@@ -18,10 +18,11 @@ CuraEqui.Config = {
         feedTrace = true,
         buffTraceVerbose = false, -- false = log only when buff changes
         tickTrace = true,
+        staminaSnapshot = true,   -- capture a reference staminaMax (debug only)
     },
 
     Hunger = {
-        preset               = "devtest", -- "hardcore" | "real_life" | "moderate" | "laidback"
+        preset               = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"
         tickSec              = 10,
         hungerStart          = 30,
         hungerMax            = 100,
@@ -78,7 +79,7 @@ CuraEqui.Config = {
                 grazePerMinIdleUnmtd = -0.12, -- -7.2/h (day idle nearly nets to zero)
                 night                = { disableGrazing = true, timeDrainMul = 0.9, maxDeltaPerNight = 12 },
             },
-            devtest = {
+            dev = {
                 ratePerMinIdle       = 0.15,
                 ratePerMinMounted    = 0.35,
                 ratePerKmMounted     = 0.5,

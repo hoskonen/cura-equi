@@ -69,15 +69,6 @@ function CuraEqui.Debug.SetHorseHunger(n)
     System.LogAlways("[CuraEqui][DBG] hunger set to " .. tostring(S.hunger))
 end
 
-function CuraEqui.Debug.SetSated(sec)
-    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve(); if not h then return end
-    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h); if not S then return end
-    local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-    local add = math.max(0, tonumber(sec) or 0)
-    S.satedUntil = now + add
-    System.LogAlways("[CuraEqui][DBG] sated set to +" .. tostring(add) .. "s")
-end
-
 function CuraEqui.Debug.DietBind(key, nutrition)
     local D = CuraEqui.Diet or {}; if not D then return end
     nutrition = tonumber(nutrition) or 10
@@ -132,7 +123,6 @@ CuraEqui.Debug = CuraEqui.Debug or {}
 local function _now()
     return (Script and Script.GetTime and Script.GetTime()) or os.clock()
 end
-local function _log(fmt, ...) System.LogAlways(("[CuraEqui][Debug] " .. fmt):format(...)) end
 
 local function _horse()
     return CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
@@ -141,26 +131,9 @@ local function _state(h)
     return CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or {}
 end
 
-local function _soul(h)
-    if not h then return nil end
-    if h.soul then return h.soul end
-    local ok, st = pcall(function() return h.GetScriptTable and h:GetScriptTable() end)
-    if ok and st and st.soul then return st.soul end
-    ok, st = pcall(function() return h.GetAI and h:GetAI() end)
-    if ok and st and st.soul then return st.soul end
-    ok, st = pcall(function() return h.GetSoul and h:GetSoul() end)
-    if ok and st then return st end
-    return nil
-end
-
 local function _get_state(soul, name)
     if not (soul and soul.GetState) then return nil end
     local ok, val = pcall(function() return soul:GetState(name) end)
-    return ok and val or nil
-end
-local function _get_level(soul, name)
-    if not (soul and soul.GetStatLevel) then return nil end
-    local ok, val = pcall(function() return soul:GetStatLevel(name) end)
     return ok and val or nil
 end
 
@@ -172,55 +145,110 @@ local function _tier_name(hunger, satedUntil)
     return "?"
 end
 
--- Public: dump a compact snapshot to console
-function CuraEqui.Debug.DumpHorseSoul()
-    local h = _horse()
-    if not h then
-        _log("No horse entity found."); return false
-    end
-    local S = _state(h)
-    local now = _now()
-    local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-    local hunger = math.floor(tonumber(S.hunger or 0) or 0)
-    local tier = _tier_name(hunger, S.satedUntil)
-
-    _log("Horse: hunger=%d%% tier=%s sated=%.0fs", hunger, tostring(tier), rem)
-
-    local soul = _soul(h)
-    if not soul then
-        _log("No soul on horse."); return true
-    end
-
-    -- States
-    local st_health  = _get_state(soul, "health")
-    local st_stamina = _get_state(soul, "stamina")
-    local st_courage = _get_state(soul, "courage") -- may be nil if not exposed
-
-    -- Levels (base stats)
-    local lv         = {
-        str = _get_level(soul, "str"),
-        agi = _get_level(soul, "agi"),
-        spc = _get_level(soul, "spc"),
-        vit = _get_level(soul, "vit"),
-        hea = _get_level(soul, "hea"),
-        bar = _get_level(soul, "bar"),
-    }
-
-    -- Print only what exists
-    if st_health ~= nil then _log(" state.health  = %.3f", st_health) end
-    if st_stamina ~= nil then _log(" state.stamina = %.3f", st_stamina) end
-    if st_courage ~= nil then _log(" state.courage = %.3f", st_courage) end
-
-    local line = {}
-    for k, v in pairs(lv) do if v ~= nil then line[#line + 1] = k .. "=" .. string.format("%.3f", v) end end
-    if #line > 0 then _log(" levels: %s", table.concat(line, "  ")) end
-
-    return true
+-- Common soul helpers
+local function _soul(h)
+    if not h then return nil end
+    if h.soul then return h.soul end
+    local ok, st = pcall(function() return h.GetScriptTable and h:GetScriptTable() end)
+    if ok and st and st.soul then return st.soul end
+    ok, st = pcall(function() return h.GetSoul and h:GetSoul() end)
+    if ok and st then return st end
+    return nil
 end
 
--- Console command convenience
+local function _gs(soul, key)
+    if not (soul and soul.GetState) then return nil end
+    local ok, v = pcall(function() return soul:GetState(key) end)
+    return ok and v or nil
+end
+
+local function _gl(soul, key)
+    if not (soul and soul.GetStatLevel) then return nil end
+    local ok, v = pcall(function() return soul:GetStatLevel(key) end)
+    return ok and v or nil
+end
+
+local function _gd(soul, key, ctx)
+    if not (soul and soul.GetDerivedStat) then return nil end
+    local ok, v = pcall(function() return soul:GetDerivedStat(key, ctx or {}, nil) end)
+    return ok and v or nil
+end
+
+-- === Console dump: compact horse stats =====================================
+function CuraEqui.Debug.DumpHorseStats(h)
+    h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    if not h then
+        System.LogAlways("[CuraEqui][HorseStats] No horse found."); return
+    end
+    local soul = h.soul or (h.GetSoul and h:GetSoul()) or nil
+    if not soul then
+        System.LogAlways("[CuraEqui][HorseStats] No soul on horse."); return
+    end
+
+    -- Core states
+    local hp = (soul.GetState and soul:GetState("health")) or nil
+
+    -- Stamina (cur/max)
+    local stamCur, stamMax
+    if CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina then
+        stamCur, stamMax = CuraEqui.Debug.ReadHorseStamina(h)
+    else
+        stamCur = (soul.GetState and soul:GetState("stamina")) or nil
+    end
+
+    -- Courage & capacity & morale limit
+    local courage = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
+    local cap     = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
+    local hml     = (CuraEqui.Debug.ReadHorseMoraleLimit and CuraEqui.Debug.ReadHorseMoraleLimit(h)) or nil
+
+    local preset  = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
+
+    local parts   = {}
+    if hp ~= nil then parts[#parts + 1] = ("HP=%d"):format(math.floor(hp + 0.5)) end
+    if stamCur ~= nil then
+        if stamMax and stamMax > 0 then
+            parts[#parts + 1] = ("STA=%d/%d"):format(math.floor(stamCur + 0.5), math.floor(stamMax + 0.5))
+        else
+            parts[#parts + 1] = ("STA=%d"):format(math.floor(stamCur + 0.5))
+        end
+    end
+    if courage ~= nil then parts[#parts + 1] = ("COU=%d"):format(math.floor(courage + 0.5)) end
+    if cap ~= nil then parts[#parts + 1] = ("CAP=%.1f"):format(cap) end
+    if hml ~= nil then parts[#parts + 1] = ("HML=%.1f"):format(hml) end
+    parts[#parts + 1] = ("preset=%s"):format(preset)
+
+    System.LogAlways("[CuraEqui][HorseStats] " .. table.concat(parts, " | "))
+end
+
+-- Console binding (once)
 if System and System.AddCCommand then
-    System.AddCCommand("curaequi_dump_horse", "CuraEqui.Debug.DumpHorseSoul()", "Dump horse hunger/tier and soul stats")
+    System.AddCCommand("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
+end
+
+function CuraEqui.Debug.ReadHorseCourage(h)
+    h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
+    local s = _soul(h); if not s then return nil, nil end
+    -- try state first (Stat_Courage), then levels
+    local v, src = _gs(s, "courage"), "state:courage"
+    if v == nil then v, src = _gl(s, "courage"), "level:courage" end
+    if v == nil then v, src = _gl(s, "cou"), "level:cou" end
+    return v, src
+end
+
+function CuraEqui.Debug.ReadHorseCapacity(h)
+    h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
+    local s = _soul(h); if not s then return nil, nil end
+    -- DerivStat_InventoryCapacity → "cap"
+    local cap = _gd(s, "cap", {}) -- context empty unless your build needs it
+    return cap, "derived:cap"
+end
+
+function CuraEqui.Debug.ReadHorseMoraleLimit(h)
+    h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
+    local s = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
+    if not (s and s.GetDerivedStat) then return nil end
+    local ok, v = pcall(function() return s:GetDerivedStat("hml", {}, nil) end)
+    return ok and v or nil
 end
 
 -- Optional: right-corner dev toast (throttled) — enable via Debug.hudStats.enabled = true
@@ -261,73 +289,215 @@ do
     end
 end
 
--- === Tutorial card: Horse stats ============================================
+-- === Tutorial card: Horse Status (left lane) ================================
 function CuraEqui.Debug.ShowHorseStatsTutorial()
-    local UI = CuraEqui.UI
-    if not (UI and (UI.SendTutorial or UI.Toast)) then return end
+    local UI = CuraEqui.UI; if not (UI and UI.Toast) then return end
 
     local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
     if not h then return end
-    local S    = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or {}
-    local soul = (CuraEqui.Debug and CuraEqui.Debug._soul and CuraEqui.Debug._soul(h))
-        or (h.soul or (h.GetScriptTable and h:GetScriptTable() and h:GetScriptTable().soul))
-    -- hunger/tier/sated
-    local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-    local hval = math.floor(tonumber(S.hunger or 0) or 0)
-    local rem  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-    local tier = (CuraEqui.Buffs and CuraEqui.Buffs._pickTierName)
-        and CuraEqui.Buffs._pickTierName(hval, S.satedUntil) or "?"
+    local S                = (CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)) or {}
 
-    -- soul states/levels (guard everything)
-    local function _gs(name)
-        if soul and soul.GetState then
-            local ok, v = pcall(function() return soul:GetState(name) end); if ok then return v end
-        end
-    end
-    local function _gl(name)
-        if soul and soul.GetStatLevel then
-            local ok, v = pcall(function() return soul:GetStatLevel(name) end); if ok then return v end
-        end
-    end
-    local st_hp       = _gs("health")
-    local st_sta      = _gs("stamina")
-    local st_cour     = _gs("courage") -- may be nil
-    local lv_str      = _gl("str"); local lv_agi = _gl("agi"); local lv_spc = _gl("spc")
-    local lv_vit      = _gl("vit"); local lv_hea = _gl("hea"); local lv_bar = _gl("bar")
+    -- Preset + hunger/sated
+    local preset           = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
+    local now              = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local hval             = math.floor(tonumber(S.hunger or 0) or 0)
+    local rem              = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
-    -- build text
+    -- Reads
+    local stamCur, stamMax = nil, nil
+    if CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina then
+        stamCur, stamMax = CuraEqui.Debug.ReadHorseStamina(h)
+    end
+    local capMax      = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
+
+    local soul        = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
+    local hp          = (soul and soul.GetState and soul:GetState("health")) or nil
+    local courage     = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
+
+    -- Build once
     local lines       = {}
-    lines[#lines + 1] = string.format("Hunger: %s (%d%%)", tostring(tier), hval)
-    lines[#lines + 1] = string.format("Sated: %.0fs", rem)
-    if st_sta then lines[#lines + 1] = string.format("Stamina: %.0f", st_sta) end
-    if st_cour then lines[#lines + 1] = string.format("Courage: %.0f", st_cour) end
-    if st_hp then lines[#lines + 1] = string.format("Health: %.0f", st_hp) end
-
-    local baseStats = {}
-    if lv_str then baseStats[#baseStats + 1] = ("STR %.0f"):format(lv_str) end
-    if lv_agi then baseStats[#baseStats + 1] = ("AGI %.0f"):format(lv_agi) end
-    if lv_spc then baseStats[#baseStats + 1] = ("SPC %.0f"):format(lv_spc) end
-    if lv_vit then baseStats[#baseStats + 1] = ("VIT %.0f"):format(lv_vit) end
-    if lv_hea then baseStats[#baseStats + 1] = ("HEA %.0f"):format(lv_hea) end
-    if lv_bar then baseStats[#baseStats + 1] = ("BAR %.0f"):format(lv_bar) end
-    if #baseStats > 0 then lines[#lines + 1] = table.concat(baseStats, "  ") end
-
-    local text = table.concat(lines, "\n")
-
-    -- throttle + dedupe so it doesn’t spam
-    CuraEqui._dbg = CuraEqui._dbg or {}; local gate = CuraEqui._dbg
-    local nowS = now; gate.lastStatsTut = gate.lastStatsTut or 0
-    if (nowS - gate.lastStatsTut) < 10 then return end
-    gate.lastStatsTut = nowS
-
-    if UI.SendTutorial then
-        -- (key, text, seconds, forceClear)
-        UI.SendTutorial("CuraEqui_HorseStats", text, 6, true)
-    else
-        UI.Toast(text, 6000, 0, "CuraEqui_Stats", "tutorial")
+    lines[#lines + 1] = "Horse Status"
+    lines[#lines + 1] = ("Preset: %s"):format(preset)
+    lines[#lines + 1] = ("Hunger: %d%%"):format(hval)
+    lines[#lines + 1] = ("Sated: %.0fs"):format(rem)
+    if hp then lines[#lines + 1] = ("Health: %d"):format(math.floor(hp + 0.5)) end
+    if stamCur then
+        if stamMax and stamMax > 0 then
+            lines[#lines + 1] = ("Stamina: %d / %d"):format(math.floor(stamCur + 0.5), math.floor(stamMax + 0.5))
+        else
+            lines[#lines + 1] = ("Stamina: %d"):format(math.floor(stamCur + 0.5))
+        end
     end
+    if capMax then lines[#lines + 1] = ("Capacity: %.1f"):format(capMax) end
+    if courage then lines[#lines + 1] = ("Courage: %d"):format(math.floor(courage + 0.5)) end
+
+    local body = table.concat(lines, "\n")
+    if body == "" then return end
+
+    CuraEqui._dbg = CuraEqui._dbg or {}
+    local last = CuraEqui._dbg.lastStatsTut or 0
+    if (now - last) < 10 then return end
+    CuraEqui._dbg.lastStatsTut = now
+
+    UI.Toast(body, 12000, 0, "CuraEqui_HorseStats", "tutorial")
 end
 
 if System and System.AddCCommand then
     System.AddCCommand("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show horse stats card")
+end
+
+-- Robust stamina reader: returns cur, max, srcTag
+function CuraEqui.Debug.ReadHorseStamina(h)
+    h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
+    if not h then return nil end
+
+    -- soul
+    local s = (h.soul or (h.GetSoul and h:GetSoul())) or nil
+    if not s or not s.GetState then return nil end
+
+    local function GS(key)
+        local ok, v = pcall(function() return s:GetState(key) end)
+        return ok and v or nil
+    end
+
+    -- current stamina probe
+    local cur = GS("stamina") or GS("endurance") or GS("stam")
+
+    -- explicit max (if engine exposes any of these)
+    local max = GS("stamina_max") or GS("max_stamina") or GS("staminaMax") or GS("endurance_max")
+
+    -- fallback: session snapshot + learn-up
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or {}
+    S._snap = S._snap or {}
+
+    -- learn-up: if we see a larger current than our snap, elevate the snap
+    if cur and (not max) then
+        if (not S._snap.staminaMax) or (cur > S._snap.staminaMax) then
+            S._snap.staminaMax = cur
+        end
+        max = S._snap.staminaMax
+    end
+
+    local src = (max and "state:max") or (S._snap.staminaMax and "snap:max") or nil
+    return cur, max, src
+end
+
+if System and System.AddCCommand then
+    System.AddCCommand("curaequi_snap_stamina", [[
+    (function()
+      local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+      if not h then System.LogAlways("[CuraEqui] no horse"); return end
+      local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
+      if not S then return end
+      local cur = CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina and select(1, CuraEqui.Debug.ReadHorseStamina(h))
+      if cur then
+        S._snap = S._snap or {}; S._snap.staminaMax = cur
+        System.LogAlways(("[CuraEqui] stamina snap set to %d"):format(math.floor(cur+0.5)))
+      end
+    end)()
+  ]], "Snapshot current stamina as max")
+end
+
+-- ==== CuraEqui Debug Cheats: Hunger & Sated ================================
+CuraEqui.Debug = CuraEqui.Debug or {}
+
+local function _now()
+    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
+end
+
+local function _horse_and_state()
+    local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    if not h then return nil, nil end
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    return h, S
+end
+
+local function _sync(h, S)
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+        pcall(CuraEqui.Buffs.SyncAll, h, S)
+    end
+end
+
+local function _toast(msg)
+    if CuraEqui.UI and CuraEqui.UI.Toast then
+        CuraEqui.UI.Toast(msg, 2000, 0, "CuraEqui_Debug", "notification")
+    end
+    System.LogAlways("[CuraEqui][Cheat] " .. msg)
+end
+
+-- Set absolute hunger percent [0..100]
+function CuraEqui.Debug.SetHunger(p)
+    local h, S = _horse_and_state(); if not (h and S) then
+        _toast("No horse."); return
+    end
+    local v = math.max(0, math.min(100, tonumber(p) or 0))
+    S.hunger = v
+    -- clearing sated if you're forcing hunger up is typically desired (optional):
+    -- if v >= (S.hunger or 0) then S.satedUntil = 0 end
+    _sync(h, S)
+    _toast(("Hunger set to %d%%"):format(math.floor(v + 0.5)))
+end
+
+-- Add (or subtract) delta hunger points; clamps to [0..100]
+function CuraEqui.Debug.AddHunger(d)
+    local h, S = _horse_and_state(); if not (h and S) then
+        _toast("No horse."); return
+    end
+    local cur = math.floor(tonumber(S.hunger or 0) or 0)
+    local v = math.max(0, math.min(100, cur + (tonumber(d) or 0)))
+    S.hunger = v
+    _sync(h, S)
+    _toast(("Hunger %d → %d"):format(cur, v))
+end
+
+-- Set sated seconds from now (0 to clear)
+function CuraEqui.Debug.SetSated(sec)
+    local h, S = _horse_and_state(); if not (h and S) then
+        _toast("No horse."); return
+    end
+    local s = math.max(0, tonumber(sec) or 0)
+    S.satedUntil = (s > 0) and (_now() + s) or 0
+    _sync(h, S)
+    _toast((s > 0) and ("Sated for %.0fs"):format(s) or "Sated cleared")
+end
+
+-- Clear sated quickly
+function CuraEqui.Debug.ClearSated()
+    return CuraEqui.Debug.SetSated(0)
+end
+
+-- Optional: force a tier name for a short window (for UI testing)
+-- tier must be one of your HUD tiers ("ok","minor","moderate","critical","sated")
+function CuraEqui.Debug.ForceTierForSeconds(tier, seconds)
+    local h, S = _horse_and_state(); if not (h and S) then
+        _toast("No horse."); return
+    end
+    local now = _now()
+    S._debugForceTier = tostring(tier or "")
+    S._debugForceUntil = now + (tonumber(seconds) or 5)
+    _sync(h, S)
+    _toast(("Tier forced to '%s' for %.0fs"):format(S._debugForceTier, (S._debugForceUntil - now)))
+end
+
+-- Hook: let _pickTierName honor the debug force (place once)
+if CuraEqui.Buffs and CuraEqui.Buffs._pickTierName and not CuraEqui.Buffs._pickTierName__wrapped then
+    local _orig = CuraEqui.Buffs._pickTierName
+    CuraEqui.Buffs._pickTierName = function(hunger, satedUntil)
+        local h, S = _horse_and_state()
+        local now = _now()
+        if S and S._debugForceTier and (tonumber(S._debugForceUntil or 0) or 0) > now then
+            return S._debugForceTier
+        end
+        return _orig(hunger, satedUntil)
+    end
+    CuraEqui.Buffs._pickTierName__wrapped = true
+end
+
+if System and System.AddCCommand then
+    System.AddCCommand("curaequi_set_hunger", "CuraEqui.Debug.SetHunger(%1)", "Set horse hunger percent [0..100]")
+    System.AddCCommand("curaequi_add_hunger", "CuraEqui.Debug.AddHunger(%1)",
+        "Add delta to horse hunger (negative allowed)")
+    System.AddCCommand("curaequi_set_sated", "CuraEqui.Debug.SetSated(%1)", "Set sated seconds from now (0 clears)")
+    System.AddCCommand("curaequi_clr_sated", "CuraEqui.Debug.ClearSated()", "Clear sated")
+    System.AddCCommand("curaequi_force_tier", "CuraEqui.Debug.ForceTierForSeconds(%1,%2)", "Force HUD tier for N seconds")
 end

@@ -240,6 +240,25 @@ function CuraEqui._HungerTickBody()
     end)
     S._mountedNow = mounted
 
+    -- take max stamina snapshot (debug only)
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if D.staminaSnapshot then
+        do
+            local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+            if D and D.verbose then
+                local Ssnap = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
+                if Ssnap and (not Ssnap._snap or not Ssnap._snap.staminaMax) then
+                    local cur = CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina and
+                        select(1, CuraEqui.Debug.ReadHorseStamina(h))
+                    if cur then
+                        Ssnap._snap = Ssnap._snap or {}
+                        Ssnap._snap.staminaMax = cur
+                    end
+                end
+            end
+        end
+    end
+
     local hp = getPos(h)                           -- preferred
     local pp = (mounted and getPos(player)) or nil -- fallback when mounted
     local src, cp = "horse", hp or pp
@@ -432,21 +451,34 @@ function CuraEqui._HungerTickBody()
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
             pcall(CuraEqui.Buffs.SyncAll, h, S)
+
+            -- show horse stats always on buff change
+            do
+                if S and CuraEqui.Buffs and CuraEqui.Buffs._pickTierName then
+                    local pick = CuraEqui.Buffs._pickTierName
+                    local tier = pick(tonumber(S.hunger or 0) or 0, S.satedUntil)
+                    if (not S._lastTutTier) or (tier ~= S._lastTutTier) then
+                        S._lastTutTier = tier
+                        if CuraEqui.Debug and CuraEqui.Debug.ShowHorseStatsTutorial then
+                            CuraEqui.Debug.ShowHorseStatsTutorial()
+                        end
+                    end
+                end
+            end
         end
     end
 
     do
         local DH = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud
         if DH and DH.enabled and CuraEqui.UI and CuraEqui.UI.Toast and S then
+            local preset = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
             local U      = CuraEqui.Utils
             local h      = math.floor(tonumber(S.hunger or 0) or 0)
             local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
             local rem    = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-
-            local pretty = (U and U.hunger_label) and select(1, U.hunger_label(h, S.satedUntil)) or
-                ((rem > 0) and "Sated" or "OK")
-            local line   = string.format("Hunger %s (%d%%) · Sated %.0fs", pretty, h, rem)
-
+            local pretty = (U and U.hunger_label) and select(1, U.hunger_label(h, S.satedUntil))
+                or ((rem > 0) and "Sated" or "OK")
+            local line   = string.format("Hunger %s (%d%%) · Sated %.0fs · %s", pretty, h, rem, preset)
             local r      = (U and U.ms_to_s and U.ms_to_s(DH.refresh or 1200)) or 1.2
             if U and U.throttle("hud-dev-toast", r) then
                 CuraEqui.UI.Toast(line, r * 1000, 0, "CuraEqui_Status", DH.lane or "notification")
