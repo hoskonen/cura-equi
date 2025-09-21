@@ -28,7 +28,7 @@ CuraEqui.Config = {
         -- Rates
         ratePerMinIdle       = 0.2, -- horse idle (includes mounted-but-standing)
         ratePerMinMounted    = 0.5, -- horse mounted & moving: time drift while ridden
-        ratePerKmMounted     = 2.5, -- extra drain per ridden kilometer
+        ratePerKmMounted     = 0.7, -- extra drain per ridden kilometer
         speedIdleMps         = 0.2, -- below this → idle
         -- Sated
         satedDrainMul        = 0.75,
