@@ -241,23 +241,23 @@ function CuraEqui._HungerTickBody()
     S._mountedNow = mounted
 
     -- take max stamina snapshot (debug only)
-    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    if D.staminaSnapshot then
-        do
-            local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-            if D and D.verbose then
-                local Ssnap = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
-                if Ssnap and (not Ssnap._snap or not Ssnap._snap.staminaMax) then
-                    local cur = CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina and
-                        select(1, CuraEqui.Debug.ReadHorseStamina(h))
-                    if cur then
-                        Ssnap._snap = Ssnap._snap or {}
-                        Ssnap._snap.staminaMax = cur
-                    end
-                end
-            end
-        end
-    end
+    -- local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    -- if D.staminaSnapshot then
+    --     do
+    --         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    --         if D and D.verbose then
+    --             local Ssnap = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
+    --             if Ssnap and (not Ssnap._snap or not Ssnap._snap.staminaMax) then
+    --                 local cur = CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina and
+    --                     select(1, CuraEqui.Debug.ReadHorseStamina(h))
+    --                 if cur then
+    --                     Ssnap._snap = Ssnap._snap or {}
+    --                     Ssnap._snap.staminaMax = cur
+    --                 end
+    --             end
+    --         end
+    --     end
+    -- end
 
     local hp = getPos(h)                           -- preferred
     local pp = (mounted and getPos(player)) or nil -- fallback when mounted
@@ -452,7 +452,10 @@ function CuraEqui._HungerTickBody()
         if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
             pcall(CuraEqui.Buffs.SyncAll, h, S)
 
+            if CuraEqui.Debug and CuraEqui.Debug.MaybeResnapStamina then CuraEqui.Debug.MaybeResnapStamina(h) end
+
             -- show horse stats always on buff change
+
             do
                 if S and CuraEqui.Buffs and CuraEqui.Buffs._pickTierName then
                     local pick = CuraEqui.Buffs._pickTierName

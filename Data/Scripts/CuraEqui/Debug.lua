@@ -200,6 +200,8 @@ function CuraEqui.Debug.DumpHorseStats(h)
     local courage = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
     local cap     = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
     local hml     = (CuraEqui.Debug.ReadHorseMoraleLimit and CuraEqui.Debug.ReadHorseMoraleLimit(h)) or nil
+    -- Speed (collect first, append later)
+    local sp      = CuraEqui.Debug.ReadHorseSpeed and CuraEqui.Debug.ReadHorseSpeed(h) or nil
 
     local preset  = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
 
@@ -215,6 +217,16 @@ function CuraEqui.Debug.DumpHorseStats(h)
     if courage ~= nil then parts[#parts + 1] = ("COU=%d"):format(math.floor(courage + 0.5)) end
     if cap ~= nil then parts[#parts + 1] = ("CAP=%.1f"):format(cap) end
     if hml ~= nil then parts[#parts + 1] = ("HML=%.1f"):format(hml) end
+
+    -- Append speed AFTER parts exists
+    if sp then
+        if sp.pick and sp.pickSrc == "rms" then
+            parts[#parts + 1] = ("SPD=%.3fx"):format(sp.pick)
+        elseif sp.pick then
+            parts[#parts + 1] = ("SPD=%.2f(%s)"):format(sp.pick, sp.pickSrc)
+        end
+    end
+
     parts[#parts + 1] = ("preset=%s"):format(preset)
 
     System.LogAlways("[CuraEqui][HorseStats] " .. table.concat(parts, " | "))
@@ -308,14 +320,14 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
     if CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina then
         stamCur, stamMax = CuraEqui.Debug.ReadHorseStamina(h)
     end
-    local capMax      = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
+    local capMax    = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
+    local soul      = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
+    local hp        = (soul and soul.GetState and soul:GetState("health")) or nil
+    local courage   = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
+    local sp        = CuraEqui.Debug.ReadHorseSpeed and CuraEqui.Debug.ReadHorseSpeed(h) or nil
 
-    local soul        = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
-    local hp          = (soul and soul.GetState and soul:GetState("health")) or nil
-    local courage     = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
-
-    -- Build once
-    local lines       = {}
+    -- Build once (declare BEFORE appending)
+    local lines     = {}
     lines[#lines + 1] = "Horse Status"
     lines[#lines + 1] = ("Preset: %s"):format(preset)
     lines[#lines + 1] = ("Hunger: %d%%"):format(hval)
@@ -330,6 +342,13 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
     end
     if capMax then lines[#lines + 1] = ("Capacity: %.1f"):format(capMax) end
     if courage then lines[#lines + 1] = ("Courage: %d"):format(math.floor(courage + 0.5)) end
+    if sp and sp.pick then
+        if sp.pickSrc == "rms" then
+            lines[#lines + 1] = ("Speed Mod: %.3fx"):format(sp.pick)
+        else
+            lines[#lines + 1] = ("Speed: %.2f (%s)"):format(sp.pick, sp.pickSrc)
+        end
+    end
 
     local body = table.concat(lines, "\n")
     if body == "" then return end
@@ -501,3 +520,147 @@ if System and System.AddCCommand then
     System.AddCCommand("curaequi_clr_sated", "CuraEqui.Debug.ClearSated()", "Clear sated")
     System.AddCCommand("curaequi_force_tier", "CuraEqui.Debug.ForceTierForSeconds(%1,%2)", "Force HUD tier for N seconds")
 end
+
+-- === Debug console: command registry + help + aliases =======================
+CuraEqui.Debug = CuraEqui.Debug or {}
+CuraEqui.Debug._cmds = CuraEqui.Debug._cmds or {}
+
+local function _add_cmd(name, handler, help)
+    if not (System and System.AddCCommand) then return end
+    if not name or not handler then return end
+    -- avoid double-register
+    if not CuraEqui.Debug._cmds[name] then
+        System.AddCCommand(name, handler, help or "")
+        CuraEqui.Debug._cmds[name] = { handler = handler, help = help or "" }
+        -- short alias: ce_<tail>
+        local short = name:gsub("^curaequi_", "ce_")
+        if short ~= name and not CuraEqui.Debug._cmds[short] then
+            System.AddCCommand(short, handler, "(alias) " .. (help or ""))
+            CuraEqui.Debug._cmds[short] = { handler = handler, help = "(alias) " .. (help or "") }
+        end
+    end
+end
+
+-- If you have the preset switcher (in Presets.lua), expose an alias here:
+if CuraEqui.ApplyPreset then
+    _add_cmd("curaequi_preset", "CuraEqui.ApplyPreset(%1)",
+        "Apply hunger/feeding preset: hardcore|real_life|moderate|laidback|author")
+end
+
+-- Implement SnapStaminaMax via the reader (so help can bind to a function name)
+function CuraEqui.Debug.SnapStaminaMax()
+    local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    if not h then
+        System.LogAlways("[CuraEqui] no horse"); return
+    end
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h); if not S then return end
+    local cur = CuraEqui.Debug.ReadHorseStamina and select(1, CuraEqui.Debug.ReadHorseStamina(h))
+    if cur then
+        S._snap = S._snap or {}; S._snap.staminaMax = cur
+        System.LogAlways(("[CuraEqui] stamina snap set to %d"):format(math.floor(cur + 0.5)))
+    end
+end
+
+-- Unified help
+local function _help_line(name, meta)
+    local pad = (name:len() < 24) and string.rep(" ", 24 - name:len()) or " "
+    return string.format("%s%s- %s", name, pad, meta.help or "")
+end
+
+function CuraEqui.Debug.Help(pattern)
+    local p = pattern and tostring(pattern):lower() or nil
+    local names = {}
+    for k in pairs(CuraEqui.Debug._cmds) do
+        if (not p) or k:lower():find(p, 1, true) then
+            names[#names + 1] = k
+        end
+    end
+    table.sort(names)
+    System.LogAlways("[CuraEqui][Help] Available commands:")
+    for _, k in ipairs(names) do
+        System.LogAlways("  " .. _help_line(k, CuraEqui.Debug._cmds[k]))
+    end
+    -- brief on-screen toast (right corner)
+    if CuraEqui.UI and CuraEqui.UI.Toast then
+        CuraEqui.UI.Toast("CuraEqui: Help printed to console", 2500, 0, "CuraEqui_Help", "notification")
+    end
+end
+
+_add_cmd("curaequi_help", "CuraEqui.Debug.Help(%1)", "List commands (optionally filter: curaequi_help preset)")
+
+-- === Speed helpers ==========================================================
+local function _soul(h)
+    return h and (h.soul or (h.GetSoul and h:GetSoul())) or nil
+end
+local function _gd(soul, key)
+    if not (soul and soul.GetDerivedStat) then return nil end
+    local ok, v = pcall(function() return soul:GetDerivedStat(key, {}, nil) end)
+    return ok and v or nil
+end
+
+-- Returns a table of whatever the build exposes + a preferred "speed" pick
+-- Debug.lua
+function CuraEqui.Debug.ReadHorseSpeed(h)
+    h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    local s = h and (h.soul or (h.GetSoul and h:GetSoul())) or nil
+    if not (s and s.GetDerivedStat) then return nil end
+
+    local function gd(key)
+        local ok, v = pcall(function() return s:GetDerivedStat(key, {}, nil) end)
+        return ok and v or nil
+    end
+
+    local t = {
+        nrs = gd("nrs"), -- NormalizedRunSpeed
+        rsb = gd("rsb"), -- RunSpeedBase
+        nsb = gd("nsb"), -- NormalizedRunSpeedBase
+        rsa = gd("rsa"), -- RelativeMovementSpeedAddition
+        rms = gd("rms"), -- RealMoveSpeedMod
+    }
+
+    -- pick current “best” to display
+    local pick, src
+    if t.rms then
+        pick, src = t.rms, "rms" -- multiplier (e.g., 0.95x)
+    elseif t.nrs then
+        pick, src = t.nrs, "nrs" -- normalized run speed
+    elseif t.rsb then
+        pick, src = t.rsb, "rsb" -- base run
+    elseif t.nsb then
+        pick, src = t.nsb, "nsb" -- base normalized
+    elseif t.rsa then
+        pick, src = t.rsa, "rsa" -- relative add
+    else
+        pick, src = nil, nil
+    end
+
+    t.pick, t.pickSrc = pick, src
+    return t
+end
+
+function CuraEqui.Debug.MaybeResnapStamina(h)
+    local D = CuraEqui.Config and CuraEqui.Config.Debug
+    if not (D and D.staminaSnapshot) then return end
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
+    if not S then return end
+    local cur = CuraEqui.Debug.ReadHorseStamina and select(1, CuraEqui.Debug.ReadHorseStamina(h))
+    if cur then
+        S._snap = S._snap or {}
+        S._snap.staminaMax = math.max(S._snap.staminaMax or 0, cur)
+    end
+end
+
+-- Register (or rebind) all existing commands here:
+_add_cmd("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
+_add_cmd("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show Horse Status tutorial card")
+_add_cmd("curaequi_set_hunger", "CuraEqui.Debug.SetHunger(%1)", "Set horse hunger percent [0..100]")
+_add_cmd("curaequi_add_hunger", "CuraEqui.Debug.AddHunger(%1)", "Add delta to horse hunger (negative allowed)")
+_add_cmd("curaequi_set_sated", "CuraEqui.Debug.SetSated(%1)", "Set sated seconds from now (0 clears)")
+_add_cmd("curaequi_clr_sated", "CuraEqui.Debug.ClearSated()", "Clear sated")
+_add_cmd("curaequi_force_tier", "CuraEqui.Debug.ForceTierForSeconds(%1,%2)", "Force HUD hunger tier for N seconds")
+_add_cmd("curaequi_snap_stamina", "CuraEqui.Debug.SnapStaminaMax()", "Snapshot current stamina as session max")
+_add_cmd("curaequi_hunger_trace", "CuraEqui.Debug_EnableHungerTrace(%1,%2)", "Toggle hunger trace (enabled, everyNTicks)")
+_add_cmd("curaequi_distance_trace", "CuraEqui.Debug_EnableDistanceTrace(%1,%2)",
+    "Toggle distance trace (enabled, stepMeters)")
+_add_cmd("curaequi_diet_bind", "CuraEqui.Debug.DietBind(%1,%2)", "Bind diet key/GUID to nutrition value (dev)")
+_add_cmd("curaequi_diet_lookup", "CuraEqui.Debug.DietLookup(%1)", "Lookup diet row by GUID/token (dev)")

@@ -419,7 +419,6 @@ function Horse:OnInventoryClosed()
                 CuraEqui.UI.Toast("@curaequi_horse_refuses_eat", 500, 0, "CuraEquiFeed", "infotext")
             else
                 -- No picks (just closed) → say nothing
-                -- (do NOT show "Horse is full" here)
             end
         end
         FeedLog(pickedAny and "Refusal: all selections resolved to 0." or "Picker closed without selection.")
@@ -428,6 +427,11 @@ function Horse:OnInventoryClosed()
 
     _apply_feed(S, mode, used)
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, self, S) end
+
+    -- resnap stamina after feeding (debug-only)
+    if CuraEqui.Debug and CuraEqui.Debug.MaybeResnapStamina then
+        CuraEqui.Debug.MaybeResnapStamina(self)
+    end
 
     -- C) Partial feed: some submitted units weren’t consumed (cap/sated limited)
     if (consumedUnits or 0) < (selectedUnits or 0) and CuraEqui.UI and CuraEqui.UI.Toast then
