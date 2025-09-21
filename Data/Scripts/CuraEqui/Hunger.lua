@@ -386,6 +386,9 @@ function CuraEqui._HungerTickBody()
             if cap > 0 then
                 local remaining = math.max(0, cap - (S._nightAdded or 0))
                 if remaining <= 0 then
+                    if CuraEqui.Config.Debug and CuraEqui.Config.Debug.hungerTrace then
+                        System.LogAlways("[CuraEqui][Hunger] night cap reached; passive gain suppressed")
+                    end
                     passive = 0
                 else
                     if passive > remaining then passive = remaining end

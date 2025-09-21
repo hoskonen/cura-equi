@@ -41,7 +41,7 @@ CuraEqui.Config = {
         night                = {
             disableGrazing   = true,
             timeDrainMul     = 1.0, -- 1.0 keeps same time drain at night (raise if you want nights a bit harsher)
-            maxDeltaPerNight = 25,  -- absolute cap on hunger gained from sunset→sunrise
+            maxDeltaPerNight = 35,  -- absolute cap on hunger gained from sunset→sunrise
 
         },
         waitCatchup          = { enabled = true, maxCatchupSec = 6 * 3600 }

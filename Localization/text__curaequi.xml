@@ -22,7 +22,7 @@
 </Row>
 
 <Row>
-    <Cell>curaequi_horse_refuses_eat</Cell><Cell>Horse refuses to eat</Cell><Cell>Horse refuses to eat</Cell>
+    <Cell>curaequi_horse_refuses_eat</Cell><Cell>Horse refuses to eat that</Cell><Cell>Horse refuses to eat</Cell>
 </Row>
 
 <Row>
@@ -67,7 +67,7 @@
   <Cell>Horse - Sack of Carrots</Cell>
 </Row>
 <Row>
-  <Cell>ui_in_curaequi_carrot_bundle</Cell>
+  <Cell>ui_nm_curaequi_carrot_bundle</Cell>
   <Cell>A bundle of earthy carrots gathered in a sack, sturdy enough to keep a while and hearty feed for any steed.</Cell>
   <Cell>A bundle of earthy carrots gathered in a sack, sturdy enough to keep a while and hearty feed for any steed.</Cell>
 </Row>
