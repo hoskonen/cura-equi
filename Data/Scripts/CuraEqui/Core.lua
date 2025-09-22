@@ -188,6 +188,13 @@ end
 
 -- Idempotent init that (re)starts polling
 function CuraEqui.Initialize(fullInit)
+    -- Mute persistence for a short window during boot/load
+    do
+        CuraEqui.state = CuraEqui.state or {}
+        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        CuraEqui.state.persistMuteUntil = now + 5.0 -- 5s grace on boot
+    end
+
     if fullInit and CuraEqui.state.started then
         CuraEqui.Log("init", "Already initialized → skipping reload")
     else
@@ -205,6 +212,26 @@ function CuraEqui.Initialize(fullInit)
     end
 
     local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+
+    -- 1) If we have a horse, hydrate hunger/sated from DB first
+    do
+        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        if S and CuraEqui.Persist and CuraEqui.Persist.Load then
+            local ph, ps = CuraEqui.Persist.Load()
+            if ph or ps then
+                if ph then S.hunger = math.max(0, math.min(100, ph)) end
+                if ps then S.satedUntil = tonumber(ps) or 0 end
+                if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+
+                S._lastBuffTier = nil
+
+                System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s"):format(tostring(ph), tostring(ps)))
+
+                -- After successful hydration
+                CuraEqui.state.persistMuteUntil = ((Script and Script.GetTime and Script.GetTime()) or os.clock()) + 1.0
+            end
+        end
+    end
     if h then
         if CuraEqui.StartWatching then CuraEqui.StartWatching() end
     else

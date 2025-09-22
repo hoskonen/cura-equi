@@ -193,6 +193,15 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
         pcall(CuraEqui.Buffs.SyncAll, CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve(), S)
     end
 
+    -- Persist immediately after sleep catch-up
+    if CuraEqui.Persist and CuraEqui.Persist.Save then
+        CuraEqui.Persist.Save(S.hunger, S.satedUntil)
+        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
+            System.LogAlways(("[CuraEqui][Persist] Saved (sleep) hunger=%d sated=%s")
+                :format(math.floor(tonumber(S.hunger or 0) or 0), tostring(S.satedUntil)))
+        end
+    end
+
     -- Optional quiet debug
     local D = CuraEqui.Config and CuraEqui.Config.Debug
     if D and D.hungerTrace then
@@ -239,25 +248,6 @@ function CuraEqui._HungerTickBody()
         mounted = (CuraEqui.Horse and CuraEqui.Horse.IsMounted and CuraEqui.Horse.IsMounted()) or false
     end)
     S._mountedNow = mounted
-
-    -- take max stamina snapshot (debug only)
-    -- local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    -- if D.staminaSnapshot then
-    --     do
-    --         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    --         if D and D.verbose then
-    --             local Ssnap = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)
-    --             if Ssnap and (not Ssnap._snap or not Ssnap._snap.staminaMax) then
-    --                 local cur = CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina and
-    --                     select(1, CuraEqui.Debug.ReadHorseStamina(h))
-    --                 if cur then
-    --                     Ssnap._snap = Ssnap._snap or {}
-    --                     Ssnap._snap.staminaMax = cur
-    --                 end
-    --             end
-    --         end
-    --     end
-    -- end
 
     local hp = getPos(h)                           -- preferred
     local pp = (mounted and getPos(player)) or nil -- fallback when mounted
@@ -449,23 +439,23 @@ function CuraEqui._HungerTickBody()
     do
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-        if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-            pcall(CuraEqui.Buffs.SyncAll, h, S)
+        if not (h and S) then return end
 
-            if CuraEqui.Debug and CuraEqui.Debug.MaybeResnapStamina then CuraEqui.Debug.MaybeResnapStamina(h) end
+        if CuraEqui.Buffs and CuraEqui.Buffs._pickTierName then
+            local pick = CuraEqui.Buffs._pickTierName
+            local tier = pick(tonumber(S.hunger or 0) or 0, S.satedUntil)
 
-            -- show horse stats always on buff change
+            -- Only re-sync when tier actually changes
+            if tier ~= S._lastBuffTier then
+                if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+                S._lastBuffTier = tier
 
-            do
-                if S and CuraEqui.Buffs and CuraEqui.Buffs._pickTierName then
-                    local pick = CuraEqui.Buffs._pickTierName
-                    local tier = pick(tonumber(S.hunger or 0) or 0, S.satedUntil)
-                    if (not S._lastTutTier) or (tier ~= S._lastTutTier) then
-                        S._lastTutTier = tier
-                        if CuraEqui.Debug and CuraEqui.Debug.ShowHorseStatsTutorial then
-                            CuraEqui.Debug.ShowHorseStatsTutorial()
-                        end
-                    end
+                -- Optional: dev HUD/tutorial only on real change
+                if CuraEqui.Debug and CuraEqui.Debug.MaybeResnapStamina then
+                    CuraEqui.Debug.MaybeResnapStamina(h)
+                end
+                if CuraEqui.Debug and CuraEqui.Debug.ShowHorseStatsTutorial then
+                    CuraEqui.Debug.ShowHorseStatsTutorial()
                 end
             end
         end
@@ -498,6 +488,15 @@ function CuraEqui._HungerTickBody()
 
     if CuraEqui.UpdateHorseDebuff then
         CuraEqui.UpdateHorseDebuff(h, S.hunger or 0)
+    end
+
+    -- Persist (throttled) after applying this tick
+    do
+        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        if S and CuraEqui.Persist and CuraEqui.Persist.MaybeSave then
+            CuraEqui.Persist.MaybeSave(S.hunger, S.satedUntil, 1, 20) -- ≥1% or every 20s
+        end
     end
 end
 
@@ -544,6 +543,20 @@ function CuraEqui.StopWatching()
         Script.KillTimer(CuraEqui.state.hungerTimer)
         CuraEqui.state.hungerTimer = nil
     end
+
+    -- Safety save when watcher stops (eg, horse vanished, scene change)
+    do
+        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        if S and CuraEqui.Persist and CuraEqui.Persist.Save then
+            CuraEqui.Persist.Save(S.hunger, S.satedUntil)
+            if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
+                System.LogAlways(("[CuraEqui][Persist] Saved (stop) hunger=%d sated=%s")
+                    :format(math.floor(tonumber(S.hunger or 0) or 0), tostring(S.satedUntil)))
+            end
+        end
+    end
+
     CuraEqui.Log("poll", "Hunger watcher stopped.")
 end
 

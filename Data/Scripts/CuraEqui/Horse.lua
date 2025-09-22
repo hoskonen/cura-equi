@@ -423,6 +423,18 @@ function Horse:OnInventoryClosed()
 
     -- Apply feed effects (+ immediate HUD sync)
     _apply_feed(S, mode, used)
+
+    -- Persist immediately on successful feed so players never lose the effect
+    do
+        if CuraEqui.Persist and CuraEqui.Persist.Save then
+            CuraEqui.Persist.Save(S.hunger, S.satedUntil)
+            if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
+                System.LogAlways(("[CuraEqui][Persist] Saved (feed) hunger=%d sated=%s")
+                    :format(math.floor(tonumber(S.hunger or 0) or 0), tostring(S.satedUntil)))
+            end
+        end
+    end
+
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, self, S) end
 
     -- Partial feed (cap/sated limited): some submitted units weren’t consumed
