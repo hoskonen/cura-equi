@@ -1,16 +1,11 @@
 <Table>
     <!-- Toasts -->
 <Row>
-    <Cell>curaequi_drop_food</Cell><Cell>Drop food for horse</Cell><Cell>Drop food for Horse</Cell>
+    <Cell>curaequi_feed_horse</Cell><Cell>Feed horse</Cell><Cell>Feed Horse</Cell>
 </Row>
-<Row>
-    <Cell>curaequi_feed_drop_hint</Cell><Cell>Drop edible for Horse</Cell><Cell>Drop edible for Horse</Cell>
-</Row>
+
 <Row>
     <Cell>curaequi_horse_feed_ok</Cell><Cell>Horse eats happily</Cell><Cell>Horse eats happily</Cell>
-</Row>
-<Row>
-    <Cell>curaequi_horse_munch</Cell><Cell>Horse eats happily</Cell><Cell>Horse eats happily</Cell>
 </Row>
 
 <Row>
@@ -18,26 +13,27 @@
 </Row>
 
 <Row>
-    <Cell>curaequi_feed_window_ended</Cell><Cell>Drop edibles window ended</Cell><Cell>Drop edibles windows ended</Cell>
+    <Cell>curaequi_horse_refuse</Cell><Cell>Horse refuses to eat that</Cell><Cell>Horse refuses to eat</Cell>
 </Row>
 
 <Row>
-    <Cell>curaequi_horse_refuses_eat</Cell><Cell>Horse refuses to eat that</Cell><Cell>Horse refuses to eat</Cell>
+    <Cell>curaequi_feed_leftovers</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell>
 </Row>
 
-<Row>
-    <Cell>curaequi_horse_sated_fed_partly</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell>
-</Row>
-
-<!-- Custom Food: Hay Bundle-->
- <Row><Cell>ui_nm_curaequi_hay_bundle</Cell><Cell>Horse - Hay Bundle</Cell><Cell>Hay Bundle</Cell></Row>
+<!-- Custom Food: Hay Bundle SM-->
+ <Row><Cell>ui_nm_curaequi_hay_bundle_sm</Cell><Cell>Horse - Hay Bundle Small</Cell><Cell>Hay Bundle</Cell></Row>
  
- <Row><Cell>ui_curaequi_hay_bundle_info</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell></Row>
+ <Row><Cell>ui_in_curaequi_hay_bundle_sm</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell></Row>
+
+ <!-- Custom Food: Hay Bundle LG -->
+ <Row><Cell>ui_nm_curaequi_hay_bundle_lg</Cell><Cell>Horse - Hay Bundle Large</Cell><Cell>Hay Bundle</Cell></Row>
+ 
+ <Row><Cell>ui_in_curaequi_hay_bundle_lg</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell></Row>
 
  <!-- Custom Food: Oat Snack-->
  <Row><Cell>ui_nm_curaequi_oat_snack</Cell><Cell>Horse - Oat Snack</Cell><Cell>Oat Snack</Cell></Row>
  
- <Row><Cell>ui_curaequi_oat_snack_info</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell></Row>
+ <Row><Cell>ui_in_curaequi_oat_snack</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell><Cell>A small ration of oats and bran, rich feed for a weary horse. Compact to carry, though costlier than hay.</Cell></Row>
 
 <!-- Custom Food: Apple Sack -->
  <Row>

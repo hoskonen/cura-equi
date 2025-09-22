@@ -5,7 +5,16 @@ CuraEqui.Config = {
     UI = {
         hudElement = "HUD",
         fallbackToNotification = true,
-
+        feed = {
+            lane = "infotext", -- "infotext" | "tutorial" | "notification"
+            sec  = 2.0,        -- default duration for center messages (seconds)
+            prio = 0,          -- priority for the lane
+            msg  = {
+                onFull      = "@curaequi_horse_full",
+                onRefusal   = "@curaequi_horse_refuse",
+                onLeftovers = "@curaequi_feed_leftovers",
+            },
+        }
     },
     Debug = {
         enabled = true,
@@ -127,12 +136,11 @@ CuraEqui.Config = {
         },
     },
     Feeding = {
-        style                  = "vanilla", -- "vanilla" (picker → instant feed), "experimental", "hybrid" (later)
         filtersMulti           = "food.vegetable.*|food.fruit.*|food.nut.*",
-        overfeedPolicy         = "allow",   -- "allow" | "skip"  (what to do if a single item would overshoot need)
-        removeItems            = true,      -- ← keep false until you verify removal works on your build
+        overfeedPolicy         = "allow", -- "allow" | "skip"  (what to do if a single item would overshoot need)
+        removeItems            = true,    -- ← keep false until you verify removal works on your build
         -- Sated Mode (goal-based planning; picker path)
-        needMode               = "sated",   -- "hunger" | "sated"
+        needMode               = "sated", -- "hunger" | "sated"
         needCapPerFeed         = 25,
         satedMinSec            = 300,
         satedMaxSec            = 900,
@@ -149,31 +157,6 @@ CuraEqui.Config = {
         laidback               = { needCapPerFeed = 30, satedSecPerPoint = 8, satedMaxSec = 1500 },
 
     },
-    FeedScan = {
-        radius                 = 2.0,
-        windowSec              = 5.0,
-        tickMs                 = 250,
-        groundProbe            = true,
-        groundOffsetDown       = 1.2,   -- meters below mouth to sample
-        autoArmOnActionVisible = false, -- keep OFF for now
-        autoArmWindowSec       = 3.0,   -- short window if auto-armed
-        armCooldownSec         = 10.0,  -- don’t re-arm too often
-        armOnInventoryClose    = true,  -- start scan after inv closes
-        armTimeoutSec          = 25.0,  -- give up if no close within this time
-        openInventoryOnFeed    = true,  -- if true, pressing Feed opens inventory for you
-        postCloseWindowSec     = 5.0,   -- scan window after close
-        postCloseDelayMs       = 2000,  -- how long after the inventory closes before the scan starts at all
-        landDelayMs            = 2000,  -- how long after detecting a valid item before the delete+consume actually happens
-        -- Toasts
-        toastOnStart           = "@curaequi_drop_food",
-        toastOnEat             = "@curaequi_horse_munch",
-        toastOnFull            = "@curaequi_horse_full",
-        toastWindowEnded       = "@curaequi_feed_window_ended",
-        -- Toast Settings
-        toastSec               = 2.0,            -- duration in s for tutorial lane
-        toastPrio              = 0,              -- priority for tutorial lane
-        toastLane              = "notification", -- "infotext" | "tutorial" | "notification"
-    },
     Audio = {
         enabled       = true,
         allowFallback = true,                     -- keep legacy fallback if ATL fails
@@ -187,6 +170,23 @@ CuraEqui.Config = {
         applyDelaySec = 1.2,
     }
 }
+
+-- DELETE THIS LATER WHEN OLD VARIABLES HAVE BEEN REMOVED
+do
+    local C = CuraEqui.Config or {}
+    if C.FeedScan then
+        CuraEqui.Config.UI       = CuraEqui.Config.UI or {}
+        CuraEqui.Config.UI.feed  = CuraEqui.Config.UI.feed or {}
+        local UF                 = CuraEqui.Config.UI.feed
+        UF.lane                  = UF.lane or C.FeedScan.toastLane
+        UF.sec                   = UF.sec or C.FeedScan.toastSec
+        UF.prio                  = UF.prio or C.FeedScan.toastPrio
+        UF.msg                   = UF.msg or {}
+        UF.msg.onFull            = UF.msg.onFull or C.FeedScan.toastOnFull
+        -- We intentionally do NOT migrate onStart/onEat/windowEnded (scanner-only)
+        CuraEqui.Config.FeedScan = nil
+    end
+end
 
 if CuraEqui and CuraEqui.ApplyPreset then
     CuraEqui.ApplyPreset("overwrite") -- or "fill" if you prefer config wins

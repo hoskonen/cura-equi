@@ -86,22 +86,15 @@ function CuraEqui.Debug.DietBind(key, nutrition)
     end
 end
 
-function CuraEqui.Debug.DietLookup(entOrKey)
+function CuraEqui.Debug.DietLookup(key)
     local D = CuraEqui.Diet or {}; if not D then return end
-    if type(entOrKey) == "userdata" then
-        local diet = pcall and (CE_ResolveDiet and CE_ResolveDiet(entOrKey))
-        System.LogAlways("[CuraEqui][Diet] resolve → " ..
-            tostring(diet and
-                (diet.source .. " " .. (diet.token or "?") .. " " .. (diet.guid or "-") .. " n=" .. diet.nutrition) or
-                "nil"))
+    key = tostring(key or "")
+    local row = D.byGuid[key] or D.byToken[string.lower(key)]
+    if row then
+        System.LogAlways(("[CuraEqui][Diet] lookup %s → n=%s source=%s token=%s guid=%s")
+            :format(key, tostring(row.nutrition), tostring(row.source), tostring(row.token), tostring(row.guid)))
     else
-        local key = tostring(entOrKey or "")
-        local row = D.byGuid[key] or D.byToken[string.lower(key)]
-        if row then
-            System.LogAlways(("[CuraEqui][Diet] lookup %s → n=%s"):format(key, tostring(row.nutrition)))
-        else
-            System.LogAlways(("[CuraEqui][Diet] lookup %s → nil"):format(key))
-        end
+        System.LogAlways(("[CuraEqui][Diet] lookup %s → nil"):format(key))
     end
 end
 
@@ -320,14 +313,14 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
     if CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina then
         stamCur, stamMax = CuraEqui.Debug.ReadHorseStamina(h)
     end
-    local capMax    = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
-    local soul      = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
-    local hp        = (soul and soul.GetState and soul:GetState("health")) or nil
-    local courage   = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
-    local sp        = CuraEqui.Debug.ReadHorseSpeed and CuraEqui.Debug.ReadHorseSpeed(h) or nil
+    local capMax      = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
+    local soul        = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
+    local hp          = (soul and soul.GetState and soul:GetState("health")) or nil
+    local courage     = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
+    local sp          = CuraEqui.Debug.ReadHorseSpeed and CuraEqui.Debug.ReadHorseSpeed(h) or nil
 
     -- Build once (declare BEFORE appending)
-    local lines     = {}
+    local lines       = {}
     lines[#lines + 1] = "Horse Status"
     lines[#lines + 1] = ("Preset: %s"):format(preset)
     lines[#lines + 1] = ("Hunger: %d%%"):format(hval)

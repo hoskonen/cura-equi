@@ -181,7 +181,6 @@ local function _plan_remove(picks, needPoints, over)
     return removePlan, used, selectedUnits, consumedUnits
 end
 
-
 local function _apply_feed(S, mode, used)
     local beforeH = math.max(0, tonumber(S.hunger or 0) or 0)
     local newH    = beforeH
@@ -388,62 +387,58 @@ end
 function Horse:OnInventoryClosed()
     local picks   = self._feedSel or {}; self._feedSel = nil
     local CFG     = CuraEqui.Config or {}; local FCFG = CFG.Feeding or {}
-    if (FCFG.style or "vanilla") ~= "vanilla" then
-        if CuraEqui._InvClose_Disarm then CuraEqui._InvClose_Disarm("picker_used") end
-        if CuraEqui.Feed_StartScan then
-            local post = (CFG.FeedScan and CFG.FeedScan.postCloseWindowSec) or 10.0
-            CuraEqui.Feed_StartScan(post)
-        end
-        return
-    end
+    local UF      = (CFG.UI and CFG.UI.feed) or {}
 
-    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self); if not S then return end
+    local S       = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self); if not S then return end
     local mode = (FCFG.needMode or "hunger")
 
     local needPoints = _calc_need_points(S, mode)
     if needPoints <= 0 then
-        if FCFG.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast then
-            CuraEqui.UI.Toast("@curaequi_horse_full", 300, 0, "CuraEquiFeed", "infotext")
+        -- “done” path uses the same 'full' message for consistency
+        if CuraEqui.UI and CuraEqui.UI.Toast then
+            local lane = UF.lane or "infotext"
+            local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+            local txt  = (UF.msg and UF.msg.onFull) or "@curaequi_horse_full"
+            CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
         end
         return
     end
 
-    local removePlan, used, selectedUnits, consumedUnits = _plan_remove(picks, needPoints, FCFG.overfeedPolicy or "allow")
+    local removePlan, used, selectedUnits, consumedUnits =
+        _plan_remove(picks, needPoints, FCFG.overfeedPolicy or "allow")
 
-    -- Nothing consumed this close
+    -- Nothing consumed on this close
     if used <= 0 then
         local pickedAny = (selectedUnits or 0) > 0
-        if CuraEqui.UI and CuraEqui.UI.Toast then
-            if pickedAny then
-                -- They chose items but all had 0 nutrition → refusal
-                CuraEqui.UI.Toast("@curaequi_horse_refuses_eat", 500, 0, "CuraEquiFeed", "infotext")
-            else
-                -- No picks (just closed) → say nothing
-            end
+        if pickedAny and CuraEqui.UI and CuraEqui.UI.Toast then
+            -- They chose items but all resolved to 0 nutrition → refusal
+            local lane = UF.lane or "infotext"
+            local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+            local txt  = (UF.msg and UF.msg.onRefusal) or "@curaequi_horse_refuse"
+            CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
         end
         FeedLog(pickedAny and "Refusal: all selections resolved to 0." or "Picker closed without selection.")
         return
     end
 
+    -- Apply feed effects (+ immediate HUD sync)
     _apply_feed(S, mode, used)
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, self, S) end
 
-    -- resnap stamina after feeding (debug-only)
-    if CuraEqui.Debug and CuraEqui.Debug.MaybeResnapStamina then
-        CuraEqui.Debug.MaybeResnapStamina(self)
-    end
-
-    -- C) Partial feed: some submitted units weren’t consumed (cap/sated limited)
+    -- Partial feed (cap/sated limited): some submitted units weren’t consumed
     if (consumedUnits or 0) < (selectedUnits or 0) and CuraEqui.UI and CuraEqui.UI.Toast then
-        CuraEqui.UI.Toast("@curaequi_horse_sated_fed_partly", 2200, 0, "CuraEquiFeed", "infotext")
+        local lane = UF.lane or "infotext"
+        local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+        local txt  = (UF.msg and UF.msg.onLeftovers) or "@curaequi_feed_leftovers"
+        CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
     end
 
     _emit_feed_toasts(removePlan, used, mode, S)
     FeedLog("Fed %d type(s) (-%d) mode=%s",
         (function()
-            local n = 0
-            for _ in pairs(removePlan) do n = n + 1 end; return n
-        end)(), used, mode)
+            local n = 0; for _ in pairs(removePlan) do n = n + 1 end; return n
+        end)(),
+        used, mode)
 
     if FCFG.removeItems then
         local inv = (player and (player.inventory or (player.actor and player.actor.inventory))) or nil
@@ -464,5 +459,117 @@ function Horse:OnInventoryClosed()
         else
             FeedLog("Remove: %d unit(s) ok via inventory:DeleteItem", removed)
         end
+    end
+end
+
+function Horse:OnFeedHorse(user)
+    local my = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+    if not (my and self and my.id == self.id) then
+        System.LogAlways("[CuraEqui][Feed] blocked: not your horse"); return
+    end
+
+    System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
+
+    -- Early full-gate (picker skip when full)
+    do
+        local F    = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+        local UF   = (CuraEqui.Config and CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
+        local skip = (F.skipPickerWhenFull ~= false)
+
+        if skip then
+            local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+            local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+            if S then
+                local cap  = tonumber(F.needCapPerFeed or 25) or 25
+                local curH = tonumber(S.hunger or 0) or 0
+                local need = math.max(0, math.min(cap, curH))
+                if need <= 0 then
+                    if CuraEqui.UI and CuraEqui.UI.Toast then
+                        local lane = UF.lane or "infotext"
+                        local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+                        local txt  = (UF.msg and UF.msg.onFull) or "@curaequi_horse_full"
+                        CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
+                    end
+                    return
+                end
+            end
+        end
+    end
+
+    -- Open multi-select picker (no scan/arming)
+    local F = CuraEqui.Config and CuraEqui.Config.Feeding or {}
+    local filter = F.filtersMulti or "food.vegetable.*|food.fruit.*|food.nut.*"
+
+    local opened = false
+    if user and user.actor and user.actor.OpenItemMultiselectionFilter then
+        opened = pcall(user.actor.OpenItemMultiselectionFilter, user.actor, self.id, filter)
+        System.LogAlways("[CuraEqui][Feed] OpenItemMultiselectionFilter → " .. tostring(opened) .. " filter=" .. filter)
+    end
+
+    -- Fallback: open inventory if picker API missing
+    if not opened and UIAction and UIAction.CallFunction then
+        pcall(UIAction.CallFunction, "ApseInventoryList", -1, "fc_activate")
+    end
+end
+
+do
+    local H = _G.Horse
+    if H and type(H.GetActions) == "function" and not H.__curaequi_feed_wrapped then
+        local _Get = H.GetActions
+        function H.GetActions(self, user, firstFast)
+            local actions = _Get(self, user, firstFast) or {}
+
+            -- only on living horses
+            local alive = self and self.actor and self.actor.GetHealth and (self.actor:GetHealth() > 0) or false
+            if not alive then return actions end
+
+            -- don’t double-inject
+            for i = 1, #actions do
+                local a = actions[i]
+                if a and a.func == H.OnFeedHorse then return actions end
+            end
+
+            -- only allow feeding your own horse unless explicitly enabled
+            local allowAny = CuraEqui.Config and CuraEqui.Config.Feeding and CuraEqui.Config.Feeding.allowAnyHorse
+            if not allowAny then
+                local mine = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                if not (mine and self and mine.id == self.id) then
+                    return actions
+                end
+            end
+
+            -- compute max uiOrder to append after existing actions
+            local maxOrder = 0
+            for i = 1, #actions do
+                local o = actions[i] and actions[i].uiOrder or 0
+                if o and o > maxOrder then maxOrder = o end
+            end
+
+            -- find the correct interaction lane (vanilla horse lanes)
+            local lane = rawget(_G, "inr_horseInspect") or rawget(_G, "inr_horseMount")
+            if not lane then return actions end
+
+            -- build the action (press)
+            local A = Action()
+                :hint("@curaequi_feed_horse")
+                :action("use_horse")
+                :hintType(AHT_PRESS)
+                :func(H.OnFeedHorse)
+                :interaction(lane)
+                :uiOrder(maxOrder + 1)
+                :enabled(true)
+
+            AddInteractorAction(actions, firstFast, A)
+
+            if not self.__curaequi_feed_logged then
+                CuraEqui.Log("Feed", "Injected (lane=%s order=%d)", tostring(lane), maxOrder + 1)
+                self.__curaequi_feed_logged = true
+            end
+
+            return actions
+        end
+
+        H.__curaequi_feed_wrapped = true
+        System.LogAlways("[CuraEqui][Feed] ✅ Wrapped Horse.GetActions")
     end
 end
