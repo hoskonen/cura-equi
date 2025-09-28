@@ -372,7 +372,7 @@ function CuraEqui._HungerTickBody()
         -- grazing recovery when unmounted & idle (negative reduces hunger)
         local gP    = tonumber(HcfgAll.grazePerMinIdleUnmtd) or 0
         gP          = -math.abs(gP) -- safety: grazing always recovers (negative delta)
-        local gM    = tonumber(Hcfg.grazeSatedMul) or 1.0
+        local gM    = tonumber(HcfgAll.grazeSatedMul) or 1.0
         local graze = ((not mounted) and idle) and (gP * (dt / 60.0) * gM) or 0
 
         -- Optional: soft ramp by hunger
