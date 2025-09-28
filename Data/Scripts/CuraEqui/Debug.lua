@@ -2,6 +2,7 @@
 CuraEqui.Debug = CuraEqui.Debug or {}
 -- Enable/disable distance milestone logs and set step size (meters).
 CuraEqui.DEBUG_DISTANCE = CuraEqui.DEBUG_DISTANCE or false
+
 function CuraEqui.Debug_EnableDistanceTrace(enabled, stepMeters)
     CuraEqui.DEBUG_DISTANCE = (enabled ~= false)
     CuraEqui.DEBUG_DISTANCE_STEP = tonumber(stepMeters) or CuraEqui.DEBUG_DISTANCE_STEP or 100.0
@@ -579,8 +580,6 @@ function CuraEqui.Debug.Help(pattern)
     end
 end
 
-_add_cmd("curaequi_help", "CuraEqui.Debug.Help(%1)", "List commands (optionally filter: curaequi_help preset)")
-
 -- === Speed helpers ==========================================================
 local function _soul(h)
     return h and (h.soul or (h.GetSoul and h:GetSoul())) or nil
@@ -643,17 +642,163 @@ function CuraEqui.Debug.MaybeResnapStamina(h)
     end
 end
 
--- Register (or rebind) all existing commands here:
-_add_cmd("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
-_add_cmd("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show Horse Status tutorial card")
-_add_cmd("curaequi_set_hunger", "CuraEqui.Debug.SetHunger(%1)", "Set horse hunger percent [0..100]")
-_add_cmd("curaequi_add_hunger", "CuraEqui.Debug.AddHunger(%1)", "Add delta to horse hunger (negative allowed)")
-_add_cmd("curaequi_set_sated", "CuraEqui.Debug.SetSated(%1)", "Set sated seconds from now (0 clears)")
-_add_cmd("curaequi_clr_sated", "CuraEqui.Debug.ClearSated()", "Clear sated")
-_add_cmd("curaequi_force_tier", "CuraEqui.Debug.ForceTierForSeconds(%1,%2)", "Force HUD hunger tier for N seconds")
-_add_cmd("curaequi_snap_stamina", "CuraEqui.Debug.SnapStaminaMax()", "Snapshot current stamina as session max")
-_add_cmd("curaequi_hunger_trace", "CuraEqui.Debug_EnableHungerTrace(%1,%2)", "Toggle hunger trace (enabled, everyNTicks)")
-_add_cmd("curaequi_distance_trace", "CuraEqui.Debug_EnableDistanceTrace(%1,%2)",
-    "Toggle distance trace (enabled, stepMeters)")
-_add_cmd("curaequi_diet_bind", "CuraEqui.Debug.DietBind(%1,%2)", "Bind diet key/GUID to nutrition value (dev)")
-_add_cmd("curaequi_diet_lookup", "CuraEqui.Debug.DietLookup(%1)", "Lookup diet row by GUID/token (dev)")
+-- Simple anim logger state
+CuraEqui = CuraEqui or {}
+CuraEqui.AnimProbe = CuraEqui.AnimProbe or { last = {}, enabled = false }
+
+-- Resolve target: "player" | "horse"
+local function _resolveTarget(which)
+    which = tostring(which or "player")
+    if which == "horse" and CuraEqui.Horse and CuraEqui.Horse.Resolve then
+        return CuraEqui.Horse.Resolve()
+    end
+    -- fallback to player
+    return System.GetEntity(Game.GetPlayerId and Game.GetPlayerId() or 0)
+end
+
+-- Poll current anim (name via Entity.GetCurAnimation, state via Actor.GetCurrentAnimationState)
+local function _sampleAnim(e)
+    if not e then return nil end
+    local curName = nil
+    local ok, nameOrIdx = pcall(function() return e.GetCurAnimation and e:GetCurAnimation() end)
+    if ok then curName = tostring(nameOrIdx or "") end
+
+    local state = nil
+    if e.GetCurrentAnimationState then
+        local ok2, st = pcall(function() return e:GetCurrentAnimationState() end)
+        if ok2 then state = tostring(st or "") end
+    end
+    return curName, state
+end
+
+-- #anim_watch [player|horse] [interval_ms]
+function anim_watch(which, intervalMs)
+    local e = _resolveTarget(which)
+    if not e then
+        System.LogAlways("[AnimProbe] target not found"); return
+    end
+    intervalMs = tonumber(intervalMs) or 250
+    CuraEqui.AnimProbe.enabled = true
+    System.LogAlways(string.format("[AnimProbe] watching %s (every %d ms)", which or "player", intervalMs))
+
+    local key = (which or "player")
+    local function tick()
+        if not CuraEqui.AnimProbe.enabled then return end
+        local cur, st = _sampleAnim(e)
+        local L = CuraEqui.AnimProbe.last[key] or { name = "", state = "" }
+        if cur ~= L.name or st ~= L.state then
+            System.LogAlways(string.format("[AnimProbe] %s anim change → name='%s' state='%s'",
+                key, tostring(cur or ""), tostring(st or "")))
+            CuraEqui.AnimProbe.last[key] = { name = cur or "", state = st or "" }
+        end
+        Script.SetTimer(intervalMs, tick)
+    end
+    Script.SetTimer(intervalMs, tick)
+end
+
+-- #anim_stop
+function anim_stop()
+    CuraEqui.AnimProbe.enabled = false
+    System.LogAlways("[AnimProbe] stopped")
+end
+
+-- === Minimal player resolver (no Utils) + probe ============================
+local function _ce_get_player()
+    if System.GetEntityByName then
+        local p = System.GetEntityByName("Henry") or System.GetEntityByName("dude")
+        if p then return p end
+    end
+    if Game and Game.GetPlayerId then
+        local ok, pid = pcall(Game.GetPlayerId, Game)
+        if ok and pid then
+            local p = System.GetEntity and System.GetEntity(pid)
+            if p then return p end
+        end
+    end
+    if System.GetEntitiesByClass then
+        local t = System.GetEntitiesByClass("Player") or {}
+        if #t > 0 then return t[1] end
+    end
+    return nil
+end
+
+function CuraEqui.Debug.WhoAmI()
+    local p = _ce_get_player()
+    if not p then
+        System.LogAlways("[CuraEqui] whoami: no player"); return
+    end
+    local n   = p.GetName and p:GetName() or "?"
+    local pos = p.GetWorldPos and p:GetWorldPos() or { x = 0, y = 0, z = 0 }
+    System.LogAlways(string.format("[CuraEqui] whoami: %s id=%s pos=(%.2f,%.2f,%.2f)", n, tostring(p.id), pos.x, pos.y,
+        pos.z))
+end
+
+function CuraEqui.Debug.ProbeNear(radius)
+    local R = tonumber(radius) or 12.0
+    local p = _ce_get_player()
+    if not p or not p.GetWorldPos then
+        System.LogAlways("[Probe] no player"); return
+    end
+    local pos  = p:GetWorldPos()
+    local ents = System.GetEntitiesInSphere(pos, R) or {}
+    System.LogAlways(string.format("[Probe] %d ents within %.1fm", #ents, R))
+    for i, e in ipairs(ents) do
+        local name  = (e.GetName and e:GetName()) or "?"
+        local class = e.class or "?"
+        local ep    = e.GetWorldPos and e:GetWorldPos() or { x = 0, y = 0, z = 0 }
+        System.LogAlways(string.format(" [%02d] id=%s  %s  class=%s  (%.2f,%.2f,%.2f)",
+            i, tostring(e.id), name, class, ep.x, ep.y, ep.z))
+    end
+end
+
+-- ==== Water scan commands ===================================================
+function CuraEqui.Debug.ProbeWater(radius)
+    local U = CuraEqui.Utils or {}
+    local list = (U.Drinking_FindAroundPlayer and U.Drinking_FindAroundPlayer(radius)) or {}
+    System.LogAlways(string.format("[WaterProbe] %d match(es) within %.1fm",
+        #list, tonumber(radius) or 12.0))
+    for i, e in ipairs(list) do
+        local nm = (e.GetName and e:GetName()) or "?"
+        System.LogAlways(string.format(" [%02d] %s  class=%s", i, nm, e.class or "?"))
+    end
+end
+
+function CuraEqui.Debug.ProbeWaterHorse(radius)
+    local h = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()
+    if not h or not h.GetWorldPos then
+        System.LogAlways("[WaterProbe] no horse"); return
+    end
+    local U = CuraEqui.Utils or {}
+    local list = (U.Drinking_FindAroundEntity and U.Drinking_FindAroundEntity(h, radius)) or {}
+    System.LogAlways(string.format("[WaterProbe] near horse: %d match(es) within %.1fm",
+        #list, tonumber(radius) or 12.0))
+    for i, e in ipairs(list) do
+        local nm = (e.GetName and e:GetName()) or "?"
+        System.LogAlways(string.format("  - %s  class=%s", nm, e.class or "?"))
+    end
+end
+
+-- Console bindings
+if System and System.AddCCommand then
+    -- Register (or rebind) all existing commands here:
+    _add_cmd("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
+    _add_cmd("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show Horse Status tutorial card")
+    _add_cmd("curaequi_set_hunger", "CuraEqui.Debug.SetHunger(%1)", "Set horse hunger percent [0..100]")
+    _add_cmd("curaequi_add_hunger", "CuraEqui.Debug.AddHunger(%1)", "Add delta to horse hunger (negative allowed)")
+    _add_cmd("curaequi_set_sated", "CuraEqui.Debug.SetSated(%1)", "Set sated seconds from now (0 clears)")
+    _add_cmd("curaequi_clr_sated", "CuraEqui.Debug.ClearSated()", "Clear sated")
+    _add_cmd("curaequi_force_tier", "CuraEqui.Debug.ForceTierForSeconds(%1,%2)", "Force HUD hunger tier for N seconds")
+    _add_cmd("curaequi_snap_stamina", "CuraEqui.Debug.SnapStaminaMax()", "Snapshot current stamina as session max")
+    _add_cmd("curaequi_hunger_trace", "CuraEqui.Debug_EnableHungerTrace(%1,%2)",
+        "Toggle hunger trace (enabled, everyNTicks)")
+    _add_cmd("curaequi_distance_trace", "CuraEqui.Debug_EnableDistanceTrace(%1,%2)",
+        "Toggle distance trace (enabled, stepMeters)")
+    _add_cmd("curaequi_diet_bind", "CuraEqui.Debug.DietBind(%1,%2)", "Bind diet key/GUID to nutrition value (dev)")
+    _add_cmd("curaequi_diet_lookup", "CuraEqui.Debug.DietLookup(%1)", "Lookup diet row by GUID/token (dev)")
+    _add_cmd("curaequi_help", "CuraEqui.Debug.Help(%1)", "List commands (optionally filter: curaequi_help preset)")
+    _add_cmd("curaequi_whoami", "CuraEqui.Debug.WhoAmI()", "Log resolved player entity")
+    _add_cmd("curaequi_probe", "CuraEqui.Debug.ProbeNear(%1)", "Scan entities around player (meters)")
+    _add_cmd("curaequi_probe_water", "CuraEqui.Debug.ProbeWater(%1)", "Scan water sources around player (m)")
+    _add_cmd("curaequi_probe_water_horse", "CuraEqui.Debug.ProbeWaterHorse(%1)",
+        "Scan water sources around current horse (m)")
+end

@@ -1,6 +1,31 @@
 CuraEqui = CuraEqui or {}
 local U = CuraEqui.Utils or {}
 
+-- Scripts/CuraEqui/Utils.lua (or wherever your Utils live)
+Utils = Utils or {}
+
+function U.GetPlayer()
+    -- your stable fallback first
+    local p = System.GetEntityByName and (System.GetEntityByName("Henry") or System.GetEntityByName("dude"))
+    if p then return p end
+
+    -- id-based fallbacks
+    if Game and Game.GetPlayerId then
+        local ok, pid = pcall(Game.GetPlayerId, Game); if ok then p = System.GetEntity(pid) end
+        if p then return p end
+    end
+    if g_localActorId then
+        p = System.GetEntity(g_localActorId); if p then return p end
+    end
+
+    -- last resort: whichever has player component
+    if System.GetEntitiesByClass then
+        local list = System.GetEntitiesByClass("Player") or {}
+        if #list > 0 then return list[1] end
+    end
+    return nil
+end
+
 function U.clamp(x, lo, hi)
     if x < lo then return lo end
     if x > hi then return hi end
@@ -35,7 +60,6 @@ do
         return false
     end
 end
-
 function U.hunger_label(hungerPct, satedUntil)
     local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
     local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
@@ -61,5 +85,80 @@ function U.hunger_label(hungerPct, satedUntil)
 
     return names[tier] or tier, tier
 end
+
+-- ==== Drinking utils: match & fast find (class-filtered with fallback) =====
+do
+    local function _match(ent, rule)
+        if not ent or not rule then return false end
+        if (ent.class or "") ~= rule.class then return false end
+        if not rule.nameMatch then return true end
+        local nm = (ent.GetName and ent:GetName()) or ""
+        return nm:find(rule.nameMatch, 1, true) ~= nil
+    end
+
+    local function _collectByRule(center, radius, rule, out, seen)
+        out, seen = out or {}, seen or {}
+        local list
+        if System.GetEntitiesInSphereByClass then
+            list = System.GetEntitiesInSphereByClass(center, radius, rule.class) or {}
+        else
+            -- fallback: full sphere → filter by class
+            local all = System.GetEntitiesInSphere(center, radius) or {}
+            list = {}
+            for _, e in ipairs(all) do if e and e.class == rule.class then list[#list + 1] = e end end
+        end
+        for _, e in ipairs(list) do
+            local id = tostring(e.id)
+            if not seen[id] and _match(e, rule) then
+                seen[id] = true
+                out[#out + 1] = e
+            end
+        end
+        return out, seen
+    end
+
+    local function _posOf(ent)
+        return ent and ent.GetWorldPos and ent:GetWorldPos() or nil
+    end
+
+    -- Public: find all configured sources around a world position
+    function U.Drinking_FindAt(pos, radius)
+        local cfg = (CuraEqui.Config and CuraEqui.Config.Drinking and CuraEqui.Config.Drinking.sources) or {}
+        if not pos or not cfg or #cfg == 0 then return {} end
+        local hits, seen = {}, {}
+        for _, rule in ipairs(cfg) do _collectByRule(pos, radius, rule, hits, seen) end
+        -- sort by distance
+        table.sort(hits, function(a, b)
+            local pa, pb = _posOf(a), _posOf(b)
+            if not (pa and pb) then return false end
+            local dx, dy, dz = pa.x - pos.x, pa.y - pos.y, pa.z - pos.z
+            local da = dx * dx + dy * dy + dz * dz
+            dx, dy, dz = pb.x - pos.x, pb.y - pos.y, pb.z - pos.z
+            local db = dx * dx + dy * dy + dz * dz
+            return da < db
+        end)
+        return hits
+    end
+
+    -- Convenience: around player / around entity
+    function U.Drinking_FindAroundPlayer(radius)
+        local p = U.GetPlayer and U.GetPlayer() or nil
+        local pos = p and p.GetWorldPos and p:GetWorldPos() or nil
+        if not pos then return {} end
+        return U.Drinking_FindAt(pos, tonumber(radius) or 12.0)
+    end
+
+    function U.Drinking_FindAroundEntity(ent, radius)
+        local pos = _posOf(ent); if not pos then return {} end
+        return U.Drinking_FindAt(pos, tonumber(radius) or 12.0)
+    end
+
+    -- Boolean helper for gameplay code
+    function U.Drinking_IsNear(pos, radius)
+        local t = U.Drinking_FindAt(pos, radius)
+        return t and #t > 0
+    end
+end
+
 
 CuraEqui.Utils = U

@@ -44,12 +44,12 @@ CuraEqui.Config = {
         speedIdleMps         = 0.2,  -- below this → idle
         -- Sated
         satedDrainMul        = 0.75,
-        satedSecPerNutrition = 6,              -- x per nutrition
-        satedCapSec          = 600,            -- 10 min max
+        satedSecPerNutrition = 6,                         -- x per nutrition
+        satedCapSec          = 600,                       -- 10 min max
         -- Grazing
-        grazePerMinIdleUnmtd = -0.12,          -- negative recovers while unmounted & idle
-        grazeSatedMul        = 1.0,            -- sated multiplier applied to grazing
-        grazingPerSession    = 10,             -- set 0 or nil to disable (max hunger points recovered per idle-unmounted session)
+        grazePerMinIdleUnmtd = -0.12,                     -- negative recovers while unmounted & idle
+        grazeSatedMul        = 1.0,                       -- sated multiplier applied to grazing
+        grazingPerSession    = 10,                        -- set 0 or nil to disable (max hunger points recovered per idle-unmounted session)
         grazeRamp            = { start = 10, full = 35 }, -- % hunger: 0% effect at 10, 100% effect at 35+
         -- Grazing - Night
         night                = {
@@ -159,6 +159,14 @@ CuraEqui.Config = {
         moderate               = { needCapPerFeed = 25, satedSecPerPoint = 6, satedMaxSec = 900 },
         laidback               = { needCapPerFeed = 30, satedSecPerPoint = 8, satedMaxSec = 1500 },
 
+    },
+    Drinking = {
+        sources = {
+            { class = "WaterTubeActionTrigger" },                                           -- laundry/wash tubes
+            { class = "SmartObjectHolder",     nameMatch = "Water/waterResource" },         -- wash areas
+            { class = "TriggerArea",           nameMatch = "Water/waterResource" },
+            { class = "SmartObjectHolder",     nameMatch = "animalcare/horseParkingSpot" }, -- stone/wood troughs
+        }
     },
     Audio = {
         enabled       = true,
