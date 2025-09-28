@@ -44,11 +44,13 @@ CuraEqui.Config = {
         speedIdleMps         = 0.2,  -- below this → idle
         -- Sated
         satedDrainMul        = 0.75,
-        satedSecPerNutrition = 6,     -- x per nutrition
-        satedCapSec          = 600,   -- 10 min max
+        satedSecPerNutrition = 6,              -- x per nutrition
+        satedCapSec          = 600,            -- 10 min max
         -- Grazing
-        grazePerMinIdleUnmtd = -0.12, -- negative recovers while unmounted & idle
-        grazeSatedMul        = 1.0,   -- sated multiplier applied to grazing
+        grazePerMinIdleUnmtd = -0.12,          -- negative recovers while unmounted & idle
+        grazeSatedMul        = 1.0,            -- sated multiplier applied to grazing
+        grazingPerSession    = 10,             -- set 0 or nil to disable (max hunger points recovered per idle-unmounted session)
+        grazeRamp            = { start = 10, full = 35 }, -- % hunger: 0% effect at 10, 100% effect at 35+
         -- Grazing - Night
         night                = {
             disableGrazing   = true,
@@ -93,7 +95,7 @@ CuraEqui.Config = {
                 ratePerMinIdle       = 0.05,
                 ratePerMinMounted    = 0.15,
                 ratePerKmMounted     = 0.2,
-                grazePerMinIdleUnmtd = -0.12,
+                grazePerMinIdleUnmtd = -0.06,
                 night                = { disableGrazing = true, timeDrainMul = 1.0, maxDeltaPerNight = 35 },
             },
         },

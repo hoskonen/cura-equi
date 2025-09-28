@@ -370,10 +370,49 @@ function CuraEqui._HungerTickBody()
         S._wasNight = isNight
 
         -- grazing recovery when unmounted & idle (negative reduces hunger)
-        local Hcfg  = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
-        local gP    = tonumber(Hcfg.grazePerMinIdleUnmtd) or 0
+        local gP    = tonumber(HcfgAll.grazePerMinIdleUnmtd) or 0
+        gP          = -math.abs(gP) -- safety: grazing always recovers (negative delta)
         local gM    = tonumber(Hcfg.grazeSatedMul) or 1.0
         local graze = ((not mounted) and idle) and (gP * (dt / 60.0) * gM) or 0
+
+        -- Optional: soft ramp by hunger
+        do
+            local ramp = HcfgAll.grazeRamp or {} -- e.g. { start=10, full=35 }
+            local h    = tonumber(S.hunger or 0) or 0
+            local h0   = tonumber(ramp.start or 0) or 0
+            local h1   = tonumber(ramp.full or 0) or 0
+            if h1 > h0 then
+                local t = (h - h0) / (h1 - h0)
+                local k = math.max(0, math.min(1, t))
+                graze = graze * k
+            else
+                -- Or use a hard threshold instead:
+                local threshold = tonumber(HcfgAll.grazeStartThreshold or 0) or 0
+                if threshold > 0 and (tonumber(S.hunger or 0) or 0) < threshold then
+                    graze = 0
+                end
+            end
+        end
+
+        -- Session cap
+        local cap = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+        if cap > 0 then
+            if mounted then
+                S._grazeBudget = cap -- reset budget on mount
+            elseif S._grazeBudget == nil then
+                S._grazeBudget = cap -- first unmounted idle tick
+            end
+            if graze < 0 and (not mounted) and idle then
+                local budget = tonumber(S._grazeBudget or 0) or 0
+                if budget <= 0 then
+                    graze = 0
+                else
+                    local maxRecover = math.min(budget, math.abs(graze))
+                    graze = -maxRecover
+                    S._grazeBudget = budget - maxRecover
+                end
+            end
+        end
 
         -- Night rules
         if isNight and (NC.disableGrazing ~= false) then

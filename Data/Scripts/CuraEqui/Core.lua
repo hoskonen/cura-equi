@@ -263,6 +263,16 @@ function CuraEqui.OnSetFaderState(_actionName, eventName, argTable)
             end
         end
 
+        do
+            local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+            local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+            if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+                -- Make sure HUD/buffs reflect the current tier right now
+                S._lastBuffTier = nil
+                pcall(CuraEqui.Buffs.SyncAll, h, S)
+            end
+        end
+
         CuraEqui.Initialize(false)
         CuraEqui.state.pausedForSleep = false
         CuraEqui.state._sleepStartTOD = nil

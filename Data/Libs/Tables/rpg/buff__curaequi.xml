@@ -36,5 +36,8 @@
 
         <!-- Cura Equi / Horse Debuff: Critical Hunger -->
 		<buff buff_class_id="4" buff_exclusivity_id="1" buff_id="9f2e6b84-3a10-4719-b6d9-5d0c8f2a4c63" buff_lifetime_id="1" buff_name="buff_ce_horse_crital" buff_params="nrw*0.4,courage*0.5,nrs*0.5" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_horse_crital" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_crital" buff_ui_visibility_id="0" buff_desc="buff_ce_horse_crital_desc" />
+
+		<!-- Vanilla overrides: does this make horse killable?-->
+		<buff buff_class_id="1" buff_exclusivity_id="1" buff_id="ab1503b5-1494-456a-baa1-0c2f4efbf3e5" buff_lifetime_id="1" buff_name="perk_immortal_companion" buff_params="imm=0" duration="-1" icon_id="0" implementation="Cpp:Constant" is_persistent="true" />
 	</buffs>
 </database>
