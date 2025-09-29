@@ -92,6 +92,85 @@ local function ProbeOnce(h)
     for k, v in pairs(caps) do System.LogAlways(("[CuraEqui][Probe] cap %-11s = %s"):format(k, tostring(v))) end
 end
 
+local function is_night()
+    return (Calendar and Calendar.IsNightTimeOfDay and Calendar.IsNightTimeOfDay()) or false
+end
+
+local function graze_compute(S, mounted, idle, dt, H)
+    -- H is (CuraEqui.Config.Hunger)
+    local gP = tonumber(H.grazePerMinIdleUnmtd) or 0
+    gP = -math.abs(gP) -- safety: grazing always recovers
+    local gM = tonumber(H.grazeSatedMul) or 1.0
+
+    local graze = ((not mounted) and idle) and (gP * (dt / 60.0) * gM) or 0
+
+    -- Soft ramp / threshold
+    do
+        local ramp       = H.grazeRamp or {}
+        local h          = tonumber(S.hunger or 0) or 0
+        local h0         = tonumber(ramp.start or 0) or 0
+        local h1         = tonumber(ramp.full or 0) or 0
+        S._dbgGrazeRampK = nil
+        if h1 > h0 then
+            local t = (h - h0) / (h1 - h0)
+            local k = math.max(0, math.min(1, t))
+            graze = graze * k
+            S._dbgGrazeRampK = k
+        else
+            local threshold = tonumber(H.grazeStartThreshold or 0) or 0
+            if threshold > 0 and h < threshold then
+                graze = 0
+                S._dbgGrazeRampK = 0
+            end
+        end
+    end
+
+    -- Session cap
+    local cap = tonumber(H.grazeCapPerSession or 0) or 0
+    if cap > 0 then
+        if mounted then
+            S._grazeBudget = cap
+        elseif S._grazeBudget == nil then
+            S._grazeBudget = cap
+        end
+        if graze < 0 and (not mounted) and idle then
+            local budget = tonumber(S._grazeBudget or 0) or 0
+            if budget <= 0 then
+                graze = 0
+            else
+                local maxRecover = math.min(budget, math.abs(graze))
+                graze = -maxRecover
+                S._grazeBudget = budget - maxRecover
+            end
+        end
+    end
+
+    return graze
+end
+
+local function apply_night_rules(S, passive, H)
+    local NC    = H.night or {}
+    local night = is_night()
+
+    -- grazing off at night (handled by caller before)
+    -- timeDrain mul handled by caller before
+
+    if night and passive > 0 then
+        local cap = tonumber(NC.maxDeltaPerNight or 0) or 0
+        if cap > 0 then
+            local remaining = math.max(0, cap - (S._nightAdded or 0))
+            if remaining <= 0 then
+                return 0
+            else
+                if passive > remaining then passive = remaining end
+                S._nightAdded = (S._nightAdded or 0) + passive
+            end
+        end
+    end
+    return passive
+end
+
+
 -- ONE source of truth for hunger dials (+ legacy fallbacks)
 local function _H()
     local H = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
@@ -346,104 +425,44 @@ function CuraEqui._HungerTickBody()
             end
         end
 
-        -- time drift
-        local timePerMin = (idle and C.rateIdle) or C.rateMounted
-        local timeDrain  = timePerMin * (dt / 60.0)
-
-        -- per-km only when mounted-moving
-        local distDrain  = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
-
         -- NIGHT STATE (detect + reset per-night accumulator at dusk/dawn)
-        local HcfgAll    = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
-        local NC         = HcfgAll.night or {}
-        local isNight    = (Calendar and Calendar.IsNightTimeOfDay and Calendar.IsNightTimeOfDay()) or false
-        S._wasNight      = S._wasNight or false
-        S._nightAdded    = S._nightAdded or 0
 
-        if isNight and not S._wasNight then
-            -- night just started
-            S._nightAdded = 0
-        elseif (not isNight) and S._wasNight then
-            -- dawn
-            S._nightAdded = 0
-        end
-        S._wasNight = isNight
+        local HcfgAll = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
 
-        -- grazing recovery when unmounted & idle (negative reduces hunger)
-        local gP    = tonumber(HcfgAll.grazePerMinIdleUnmtd) or 0
-        gP          = -math.abs(gP) -- safety: grazing always recovers (negative delta)
-        local gM    = tonumber(HcfgAll.grazeSatedMul) or 1.0
-        local graze = ((not mounted) and idle) and (gP * (dt / 60.0) * gM) or 0
-
-        -- Optional: soft ramp by hunger
-        do
-            local ramp = HcfgAll.grazeRamp or {} -- e.g. { start=10, full=35 }
-            local h    = tonumber(S.hunger or 0) or 0
-            local h0   = tonumber(ramp.start or 0) or 0
-            local h1   = tonumber(ramp.full or 0) or 0
-            if h1 > h0 then
-                local t = (h - h0) / (h1 - h0)
-                local k = math.max(0, math.min(1, t))
-                graze = graze * k
-            else
-                -- Or use a hard threshold instead:
-                local threshold = tonumber(HcfgAll.grazeStartThreshold or 0) or 0
-                if threshold > 0 and (tonumber(S.hunger or 0) or 0) < threshold then
-                    graze = 0
-                end
-            end
+        -- Night state flip (keep your counters)
+        local night   = is_night()
+        S._wasNight   = S._wasNight or false
+        S._nightAdded = S._nightAdded or 0
+        if night ~= S._wasNight then
+            S._nightAdded = 0; S._wasNight = night
         end
 
-        -- Session cap
-        local cap = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
-        if cap > 0 then
-            if mounted then
-                S._grazeBudget = cap -- reset budget on mount
-            elseif S._grazeBudget == nil then
-                S._grazeBudget = cap -- first unmounted idle tick
-            end
-            if graze < 0 and (not mounted) and idle then
-                local budget = tonumber(S._grazeBudget or 0) or 0
-                if budget <= 0 then
-                    graze = 0
-                else
-                    local maxRecover = math.min(budget, math.abs(graze))
-                    graze = -maxRecover
-                    S._grazeBudget = budget - maxRecover
-                end
-            end
+        -- Time drain (idle/mounted) + per-km drain
+        local C         = _H()
+        local timeBase  = ((idle and C.rateIdle) or C.rateMounted) * (dt / 60.0)
+        local distDrain = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
+
+        -- Night time mul
+        local timeMul   = night and (tonumber((HcfgAll.night or {}).timeDrainMul) or 1.0) or 1.0
+        local timeDrain = timeBase * timeMul
+
+        -- Grazing (may ramp & cap)
+        local graze     = graze_compute(S, mounted, idle, dt, HcfgAll)
+
+        -- Night: optionally disable grazing
+        if night and ((HcfgAll.night or {}).disableGrazing ~= false) then
+            graze = 0
         end
 
-        -- Night rules
-        if isNight and (NC.disableGrazing ~= false) then
-            graze = 0.0
-        end
-        local nightTimeMul = (isNight and (tonumber(NC.timeDrainMul) or 1.0) or 1.0)
-        timeDrain          = timeDrain * nightTimeMul
+        -- Sated multiplier (by design, only drains)
+        local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
 
-        -- sated multiplier
-        local now          = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-        local mul          = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
+        local passive    = (timeDrain * mul) + graze
+        local active     = (distDrain * mul)
 
-        -- By design, sated does NOT change grazing by default → apply mul to drains only
-        local passive      = (timeDrain * mul) + graze -- “just existing” at night
-        local active       = (distDrain * mul)         -- movement penalty (never capped)
-
-        if isNight and passive > 0 then
-            local cap = tonumber(NC.maxDeltaPerNight or 0) or 0
-            if cap > 0 then
-                local remaining = math.max(0, cap - (S._nightAdded or 0))
-                if remaining <= 0 then
-                    if CuraEqui.Config.Debug and CuraEqui.Config.Debug.hungerTrace then
-                        System.LogAlways("[CuraEqui][Hunger] night cap reached; passive gain suppressed")
-                    end
-                    passive = 0
-                else
-                    if passive > remaining then passive = remaining end
-                    S._nightAdded = (S._nightAdded or 0) + passive
-                end
-            end
-        end
+        -- Night cap for passive gain
+        passive          = apply_night_rules(S, passive, HcfgAll)
 
         local totalDrain = passive + active
 
@@ -458,6 +477,30 @@ function CuraEqui._HungerTickBody()
         S._lastSpeedMps  = speed
         S._lastGraze     = graze
 
+        local ginfo      = ""
+        do
+            local k      = S._dbgGrazeRampK
+            local budget = tonumber(S._grazeBudget or 0) or 0
+            local nc     = (HcfgAll.night or {})
+            local capCfg = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+
+            if night and (nc.disableGrazing ~= false) then
+                ginfo = " (night-off)"
+            elseif graze == 0 and k and k <= 0.001 then
+                ginfo = " (under-threshold)"
+            elseif capCfg > 0 then
+                if budget <= 0 and ((not mounted) and idle) then
+                    ginfo = " (capped)"
+                elseif k and k < 0.999 then
+                    ginfo = string.format(" (ramp=%.2f, cap=%d)", k, budget)
+                else
+                    ginfo = string.format(" (cap=%d)", budget)
+                end
+            elseif k and k < 0.999 then
+                ginfo = string.format(" (ramp=%.2f)", k)
+            end
+        end
+
         -- dev console trace (compact)
         do
             local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
@@ -465,8 +508,12 @@ function CuraEqui._HungerTickBody()
             if D.hungerTrace and U and U.throttle("hunger-trace", U.ms_to_s(D.hungerTraceEvery or 5000)) then
                 local state = idle and "idle" or "mounted"
                 local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
-                    :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, mul,
+                -- System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
+                --     :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, mul,
+                --         totalDrain, math.floor(before), math.floor(after), remS))
+
+                System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.3f%s mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
+                    :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, ginfo, mul,
                         totalDrain, math.floor(before), math.floor(after), remS))
             end
         end
