@@ -20,6 +20,10 @@
     <Cell>curaequi_feed_leftovers</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell><Cell>Horse is sated, left over edibles returned to inventory</Cell>
 </Row>
 
+<Row>
+    <Cell>curaequi_horse_not_hungry_yet</Cell><Cell>Horse is sated, he's not feeling like eating at the moment</Cell><Cell>Horse is sated, he's not feeling like eating at the moment</Cell>
+</Row>
+
 <!-- Custom Food: Hay Bundle SM-->
  <Row><Cell>ui_nm_curaequi_hay_bundle_sm</Cell><Cell>Horse - Hay Bundle Small</Cell><Cell>Hay Bundle</Cell></Row>
  

@@ -10,9 +10,10 @@ CuraEqui.Config = {
             sec  = 2.0,        -- default duration for center messages (seconds)
             prio = 0,          -- priority for the lane
             msg  = {
-                onFull      = "@curaequi_horse_full",
-                onRefusal   = "@curaequi_horse_refuse",
-                onLeftovers = "@curaequi_feed_leftovers",
+                onFull       = "@curaequi_horse_full",
+                onRefusal    = "@curaequi_horse_refuse",
+                onLeftovers  = "@curaequi_feed_leftovers",
+                onSatedBlock = "@curaequi_horse_not_hungry_yet"
             },
         }
     },
@@ -32,33 +33,38 @@ CuraEqui.Config = {
     },
 
     Hunger = {
-        preset               = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"
-        tickSec              = 10,
-        hungerStart          = 50,
-        hungerMax            = 100,
-        debuffAt             = 70,
+        preset                   = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"
+        tickSec                  = 10,
+        hungerStart              = 50,
+        hungerMax                = 100,
+        debuffAt                 = 70,
         -- Rates
-        ratePerMinIdle       = 0.15, -- horse idle (includes mounted-but-standing)
-        ratePerMinMounted    = 0.35, -- horse mounted & moving: time drift while ridden
-        ratePerKmMounted     = 0.5,  -- extra drain per ridden kilometer
-        speedIdleMps         = 0.2,  -- below this → idle
+        ratePerMinIdle           = 0.15, -- horse idle (includes mounted-but-standing)
+        ratePerMinMounted        = 0.35, -- horse mounted & moving: time drift while ridden
+        ratePerKmMounted         = 0.5,  -- extra drain per ridden kilometer
+        speedIdleMps             = 0.2,  -- below this → idle
         -- Sated
-        satedDrainMul        = 0.75,
-        satedSecPerNutrition = 6,                         -- x per nutrition
-        satedCapSec          = 600,                       -- 10 min max
+        satedDrainMul            = 0.75,
+        satedSecPerNutrition     = 5, -- x per nutrition
+        satedCapSec              = 600,
+        -- Sated feeding policy
+        -- If you want “block whenever sated is active, set satedBlockIfRemainingSec = 1
+        -- If you want a softer rule (“block only if ≥ 10 min left”), set 600.
+        satedHardBlock           = true,                      -- if true, block feeding while plenty of sated time remains
+        satedBlockIfRemainingSec = 1,                         -- threshold in seconds; 0 disables blocking (used only if satedHardBlock=true)-- 10 min max
         -- Grazing
-        grazePerMinIdleUnmtd = -0.12,                     -- negative recovers while unmounted & idle
-        grazeSatedMul        = 1.0,                       -- sated multiplier applied to grazing
-        grazingPerSession    = 10,                        -- set 0 or nil to disable (max hunger points recovered per idle-unmounted session)
-        grazeRamp            = { start = 10, full = 35 }, -- % hunger: 0% effect at 10, 100% effect at 35+
+        grazePerMinIdleUnmtd     = -0.12,                     -- negative recovers while unmounted & idle
+        grazeSatedMul            = 1.0,                       -- sated multiplier applied to grazing
+        grazingPerSession        = 10,                        -- set 0 or nil to disable (max hunger points recovered per idle-unmounted session)
+        grazeRamp                = { start = 10, full = 35 }, -- % hunger: 0% effect at 10, 100% effect at 35+
         -- Grazing - Night
-        night                = {
+        night                    = {
             disableGrazing   = true,
             timeDrainMul     = 1.0, -- 1.0 keeps same time drain at night (raise if you want nights a bit harsher)
             maxDeltaPerNight = 35,  -- absolute cap on hunger gained from sunset→sunrise
 
         },
-        waitCatchup          = { enabled = true, maxCatchupSec = 6 * 3600 }
+        waitCatchup              = { enabled = true, maxCatchupSec = 6 * 3600 }
     },
     Presets = {
         Hunger = {

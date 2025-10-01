@@ -93,32 +93,47 @@ local function _per_unit_from_info(info)
 end
 
 local function _sated_cfg()
-    local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
-    return {
-        minSec  = tonumber(F.satedMinSec) or 300,
-        maxSec  = tonumber(F.satedMaxSec) or 900,
-        perPt   = tonumber(F.satedSecPerPoint) or 6,
-        capPts  = tonumber(F.needCapPerFeed) or 25,
-        alsoHun = (F.satedAlsoReducesHunger ~= false),
-    }
+    local F    = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+    local H    = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+
+    -- Prefer Hunger.* if set; fall back to Feeding.*; then sensible defaults
+    local per  = tonumber(H.satedSecPerNutrition) or tonumber(F.satedSecPerPoint) or 6
+    local maxS = tonumber(H.satedCapSec) or tonumber(F.satedMaxSec) or 600
+    local minS = tonumber(F.satedMinSec) or 0 -- (you don’t have a Hunger.min; keep 0)
+    local capP = tonumber(F.needCapPerFeed) or 25
+    local also = (F.satedAlsoReducesHunger ~= false)
+
+    return { minSec = minS, maxSec = maxS, perPt = per, capPts = capP, alsoHun = also }
 end
 
 local function _calc_need_points(S, mode)
-    local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+    local F   = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
     local cap = tonumber(F.needCapPerFeed or 25) or 25
+
     if mode == "sated" then
-        local C          = _sated_cfg()
+        local C          = _sated_cfg() -- minSec, maxSec, perPt, capPts, alsoHun
         local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
         local remS       = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+        -- points needed to reach the minimum sated target
         local target     = math.max(C.minSec, math.min(C.maxSec, C.minSec))
         local missingSec = math.max(0, target - remS)
-        local pts        = math.ceil(missingSec / math.max(1, C.perPt))
-        return math.max(0, math.min(pts, C.capPts))
-    else
-        local h = math.max(0, tonumber(S.hunger or 0) or 0)
-        return math.min(h, cap)
+        local sNeedPt    = math.ceil(missingSec / math.max(1, C.perPt))
+
+        if C.alsoHun then
+            -- allow feeding for hunger even if sated target is met
+            local hNeedPt = math.max(0, tonumber(S.hunger or 0) or 0)
+            return math.max(0, math.min(math.max(sNeedPt, hNeedPt), math.min(C.capPts or cap, cap)))
+        else
+            return math.max(0, math.min(sNeedPt, math.min(C.capPts or cap, cap)))
+        end
     end
+
+    -- hunger mode
+    local h = math.max(0, tonumber(S.hunger or 0) or 0)
+    return math.min(h, cap)
 end
+
 
 local function _plan_remove(picks, needPoints, over)
     local removePlan, used = {}, 0
@@ -392,15 +407,57 @@ function Horse:OnInventoryClosed()
     local S       = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self); if not S then return end
     local mode = (FCFG.needMode or "hunger")
 
+    -- HARD BLOCK safety inside close handler (covers inventory-driven feed)
+    do
+        local F      = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
+        local H      = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+        local hard   = (H.satedHardBlock ~= nil) and H.satedHardBlock or F.satedHardBlock
+        local thrSec = tonumber((H.satedBlockIfRemainingSec ~= nil) and H.satedBlockIfRemainingSec or
+        F.satedBlockIfRemainingSec or 0) or 0
+        if hard and thrSec > 0 then
+            local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+            local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+            if remS >= thrSec then
+                local pickedAny = false
+                for _, info in ipairs(picks) do
+                    if (tonumber(info.qty or 0) or 0) > 0 then
+                        pickedAny = true; break
+                    end
+                end
+                if pickedAny and CuraEqui.UI and CuraEqui.UI.Toast then
+                    local UF   = (CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
+                    local lane = UF.lane or "infotext"
+                    local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+                    local txt  = (UF.msg and (UF.msg.onSatedBlock or UF.msg.onFull)) or "@curaequi_horse_not_hungry_yet"
+                    CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
+                end
+                FeedLog("Blocked: sated hard-block active (rem=" .. tostring(remS) .. "s)")
+                return
+            end
+        end
+    end
+
+    -- only toast full when truly full
     local needPoints = _calc_need_points(S, mode)
     if needPoints <= 0 then
-        -- “done” path uses the same 'full' message for consistency
-        if CuraEqui.UI and CuraEqui.UI.Toast then
+        local pickedAny = false
+        for _, info in ipairs(picks) do
+            local q = tonumber(info.qty or 0) or 0
+            if q > 0 then
+                pickedAny = true; break
+            end
+        end
+
+        local hungerNow = math.floor(tonumber(S.hunger or 0) or 0)
+        if pickedAny and hungerNow == 0 and CuraEqui.UI and CuraEqui.UI.Toast then
             local lane = UF.lane or "infotext"
             local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
             local txt  = (UF.msg and UF.msg.onFull) or "@curaequi_horse_full"
             CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
         end
+
+        FeedLog(pickedAny and "Picker: need=0 (selection) hunger=" .. tostring(hungerNow) or
+            "Picker closed (no selection).")
         return
     end
 
@@ -421,8 +478,22 @@ function Horse:OnInventoryClosed()
         return
     end
 
+    -- before applying feed effects
+    local beforeH = math.floor(tonumber(S.hunger or 0) or 0)
+
     -- Apply feed effects (+ immediate HUD sync)
     _apply_feed(S, mode, used)
+
+    if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
+        System.LogAlways(("[CuraEqui][Feed] Apply: mode=%s used=%d hunger=%d→%d satedNow=%.0fs")
+            :format(
+                mode, used, beforeH,
+                math.floor(tonumber(S.hunger or 0) or 0),
+                math.max(0, ((tonumber(S.satedUntil or 0) or 0) -
+                    ((Script and Script.GetTime and Script.GetTime()) or os.clock())))
+            )
+        )
+    end
 
     -- Persist immediately on successful feed so players never lose the effect
     do
@@ -488,16 +559,41 @@ function Horse:OnFeedHorse(user)
 
     System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
 
-    -- Early full-gate (picker skip when full)
+    -- Early gate: optionally block feeding if already sated enough
     do
         local F    = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
         local UF   = (CuraEqui.Config and CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
         local skip = (F.skipPickerWhenFull ~= false)
 
+        -- existing full gate (hunger-based)
         if skip then
             local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
             local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
             if S then
+                -- HARD BLOCK (optional)
+                do
+                    local H      = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+                    local hard   = (H.satedHardBlock ~= nil) and H.satedHardBlock or F.satedHardBlock
+                    local thrSec = tonumber((H.satedBlockIfRemainingSec ~= nil) and H.satedBlockIfRemainingSec or
+                        F.satedBlockIfRemainingSec or 0) or 0
+                    if hard and thrSec > 0 then
+                        local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                        local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+                        if remS >= thrSec then
+                            if CuraEqui.UI and CuraEqui.UI.Toast then
+                                local UF   = (CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
+                                local lane = UF.lane or "infotext"
+                                local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+                                local txt  = (UF.msg and (UF.msg.onSatedBlock or UF.msg.onFull)) or
+                                    "@curaequi_horse_not_hungry_yet"
+                                CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
+                            end
+                            return
+                        end
+                    end
+                end
+
+                -- classic “full” (hunger 0) skip
                 local cap  = tonumber(F.needCapPerFeed or 25) or 25
                 local curH = tonumber(S.hunger or 0) or 0
                 local need = math.max(0, math.min(cap, curH))

@@ -508,9 +508,6 @@ function CuraEqui._HungerTickBody()
             if D.hungerTrace and U and U.throttle("hunger-trace", U.ms_to_s(D.hungerTraceEvery or 5000)) then
                 local state = idle and "idle" or "mounted"
                 local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                -- System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.2f mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
-                --     :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, mul,
-                --         totalDrain, math.floor(before), math.floor(after), remS))
 
                 System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.3f%s mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
                     :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, ginfo, mul,
