@@ -296,13 +296,21 @@ function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
     local st        = CuraEqui.state
 
     -- OPEN on first seen event (robust even if no OnShow)
+
     if isEntry and not st._skipSessionOpen then
-        st._skipSessionOpen = true
-        st._skipHandled     = false
-        -- prefer the last tick’s hour; if missing, fall back to current hour
-        st._sleepStartHour  = st._prevHour or CuraEqui._get_player_hour()
-        System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%s")
-            :format(st._sleepStartHour and string.format("%.2f", st._sleepStartHour) or "nil"))
+        st._skipSessionOpen    = true
+        st._skipHandled        = false
+        st._skipMinutesPlanned = nil
+
+        local hourNow          = CuraEqui._get_player_hour() or st._prevHour
+        if hourNow then
+            st._sleepStartHour = hourNow
+            System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%.2f"):format(hourNow))
+        else
+            st._sleepStartHour = nil
+            st._sleepNeedSeed  = true
+            System.LogAlways("[CuraEqui][SkipTime] OPEN → mark hour=deferred")
+        end
 
         if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
     end
@@ -380,12 +388,19 @@ function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
 
     -- OPEN on first seen event (robust even if no OnShow)
     if not st._skipSessionOpen then
-        st._skipSessionOpen = true
-        st._skipHandled     = false
-        -- prefer the last tick’s hour; if missing, fall back to current hour
-        st._sleepStartHour  = st._prevHour or CuraEqui._get_player_hour()
-        System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%s")
-            :format(st._sleepStartHour and string.format("%.2f", st._sleepStartHour) or "nil"))
+        st._skipSessionOpen    = true
+        st._skipHandled        = false
+        st._skipMinutesPlanned = nil
+
+        local hourNow          = CuraEqui._get_player_hour() or st._prevHour
+        if hourNow then
+            st._sleepStartHour = hourNow
+            System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%.2f"):format(hourNow))
+        else
+            st._sleepStartHour = nil
+            st._sleepNeedSeed  = true
+            System.LogAlways("[CuraEqui][SkipTime] OPEN → mark hour=deferred")
+        end
 
         if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
     end

@@ -344,6 +344,15 @@ function CuraEqui._HungerTickBody()
         end
     end
 
+    do
+        local st = CuraEqui.state
+        if st and st._skipSessionOpen and st._sleepNeedSeed and st._prevHour then
+            st._sleepStartHour = st._prevHour
+            st._sleepNeedSeed  = false
+            System.LogAlways(("[CuraEqui][SkipTime] OPEN (late) → mark hour=%.2f"):format(st._sleepStartHour))
+        end
+    end
+
     if not S then return end
 
     -- one-shot sampler budget so we don't spam
@@ -479,7 +488,6 @@ function CuraEqui._HungerTickBody()
         end
 
         -- Time drain (idle/mounted) + per-km drain
-        local C         = _H()
         local timeBase  = ((idle and C.rateIdle) or C.rateMounted) * (dt / 60.0)
         local distDrain = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
 
