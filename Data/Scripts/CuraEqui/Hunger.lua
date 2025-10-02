@@ -126,7 +126,7 @@ local function graze_compute(S, mounted, idle, dt, H)
     end
 
     -- Session cap
-    local cap = tonumber(H.grazeCapPerSession or 0) or 0
+    local cap = tonumber(H.grazingPerSession or 0) or 0
     if cap > 0 then
         if mounted then
             S._grazeBudget = cap
@@ -498,7 +498,7 @@ function CuraEqui._HungerTickBody()
             S._nightAdded     = 0;
             S._wasNight       = night
             -- also reset graze session at dusk/dawn
-            S._grazeBudget    = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+            S._grazeBudget    = tonumber(HcfgAll.grazingPerSession or 0) or 0
             S._grazeCapLogged = nil
         end
 
@@ -544,7 +544,7 @@ function CuraEqui._HungerTickBody()
         -- Compute a simple "minutes until cap exhausted" estimate
         local minsLeft   = nil
         do
-            local capLocal = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+            local capLocal = tonumber(HcfgAll.grazingPerSession or 0) or 0
             local NC       = HcfgAll.night or {}
             if capLocal > 0 and (not mounted) and idle and (not (night and (NC.disableGrazing ~= false))) then
                 local gPerMin   = math.abs((tonumber(HcfgAll.grazePerMinIdleUnmtd) or 0) *
@@ -561,7 +561,7 @@ function CuraEqui._HungerTickBody()
         -- Extend ginfo
         local ginfo = ""
         do
-            local capLocal = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+            local capLocal = tonumber(HcfgAll.grazingPerSession or 0) or 0
             local NC       = HcfgAll.night or {}
             local budget   = tonumber(S._grazeBudget or 0) or 0
             local k        = tonumber(S._dbgGrazeRampK or 1.0) or 1.0

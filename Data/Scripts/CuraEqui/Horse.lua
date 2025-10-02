@@ -592,8 +592,8 @@ function Horse:OnInventoryClosed()
 
     -- after successful feed - reset grazing cap
     local HC = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
-    if HC.grazeCapPerSession and HC.grazeCapPerSession > 0 then
-        S._grazeBudget = HC.grazeCapPerSession
+    if HC.grazingPerSession and HC.grazingPerSession > 0 then
+        S._grazeBudget = HC.grazingPerSession
     end
 
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, self, S) end
