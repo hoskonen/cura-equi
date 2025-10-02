@@ -13,7 +13,7 @@ end
 
 local function _feed_toast_cfg()
     local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
-    local lane = F.toastLane or "notification"
+    local lane = F.toastLane or "infotext"
     local ms = math.max(200, math.floor((tonumber(F.toastSec) or 2.0) * 1000))
     return lane, ms
 end
@@ -44,7 +44,18 @@ local function _inv_get_info(wuid)
     if type(amt) ~= "number" then amt = tonumber(amt) or 1 end
     if amt < 1 then amt = 1 end
 
-    return { wuid = tostring(wuid), classId = classId, uiName = ui, dbName = db, qty = amt }
+    local info = {
+        wuid    = tostring(wuid),
+        classId = classId,
+        uiName  = ui,
+        dbName  = db,
+        qty     = amt
+    }
+    -- expose instance so _get_item_quality can call item:GetHealth()
+    if t and (t.GetHealth or t.getHealth) then
+        info.item = t
+    end
+    return info
 end
 
 -- Per-unit nutrition resolver: DietData.byGuid → keyword map/list → default
@@ -246,6 +257,53 @@ local function _emit_feed_toasts(removePlan, used, mode, S)
     CuraEqui.UI.Toast(msg, ms, 0, "CuraEqui_FeedSummary", lane)
 end
 
+-- --- Food quality helpers (uses Item.GetHealth) -------------------------
+
+local function _get_item_quality(info)
+    -- Best-effort: try explicit field first (some UIs pass it),
+    -- then call Item.GetHealth on a handle/wuid if available.
+    -- Return 1.0 when unknown so legacy items are accepted.
+
+    -- 1) Pre-supplied value (0..1)
+    if info and info.health ~= nil then
+        local q = tonumber(info.health)
+        if q then
+            if q < 0 then q = 0 elseif q > 1 then q = 1 end
+            return q
+        end
+    end
+
+    -- 2) Direct handle on the item instance (common in pickers)
+    if info and info.item and (info.item.GetHealth or info.item.getHealth) then
+        local ok, q = pcall(info.item.GetHealth, info.item)
+        if ok and type(q) == "number" then
+            if q < 0 then q = 0 elseif q > 1 then q = 1 end
+            return q
+        end
+    end
+
+    -- 3) Weak UID / handle with global API (pattern varies per game build)
+    if info and info._wuid and Item and Item.GetHealth then
+        local ok, q = pcall(Item.GetHealth, info._wuid)
+        if ok and type(q) == "number" then
+            if q < 0 then q = 0 elseif q > 1 then q = 1 end
+            return q
+        end
+    end
+
+    -- 4) Nothing usable → treat as fine
+    return 1.0
+end
+
+local function _is_acceptable_food(info)
+    local Fd   = (CuraEqui.Config and CuraEqui.Config.Food) or {}
+    local minQ = tonumber(Fd.minQuality or 0) or 0
+    if minQ <= 0 then return true end
+    return _get_item_quality(info) >= minQ
+end
+
+
+
 function CuraEqui.Horse.Debug_LogPlayerHorseHandles()
     local function log(label, ok, val)
         local t = type(val)
@@ -400,11 +458,25 @@ end
 
 -- Vanilla-style: simulate feeding on close (no removal yet)
 function Horse:OnInventoryClosed()
-    local picks   = self._feedSel or {}; self._feedSel = nil
-    local CFG     = CuraEqui.Config or {}; local FCFG = CFG.Feeding or {}
-    local UF      = (CFG.UI and CFG.UI.feed) or {}
+    local picks     = self._feedSel or {}; self._feedSel = nil
 
-    local S       = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self); if not S then return end
+    -- Partition selection by quality (good vs spoiled)
+    local good, bad = {}, {}
+    for _, info in ipairs(picks) do
+        local qty = tonumber(info.qty or 0) or 0
+        if qty > 0 then
+            if _is_acceptable_food(info) then
+                good[#good + 1] = info
+            else
+                bad[#bad + 1] = info
+            end
+        end
+    end
+
+    local CFG  = CuraEqui.Config or {}; local FCFG = CFG.Feeding or {}
+    local UF   = (CFG.UI and CFG.UI.feed) or {}
+
+    local S    = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(self); if not S then return end
     local mode = (FCFG.needMode or "hunger")
 
     -- HARD BLOCK safety inside close handler (covers inventory-driven feed)
@@ -413,7 +485,7 @@ function Horse:OnInventoryClosed()
         local H      = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
         local hard   = (H.satedHardBlock ~= nil) and H.satedHardBlock or F.satedHardBlock
         local thrSec = tonumber((H.satedBlockIfRemainingSec ~= nil) and H.satedBlockIfRemainingSec or
-        F.satedBlockIfRemainingSec or 0) or 0
+            F.satedBlockIfRemainingSec or 0) or 0
         if hard and thrSec > 0 then
             local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
             local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
@@ -461,8 +533,20 @@ function Horse:OnInventoryClosed()
         return
     end
 
+    if #good == 0 then
+        if #bad > 0 and CuraEqui.UI and CuraEqui.UI.Toast then
+            local UF   = (CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
+            local lane = UF.lane or "infotext"
+            local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+            local txt  = (UF.msg and UF.msg.refuseAll) or "@curaequi_horse_refuses_spoiled"
+            CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
+        end
+        FeedLog("Refuse: all selected items below quality threshold")
+        return
+    end
+
     local removePlan, used, selectedUnits, consumedUnits =
-        _plan_remove(picks, needPoints, FCFG.overfeedPolicy or "allow")
+        _plan_remove(good, needPoints, FCFG.overfeedPolicy or "allow")
 
     -- Nothing consumed on this close
     if used <= 0 then
@@ -528,6 +612,16 @@ function Horse:OnInventoryClosed()
             local n = 0; for _ in pairs(removePlan) do n = n + 1 end; return n
         end)(),
         used, mode)
+    FeedLog("Refused %d spoiled; consumed %d good", #bad, #good)
+
+    if #bad > 0 and CuraEqui.UI and CuraEqui.UI.Toast then
+        local UF   = (CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
+        local lane = UF.lane or "infotext"
+        local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+        local txt  = (UF.msg and UF.msg.refuseSome) or "@curaequi_horse_refused_some_spoiled"
+        txt        = string.format("%s (%d)", txt, #bad)
+        CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
+    end
 
     if FCFG.removeItems then
         local inv = (player and (player.inventory or (player.actor and player.actor.inventory))) or nil

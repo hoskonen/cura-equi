@@ -1,5 +1,5 @@
 <Table>
-    <!-- Toasts -->
+    <!-- Horse Feedback InfoTexts -->
 <Row>
     <Cell>curaequi_feed_horse</Cell><Cell>Feed horse</Cell><Cell>Feed Horse</Cell>
 </Row>
@@ -22,6 +22,14 @@
 
 <Row>
     <Cell>curaequi_horse_not_hungry_yet</Cell><Cell>Horse is sated, he's not feeling like eating at the moment</Cell><Cell>Horse is sated, he's not feeling like eating at the moment</Cell>
+</Row>
+
+<Row>
+    <Cell>curaequi_horse_refuses_spoiled</Cell><Cell>The horse turns its head away — it will not touch spoiled fodder.</Cell><Cell>The horse turns its head away — it will not touch spoiled fodder.</Cell>
+</Row>
+
+<Row>
+    <Cell>curaequi_horse_refused_some_spoiled</Cell><Cell>The horse noses aside the rotten bits but eats what is still good.</Cell><Cell>The horse noses aside the rotten bits but eats what is still good.</Cell>
 </Row>
 
 <!-- Custom Food: Hay Bundle SM-->
