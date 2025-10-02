@@ -3,7 +3,7 @@ CuraEqui         = CuraEqui or {}
 CuraEqui.Persist = CuraEqui.Persist or {}
 
 local P          = CuraEqui.Persist
-P._ver           = 1
+P._ver           = 2
 P._ns            = "CuraEqui"
 P._localKey      = "horse.state" -- per-save (DB.Set / DB.Get)
 P._gKey          = "horse.meta"  -- global (DB.SetG / DB.GetG) (reserved for future multi-horse)
@@ -26,75 +26,109 @@ end
 -- Load returns (hunger:number|nil, satedUntil:number|nil)
 function P.Load()
     if not _db then return nil, nil end
-    local t = nil
-
-    -- Prefer per-save (local) store
+    local t
     local ok, v = pcall(function()
         return (_db.Get and _db:Get(P._localKey)) or (_db.Get and _db.Get(P._localKey)) or nil
     end)
     if ok then t = v end
     if type(t) ~= "table" then return nil, nil end
 
-    -- version tolerant
     local hunger = tonumber(t.hunger or 0)
-    local sated  = tonumber(t.satedUntil or 0)
-
     if hunger then hunger = math.max(0, math.min(100, hunger)) end
-    return hunger, sated
+
+    local now = _now()
+    local satedUntil = 0
+
+    if tonumber(t.version or 1) >= 2 then
+        -- New schema: we stored remaining seconds
+        local rem = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
+        -- sanity clamp: >24h remaining is likely corrupt/old → clamp to 0
+        if rem > 24 * 3600 then rem = 0 end
+        satedUntil = (rem > 0) and (now + rem) or 0
+    else
+        -- V1 migration path: we stored absolute using a process clock.
+        -- Use savedAt to recover intended "remaining at save time".
+        local abs   = tonumber(t.satedUntil or 0) or 0
+        local saved = tonumber(t.savedAt or 0) or 0
+        local rem   = math.max(0, abs - saved)      -- intended remaining at save
+        if rem > 24 * 3600 then rem = 0 end         -- guard nonsense
+        satedUntil = (rem > 0) and (now + rem) or 0 -- rebase to current clock
+    end
+
+    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
+        System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s → satedUntil=%.2f (rem=%.0fs)")
+            :format(tostring(hunger), satedUntil, math.max(0, satedUntil - now)))
+    end
+
+    return hunger, satedUntil
 end
 
 -- Save current values; returns true on success
 function P.Save(hunger, satedUntil)
     if not _db then return false end
+    local now = _now()
+    local rem = 0
+    if satedUntil and tonumber(satedUntil) then
+        rem = math.max(0, tonumber(satedUntil) - now)
+    end
     local rec = {
-        version    = P._ver,
-        hunger     = math.max(0, math.min(100, tonumber(hunger or 0) or 0)),
-        satedUntil = tonumber(satedUntil or 0) or 0,
-        savedAt    = _now(),
+        version        = P._ver,
+        hunger         = math.max(0, math.min(100, tonumber(hunger or 0) or 0)),
+        satedRemainSec = rem,  -- <-- store remaining, not absolute
+        savedAt        = now,
     }
-    local ok = false
-    ok = pcall(function()
-        if _db.Set then
+    local ok = pcall(function() if _db.Set then
             _db:Set(P._localKey, rec); return true
-        end
-    end)
+        end end)
     if not ok then
         System.LogAlways("[CuraEqui][Persist] Save failed (DB.Set missing?)")
         return false
     end
-
     if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-        System.LogAlways(("[CuraEqui][Persist] Saved hunger=%d sated=%s")
-            :format(math.floor(hunger or -1), tostring(satedUntil)))
+        System.LogAlways(("[CuraEqui][Persist] Saved hunger=%d satedRemain=%.2f")
+            :format(math.floor(hunger or -1), rem))
     end
-
     return true
 end
 
 -- Throttled saver: writes only on >=1% delta or every N seconds
 do
     local _lastPct, _nextAt = nil, 0
-    function P.MaybeSave(hunger, satedUntil, minDeltaPct, minEverySec)
-        local state = CuraEqui.state or {}
-        local now = _now()
-        if state.persistMuteUntil and now < state.persistMuteUntil then
+    do
+        local _lastPct, _nextAt = nil, 0
+        local _lastRem = nil
+
+        function P.MaybeSave(hunger, satedUntil, minDeltaPct, minEverySec)
+            local state = CuraEqui.state or {}
+            local now = _now()
+            if state.persistMuteUntil and now < state.persistMuteUntil then
+                return false
+            end
+            if not _db then return false end
+            minDeltaPct = tonumber(minDeltaPct or 1) or 1
+            minEverySec = tonumber(minEverySec or 20) or 20
+
+            local pct = math.floor(tonumber(hunger or 0) + 0.5)
+            local due = now >= (_nextAt or 0)
+            local movedPct = (not _lastPct) or (math.abs(pct - _lastPct) >= minDeltaPct)
+
+            local rem = 0
+            if satedUntil and tonumber(satedUntil) then
+                rem = math.max(0, tonumber(satedUntil) - now)
+            end
+            local movedRem = (_lastRem == nil) or (math.abs(rem - _lastRem) >= (minEverySec or 20))
+
+            if due or movedPct or movedRem then
+                local ok = P.Save(hunger, satedUntil)
+                if ok then
+                    _lastPct = pct
+                    _lastRem = rem
+                    _nextAt  = now + minEverySec
+                end
+                return ok
+            end
             return false
         end
-
-        if not _db then return false end
-        minDeltaPct = tonumber(minDeltaPct or 1) or 1
-        minEverySec = tonumber(minEverySec or 20) or 20
-
-        local pct = math.floor(tonumber(hunger or 0) + 0.5)
-        local due = now >= (_nextAt or 0)
-        local moved = (not _lastPct) or (math.abs(pct - _lastPct) >= minDeltaPct)
-
-        if due or moved then
-            _lastPct = pct
-            _nextAt = now + minEverySec
-            return P.Save(hunger, satedUntil)
-        end
-        return false
     end
 end
 
