@@ -130,8 +130,10 @@ local function graze_compute(S, mounted, idle, dt, H)
     if cap > 0 then
         if mounted then
             S._grazeBudget = cap
+            S._grazeCapLogged = nil
         elseif S._grazeBudget == nil then
             S._grazeBudget = cap
+            S._grazeCapLogged = nil
         end
         if graze < 0 and (not mounted) and idle then
             local budget = tonumber(S._grazeBudget or 0) or 0
@@ -141,6 +143,15 @@ local function graze_compute(S, mounted, idle, dt, H)
                 local maxRecover = math.min(budget, math.abs(graze))
                 graze = -maxRecover
                 S._grazeBudget = budget - maxRecover
+
+                -- One-time log when budget runs out
+                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+                if cap > 0 and S._grazeBudget and S._grazeBudget <= 0 and not S._grazeCapLogged then
+                    S._grazeCapLogged = true
+                    if D and D.hungerTrace then
+                        System.LogAlways("[CuraEqui][Hunger] grazing budget exhausted")
+                    end
+                end
             end
         end
     end
@@ -484,7 +495,11 @@ function CuraEqui._HungerTickBody()
         S._wasNight   = S._wasNight or false
         S._nightAdded = S._nightAdded or 0
         if night ~= S._wasNight then
-            S._nightAdded = 0; S._wasNight = night
+            S._nightAdded     = 0;
+            S._wasNight       = night
+            -- also reset graze session at dusk/dawn
+            S._grazeBudget    = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+            S._grazeCapLogged = nil
         end
 
         -- Time drain (idle/mounted) + per-km drain
@@ -526,26 +541,41 @@ function CuraEqui._HungerTickBody()
         S._lastSpeedMps  = speed
         S._lastGraze     = graze
 
-        local ginfo      = ""
+        -- Compute a simple "minutes until cap exhausted" estimate
+        local minsLeft   = nil
         do
-            local k      = S._dbgGrazeRampK
-            local budget = tonumber(S._grazeBudget or 0) or 0
-            local nc     = (HcfgAll.night or {})
-            local capCfg = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+            local capLocal = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+            local NC       = HcfgAll.night or {}
+            if capLocal > 0 and (not mounted) and idle and (not (night and (NC.disableGrazing ~= false))) then
+                local gPerMin   = math.abs((tonumber(HcfgAll.grazePerMinIdleUnmtd) or 0) *
+                    (tonumber(HcfgAll.grazeSatedMul) or 1.0))
+                local kEff      = tonumber(S._dbgGrazeRampK or 1.0) or 1.0
+                local effPerMin = gPerMin * kEff
+                local budget    = tonumber(S._grazeBudget or 0) or 0
+                if effPerMin > 0 and budget > 0 then
+                    minsLeft = budget / effPerMin
+                end
+            end
+        end
 
-            if night and (nc.disableGrazing ~= false) then
+        -- Extend ginfo
+        local ginfo = ""
+        do
+            local capLocal = tonumber(HcfgAll.grazeCapPerSession or 0) or 0
+            local NC       = HcfgAll.night or {}
+            local budget   = tonumber(S._grazeBudget or 0) or 0
+            local k        = tonumber(S._dbgGrazeRampK or 1.0) or 1.0
+            if night and (NC.disableGrazing ~= false) then
                 ginfo = " (night-off)"
-            elseif graze == 0 and k and k <= 0.001 then
-                ginfo = " (under-threshold)"
-            elseif capCfg > 0 then
-                if budget <= 0 and ((not mounted) and idle) then
-                    ginfo = " (capped)"
-                elseif k and k < 0.999 then
-                    ginfo = string.format(" (ramp=%.2f, cap=%d)", k, budget)
+            elseif capLocal > 0 then
+                if budget <= 0 and (not mounted) and idle then
+                    ginfo = " (cap exhausted)"
+                elseif minsLeft then
+                    ginfo = string.format(" (cap=%d, ~%dm)", budget, math.max(0, math.floor(minsLeft + 0.5)))
                 else
                     ginfo = string.format(" (cap=%d)", budget)
                 end
-            elseif k and k < 0.999 then
+            elseif k < 0.999 then
                 ginfo = string.format(" (ramp=%.2f)", k)
             end
         end

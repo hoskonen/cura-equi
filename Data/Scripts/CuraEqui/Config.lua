@@ -88,11 +88,11 @@ CuraEqui.Config = {
                 night                = { disableGrazing = false, timeDrainMul = 1.0, maxDeltaPerNight = 18 },
             },
             moderate = {
-                ratePerMinIdle       = 0.2,   -- +12/h
-                ratePerMinMounted    = 0.5,   -- +30/h
-                ratePerKmMounted     = 0.7,   -- +0.7/km
-                grazePerMinIdleUnmtd = -0.12, -- -7.2/h
-                night                = { disableGrazing = true, timeDrainMul = 1.0, maxDeltaPerNight = 25 },
+                ratePerMinIdle       = 0.05,
+                ratePerMinMounted    = 0.10,
+                ratePerKmMounted     = 0.12,
+                grazePerMinIdleUnmtd = -0.06,
+                night                = { disableGrazing = true, timeDrainMul = 1.0, maxDeltaPerNight = 35 },
             },
             laidback = {
                 ratePerMinIdle       = 0.1,   -- +6/h
