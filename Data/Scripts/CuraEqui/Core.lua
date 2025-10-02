@@ -37,6 +37,32 @@ CuraEqui.HorseCfg               = {
     debuffAt    = C.Hunger.debuffAt,
 }
 
+-- Call this after a save is loaded / gameplay starts.
+function CuraEqui.EnsureBuffsResynced()
+    local B = CuraEqui.Buffs
+    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    if not (h and S and B and B.SyncAll) then return end
+
+    -- hard clear everything we own (no-op if none)
+    if B.RemoveAllOurs then
+        pcall(B.RemoveAllOurs) -- if you have a convenience; else loop GUIDs
+    else
+        if B._ALL_HORSE_GUIDS then for _, gid in ipairs(B._ALL_HORSE_GUIDS) do pcall(B.Remove, "horse", gid) end end
+        if B._ALL_PLAYER_GUIDS then for _, gid in ipairs(B._ALL_PLAYER_GUIDS) do pcall(B.Remove, "player", gid) end end
+    end
+
+    -- force recompute once
+    S._lastBuffTier = nil
+
+    -- schedule apply next tick (0 ms), and a second pass shortly after
+    local function _apply()
+        pcall(B.SyncAll, h, S, { hard = true })
+    end
+    Script.SetTimer(0, _apply)
+    Script.SetTimer(150, _apply) -- catches HUDs that initialize a hair late
+end
+
 -- Time helpers (0..24 hours) — expose on CuraEqui to avoid scope issues across files
 function CuraEqui._get_player_hour()
     local U = CuraEqui.Utils
@@ -450,6 +476,9 @@ function CuraEqui.OnGameplayStarted()
                 :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
             if CuraEqui.StopProbing then CuraEqui.StopProbing() end
             if CuraEqui.StartWatching then CuraEqui.StartWatching() end
+
+            -- one-shot hard clear → next-tick re-apply (and a second pass shortly)
+            if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
         else
             if i < #tries then
                 if Script and Script.SetTimer then Script.SetTimer(tries[i + 1], function() try(i + 1) end) end
@@ -470,4 +499,9 @@ function CuraEqui.OnGameplayStarted()
         CuraEqui.__skipBound = true
         System.LogAlways("[CuraEqui] Bound SkipTime element listener")
     end
+
+    -- Fallback resync in case resolution was late; harmless if already done
+    Script.SetTimer(600, function()
+        if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
+    end)
 end

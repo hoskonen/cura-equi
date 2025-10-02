@@ -7,6 +7,7 @@ local M               = CuraEqui.Buffs
 M._lastPlayerUuid     = M._lastPlayerUuid or nil
 M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
 M._playerApplyPending = M._playerApplyPending or false
+M._playerGen          = M._playerGen or 0
 
 -- pick tier name from hunger/sated (HUD thresholds)
 local function _now() return (Script and Script.GetTime and Script.GetTime()) or os.clock() end
@@ -105,11 +106,18 @@ function M.SyncPlayerStatus(horseEnt, S)
     if not M._playerApplyPending then
         M._playerApplyPending = true
         CuraEqui.Effects.ClearPlayerStatus()
-        local want  = uuid
-        local delay = _delay_ms()
+        local want   = uuid
+        local delay  = _delay_ms()
+        M._playerGen = (M._playerGen or 0) + 1
+        local myGen  = M._playerGen
+
+        -- clear immediately (pcall for safety)
+        pcall(CuraEqui.Effects.ClearPlayerStatus)
+
         _schedule(delay, function()
-            if M._desiredPlayerUuid == want then
-                CuraEqui.Effects.ApplyPlayer(want)
+            -- still current, and we weren't superseded?
+            if M._desiredPlayerUuid == want and myGen == M._playerGen then
+                pcall(CuraEqui.Effects.ApplyPlayer, want)
                 M._lastPlayerUuid = want
             end
             M._playerApplyPending = false
