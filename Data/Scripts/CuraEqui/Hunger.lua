@@ -170,7 +170,6 @@ local function apply_night_rules(S, passive, H)
     return passive
 end
 
-
 -- ONE source of truth for hunger dials (+ legacy fallbacks)
 local function _H()
     local H = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
@@ -205,90 +204,110 @@ function CuraEqui.StopProbing()
     CuraEqui.Log("poll", "Probe stopped.")
 end
 
--- Apply a small hunger catch-up for "sleep/wait" time-skip.
+-- Apply a small hunger catch-up for "sleep/wait" time-skip (hour-based).
 function CuraEqui.Hunger_CatchUpAfterSleep()
     System.LogAlways("[CuraEqui][Hunger][catchup] entered")
 
-    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
-    if not S then return end
+    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    if not (h and S) then return end
 
-    -- Need a valid start & current world time-of-day (0..1)
-    local startTOD = CuraEqui.state and CuraEqui.state._sleepStartTOD
-    local nowTOD   = (Calendar and Calendar.GetTimeOfDay and Calendar.GetTimeOfDay()) or nil
-    if not startTOD or not nowTOD then return end
+    CuraEqui.state = CuraEqui.state or {}
+    local st = CuraEqui.state
 
-    -- minutes elapsed in world time (wrap across midnight)
-    local dFrac = nowTOD - startTOD
-    if dFrac < 0 then dFrac = dFrac + 1.0 end
-    local minutes = dFrac * 24.0 * 60.0
-    if minutes <= 0.1 then return end
+    -- 1) Determine minutes skipped (priority: explicit UI minutes → hour math → bail)
+    local minutes = tonumber(st._skipMinutesPlanned or 0) or 0
 
-    -- Optional guardrails (configurable)
+    -- open close guard
+    if minutes <= 0 then
+        local startHour = st._sleepStartHour
+        local endHour   = CuraEqui._get_player_hour() or st._prevHour
+        if startHour and endHour then
+            minutes = CuraEqui._minutes_between_hours(startHour, endHour)
+        end
+    end
+
+    if not minutes or minutes <= 0.1 then
+        System.LogAlways("[CuraEqui][CatchUp] minutes≈0 or missing → skip")
+        return
+    end
+
+    -- 2) Clamp by config (cap total compensated time)
     local WCFG   = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.waitCatchup) or {}
-    local maxMin = math.max(0, tonumber(WCFG.maxCatchupSec or (6 * 3600)) / 60.0) -- default cap ~6h
+    local maxMin = math.max(0, tonumber(WCFG.maxCatchupSec or (6 * 3600)) / 60.0) -- default ~6h
     if maxMin > 0 and minutes > maxMin then minutes = maxMin end
 
-    -- Read dials
+    -- Snapshot before
+    local now       = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local beforeH   = tonumber(S.hunger or 0) or 0
+    local remBefore = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+    -- 3) Reduce sated by the skipped time
+    do
+        local skippedS = minutes * 60.0
+        if skippedS > 0 and remBefore > 0 then
+            local newRem = math.max(0, remBefore - skippedS)
+            S.satedUntil = (newRem > 0) and (now + newRem) or 0
+        end
+    end
+
+    -- 4) Compose hunger delta per-minute (match tick semantics)
     local H          = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
     local NC         = H.night or {}
-    local perMin     = (tonumber(H.ratePerMinIdle) or 0) -- time drain per minute (idle)
-    local gPM        = (tonumber(H.grazePerMinIdleUnmtd) or 0)
-    local gMul       = (tonumber(H.grazeSatedMul) or 1.0)
+    local perMin     = tonumber(H.ratePerMinIdle) or 0       -- base idle drift
+    local gPM        = tonumber(H.grazePerMinIdleUnmtd) or 0 -- idle grazing per minute
+    local gMul       = tonumber(H.grazeSatedMul) or 1.0
 
-    -- Day vs Night now (approximation): we don’t slice here; keep it simple.
+    -- Night vs Day at wake (simple "now" context)
     local isNightNow = (Calendar and Calendar.IsNightTimeOfDay and Calendar.IsNightTimeOfDay()) or false
 
-    -- Compose a per-minute delta:
-    --   Night  : (perMin * nightTimeMul), grazing OFF
-    --   Day    : (perMin) + grazing (scaled by sated mul)
+    -- Sated multiplier (same as tick)
+    local now2       = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local mul        = (((tonumber(S.satedUntil or 0) or 0) > now2) and (tonumber(H.satedDrainMul) or 0.75)) or 1.0
+
     local timeMul    = isNightNow and (tonumber(NC.timeDrainMul) or 1.0) or 1.0
-    local perMinute  = perMin * timeMul
+    local perMinute  = (perMin * timeMul)
     if not isNightNow then
-        -- unmounted idle assumption during sleep
+        -- assume unmounted+idle during wait → allow day grazing
         perMinute = perMinute + (gPM * gMul)
     end
 
-    -- total delta (points) across skipped minutes
-    local delta = perMinute * minutes
+    local delta = (perMinute * minutes) * mul
 
-    -- Night cap: if we woke up at night and delta is positive (getting hungrier), clamp by remaining cap.
+    -- 5) Night cap enforcement (if gaining at night)
     if isNightNow and delta > 0 then
         local cap = tonumber(NC.maxDeltaPerNight or 0) or 0
         if cap > 0 then
-            local used = tonumber(S._nightAdded or 0) or 0
+            local used   = tonumber(S._nightAdded or 0) or 0
             local remain = math.max(0, cap - used)
             if delta > remain then delta = remain end
             S._nightAdded = used + math.max(0, delta)
         end
     end
 
-    -- Apply
-    local before = tonumber(S.hunger or 0) or 0
-    local after  = math.max(0, math.min(100, before + delta))
-    S.hunger     = after
+    -- 6) Apply & sync
+    local afterH = math.max(0, math.min(100, beforeH + delta))
+    S.hunger     = afterH
 
-    -- Keep buffs/UI coherent
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-        pcall(CuraEqui.Buffs.SyncAll, CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve(), S)
+        pcall(CuraEqui.Buffs.SyncAll, h, S)
     end
 
-    -- Persist immediately after sleep catch-up
+    -- 7) Persist (safe)
     if CuraEqui.Persist and CuraEqui.Persist.Save then
-        CuraEqui.Persist.Save(S.hunger, S.satedUntil)
+        pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil)
         if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
             System.LogAlways(("[CuraEqui][Persist] Saved (sleep) hunger=%d sated=%s")
                 :format(math.floor(tonumber(S.hunger or 0) or 0), tostring(S.satedUntil)))
         end
     end
 
-    -- Optional quiet debug
-    local D = CuraEqui.Config and CuraEqui.Config.Debug
-    if D and D.hungerTrace then
-        System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
-            :format(minutes, delta, math.floor(before), math.floor(after)))
-    end
+    -- 8) Clear log
+    local remAfter = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+    System.LogAlways(("[CuraEqui][CatchUp] minutes=%.1f sated=%d→%d hunger=%d→%d (Δ=%.2f)")
+        :format(minutes, remBefore, remAfter, math.floor(beforeH), math.floor(afterH), delta))
 
-    return minutes, delta, before, after
+    return minutes, delta, beforeH, afterH
 end
 
 -- ---------- TICK BODY (MAY THROW) ----------
@@ -303,6 +322,28 @@ function CuraEqui._HungerTickBody()
     ProbeOnce(h)
 
     local S = (CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h)) or nil
+
+    -- Track player time every tick (for fallbacks & jump detection)
+    do
+        CuraEqui.state = CuraEqui.state or {}
+        local nowHour = CuraEqui._get_player_hour()
+        if nowHour then
+            -- optional safety net: detect large jumps between 10s ticks (e.g., Wait 1h+)
+            local prev = CuraEqui.state._prevHour
+            CuraEqui.state._prevHour = nowHour
+            if prev then
+                local minutes = CuraEqui._minutes_between_hours(prev, nowHour)
+                if minutes > 2.0 and not CuraEqui.state._skipSessionOpen then
+                    -- UI events didn’t arrive: run catch-up using prev as start
+                    CuraEqui.state._sleepStartHour = CuraEqui.state._sleepStartHour or prev
+                    System.LogAlways(("[CuraEqui][SkipTime][fallback] jump %.1f min → catch-up"):format(minutes))
+                    if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
+                    CuraEqui.state._sleepStartHour = nil
+                end
+            end
+        end
+    end
+
     if not S then return end
 
     -- one-shot sampler budget so we don't spam

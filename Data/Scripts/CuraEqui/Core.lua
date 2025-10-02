@@ -1,10 +1,13 @@
 -- Scripts/CuraEqui/Core.lua
-CuraEqui                     = CuraEqui or {}
-CuraEqui.VERSION             = "0.2.0"
-CuraEqui.state               = CuraEqui.state or { hungerTimer = nil, pausedForSleep = false, started = false }
+CuraEqui                        = CuraEqui or {}
+CuraEqui.VERSION                = "0.2.0"
+CuraEqui.state                  = CuraEqui.state or { hungerTimer = nil, pausedForSleep = false, started = false }
+-- debounce + session flags
+CuraEqui.state._skipLastInitAt  = 0
+CuraEqui.state._skipSessionOpen = false
 
 -- Safe config (defaults if Config.lua not loaded yet)
-local C                      = CuraEqui.Config or {
+local C                         = CuraEqui.Config or {
     Debug  = { enabled = true, distanceTrace = true, distanceTraceStepM = 100.0, hud = { enabled = false, refresh = 1200 } },
     Hunger = {
         hungerMax         = 100,
@@ -22,17 +25,38 @@ local C                      = CuraEqui.Config or {
 }
 
 -- Wire flags/tunables
-CuraEqui.DEBUG               = C.Debug.enabled
-CuraEqui.DEBUG_DISTANCE      = C.Debug.distanceTrace
-CuraEqui.DEBUG_DISTANCE_STEP = C.Debug.distanceTraceStepM
+CuraEqui.DEBUG                  = C.Debug.enabled
+CuraEqui.DEBUG_DISTANCE         = C.Debug.distanceTrace
+CuraEqui.DEBUG_DISTANCE_STEP    = C.Debug.distanceTraceStepM
 
 -- Keep HorseCfg minimal (only what scheduler/clamp needs)
-CuraEqui.HorseCfg            = {
+CuraEqui.HorseCfg               = {
     hungerMax   = C.Hunger.hungerMax,
     hungerStart = C.Hunger.hungerStart,
     tickSec     = C.Hunger.tickSec,
     debuffAt    = C.Hunger.debuffAt,
 }
+
+-- Time helpers (0..24 hours) — expose on CuraEqui to avoid scope issues across files
+function CuraEqui._get_player_hour()
+    local U = CuraEqui.Utils
+    local p = (U and U.GetPlayer and U.GetPlayer())
+        or (System and System.GetLocalPlayer and System.GetLocalPlayer())
+        or (Game and Game.GetPlayer and Game.GetPlayer())
+        or nil
+    if p and p.GetTimeOfDayHour then
+        local h = p:GetTimeOfDayHour()
+        if type(h) == "number" and h >= 0 and h < 24 then return h end
+    end
+    return nil
+end
+
+function CuraEqui._minutes_between_hours(startHour, endHour)
+    if not startHour or not endHour then return 0 end
+    local d = endHour - startHour
+    if d < 0 then d = d + 24 end -- wrap midnight
+    return d * 60
+end
 
 -- ---------------------------------------------------------------------------
 -- Logging helper (safe varargs)
@@ -159,7 +183,7 @@ end
 -- Event glue (register once)
 if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBound then
     UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnGameplayStarted", "OnGameplayStarted")
-    UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
+    -- UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
     CuraEqui.__eventsBound = true
 end
 
@@ -202,13 +226,18 @@ function CuraEqui.Initialize(fullInit)
     end
 
     -- Fallback: if we still have a sleep start timestamp, run catch-up once here.
-    if CuraEqui.state and CuraEqui.state._sleepStartTOD and CuraEqui.Hunger_CatchUpAfterSleep then
+    if CuraEqui.state and CuraEqui.state._sleepStartHour and CuraEqui.Hunger_CatchUpAfterSleep then
         local ok, minutes, delta, before, after = pcall(CuraEqui.Hunger_CatchUpAfterSleep)
         if ok and minutes and minutes > 0 then
             System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
                 :format(minutes, delta or 0, math.floor(before or 0), math.floor(after or 0)))
         end
-        CuraEqui.state._sleepStartTOD = nil
+        CuraEqui.state._sleepStartHour = nil
+    end
+
+    -- Seed previous hour so SkipTime OPEN doesn't log "hour=nil"
+    if not CuraEqui.state._prevHour then
+        CuraEqui.state._prevHour = CuraEqui._get_player_hour()
     end
 
     local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
@@ -239,43 +268,155 @@ function CuraEqui.Initialize(fullInit)
     end
 end
 
--- Sleep / fade handling (same idea as UWH)
-function CuraEqui.OnSetFaderState(_actionName, eventName, argTable)
-    -- argTable[1] usually "sleep" when starting sleep fade
-    if eventName == "OnSetFaderState" and argTable and argTable[1] == "sleep" then
-        CuraEqui.Log("poll", "Sleep starting → stopping hunger watcher")
-        if CuraEqui.StopWatching then CuraEqui.StopWatching() end
-        CuraEqui.state.pausedForSleep = true
+-- ===========================================================================
+-- System fader listener (fallback / parallel to element listener)
+-- Registered with:
+--   UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
+-- ===========================================================================
+function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
+    local a1        = argTable and tostring(argTable[1]) or "nil"
+    local a2        = argTable and tostring(argTable[2]) or "nil"
 
-        local tod = (Calendar and Calendar.GetTimeOfDay and Calendar.GetTimeOfDay()) or nil
-        CuraEqui.state._sleepStartTOD = tod
-    elseif eventName == "OnHide" then
-        -- UI fade finished (covers post-load and wake-up)
-        CuraEqui.Log("poll", "UI resumed → ensuring hunger watcher is running")
-        -- apply a small hunger catch-up based on skipped world minutes
-        -- UI fade finished (covers post-load and wake-up)
-        System.LogAlways("[CuraEqui][Sleep] waking → running hunger catch-up")
-        if CuraEqui.Hunger_CatchUpAfterSleep then
-            local ok, minutes, delta, before, after = pcall(CuraEqui.Hunger_CatchUpAfterSleep)
-            if ok and minutes and minutes > 0 then
-                System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
-                    :format(minutes, delta or 0, math.floor(before or 0), math.floor(after or 0)))
-            end
-        end
+    -- phase words sometimes carried in args
+    local phaseWord = (a1 == "sleep" or a1 == "wait") and a1
+        or (a2 == "sleep" or a2 == "wait") and a2
+        or ""
 
+    -- treat explicit sleep/wait fader, or plain OnShow as entry
+    local isEntry   =
+        (eventName == "OnShow") or
+        (eventName == "OnSetFaderState" and phaseWord ~= "")
+
+    -- treat OnHide or arg-carried hide as exit
+    local isExit    =
+        (eventName == "OnHide") or
+        (eventName == "OnSetFaderState" and (a1 == "OnHide" or a2 == "OnHide" or a1 == "hide" or a2 == "hide"))
+
+    CuraEqui.state  = CuraEqui.state or {}
+    local st        = CuraEqui.state
+
+    -- OPEN on first seen event (robust even if no OnShow)
+    if isEntry and not st._skipSessionOpen then
+        st._skipSessionOpen = true
+        st._skipHandled     = false
+        -- prefer the last tick’s hour; if missing, fall back to current hour
+        st._sleepStartHour  = st._prevHour or CuraEqui._get_player_hour()
+        System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%s")
+            :format(st._sleepStartHour and string.format("%.2f", st._sleepStartHour) or "nil"))
+
+        if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
+    end
+
+    -- CLOSE (one-shot)
+    if isExit and st._skipSessionOpen and not st._skipHandled then
         do
-            local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
-            local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-            if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-                -- Make sure HUD/buffs reflect the current tier right now
-                S._lastBuffTier = nil
-                pcall(CuraEqui.Buffs.SyncAll, h, S)
+            local st = CuraEqui.state or {}
+            if st._skipSessionOpen and not st._skipHandled then
+                st._skipHandled = true
+                System.LogAlways("[CuraEqui][SkipTime] CLOSE → calling catch-up")
+                if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
+
+                -- refresh HUD/buffs
+                local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+                if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+                    S._lastBuffTier = nil
+                    pcall(CuraEqui.Buffs.SyncAll, h, S)
+                end
+
+                -- only restart the periodic watcher (no DB reload)
+                if CuraEqui.StartWatching then pcall(CuraEqui.StartWatching) end
+
+                st._sleepStartHour     = nil
+                st._skipMinutesPlanned = nil
+                st._skipSessionOpen    = false
             end
         end
+    end
+end
 
-        CuraEqui.Initialize(false)
-        CuraEqui.state.pausedForSleep = false
-        CuraEqui.state._sleepStartTOD = nil
+-- ===========================================================================
+-- SkipTime (element) listener
+-- Registered with:
+--   UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
+-- ===========================================================================
+function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
+    -- --- noisy trace so we see what this build emits
+    local a1 = argTable and tostring(argTable[1]) or "nil"
+    local a2 = argTable and tostring(argTable[2]) or "nil"
+
+    -- Capture planned hours e.g. OnConfirm a1=3 → 180 minutes
+    local plannedHours = tonumber(argTable and argTable[1]) or nil
+    if eventName == "OnConfirm" and plannedHours and plannedHours > 0 then
+        CuraEqui.state._skipMinutesPlanned = math.floor(plannedHours * 60 + 0.5)
+        System.LogAlways(("[CuraEqui][SkipTime] planned wait = %d min"):format(CuraEqui.state._skipMinutesPlanned))
+    end
+
+    -- normalize phase words some skins send via args
+    local phaseWord = (a1 == "sleep" or a1 == "wait") and a1
+        or (a2 == "sleep" or a2 == "wait") and a2
+        or ""
+
+    -- entry signals we accept on this bus
+    local isEntry =
+        (eventName == "OnShow") or
+        (eventName == "OnSetFaderState" and phaseWord ~= "")
+
+    -- exit signals we accept on this bus
+    local isExit =
+        (eventName == "OnHide") or
+        (eventName == "OnSetFaderState" and (a1 == "OnHide" or a2 == "OnHide" or a1 == "hide" or a2 == "hide")) or
+        (eventName == "OnUnload") or
+        (eventName == "OnDispose") or
+        (eventName == "OnClose") or
+        (eventName == "OnHideComplete")
+
+    -- ---------------------------
+    -- OPEN (first sight of SkipTime)
+    -- ---------------------------
+
+    CuraEqui.state = CuraEqui.state or {}
+    local st = CuraEqui.state
+
+    -- OPEN on first seen event (robust even if no OnShow)
+    if not st._skipSessionOpen then
+        st._skipSessionOpen = true
+        st._skipHandled     = false
+        -- prefer the last tick’s hour; if missing, fall back to current hour
+        st._sleepStartHour  = st._prevHour or CuraEqui._get_player_hour()
+        System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%s")
+            :format(st._sleepStartHour and string.format("%.2f", st._sleepStartHour) or "nil"))
+
+        if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
+    end
+
+    -- ---------------------------
+    -- CLOSE (one-shot)
+    -- ---------------------------
+    if isExit and st._skipSessionOpen and not st._skipHandled then
+        do
+            local st = CuraEqui.state or {}
+            if st._skipSessionOpen and not st._skipHandled then
+                st._skipHandled = true
+                System.LogAlways("[CuraEqui][SkipTime] CLOSE → calling catch-up")
+                if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
+
+                -- refresh HUD/buffs
+                local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+                if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+                    S._lastBuffTier = nil
+                    pcall(CuraEqui.Buffs.SyncAll, h, S)
+                end
+
+                -- only restart the periodic watcher (no DB reload)
+                if CuraEqui.StartWatching then pcall(CuraEqui.StartWatching) end
+
+                st._sleepStartHour     = nil
+                st._skipSessionOpen    = false
+                st._skipMinutesPlanned = nil
+            end
+        end
     end
 end
 
@@ -303,4 +444,15 @@ function CuraEqui.OnGameplayStarted()
         end
     end
     try(1)
+
+    if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBound then
+        UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
+        CuraEqui.__eventsBound = true
+    end
+
+    if UIAction and UIAction.RegisterElementListener and not CuraEqui.__skipBound then
+        UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
+        CuraEqui.__skipBound = true
+        System.LogAlways("[CuraEqui] Bound SkipTime element listener")
+    end
 end
