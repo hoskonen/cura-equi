@@ -3,6 +3,9 @@ CuraEqui.Debug = CuraEqui.Debug or {}
 -- Enable/disable distance milestone logs and set step size (meters).
 CuraEqui.DEBUG_DISTANCE = CuraEqui.DEBUG_DISTANCE or false
 
+-- Simple anim logger state
+CuraEqui.AnimProbe = CuraEqui.AnimProbe or { last = {}, enabled = false }
+
 function CuraEqui.Debug_EnableDistanceTrace(enabled, stepMeters)
     CuraEqui.DEBUG_DISTANCE = (enabled ~= false)
     CuraEqui.DEBUG_DISTANCE_STEP = tonumber(stepMeters) or CuraEqui.DEBUG_DISTANCE_STEP or 100.0
@@ -227,11 +230,6 @@ function CuraEqui.Debug.DumpHorseStats(h)
     System.LogAlways("[CuraEqui][HorseStats] " .. table.concat(parts, " | "))
 end
 
--- Console binding (once)
-if System and System.AddCCommand then
-    System.AddCCommand("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
-end
-
 function CuraEqui.Debug.ReadHorseCourage(h)
     h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
     local s = _soul(h); if not s then return nil, nil end
@@ -356,10 +354,6 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
     UI.Toast(body, 12000, 0, "CuraEqui_HorseStats", "tutorial")
 end
 
-if System and System.AddCCommand then
-    System.AddCCommand("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show horse stats card")
-end
-
 -- Robust stamina reader: returns cur, max, srcTag
 function CuraEqui.Debug.ReadHorseStamina(h)
     h = h or (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve())
@@ -478,6 +472,135 @@ end
 -- Clear sated quickly
 function CuraEqui.Debug.ClearSated()
     return CuraEqui.Debug.SetSated(0)
+end
+
+-- Add/override a diet token -> GUID at runtime
+function CuraEqui.Debug.DietAdd(token, guid)
+    CuraEqui.DietData = CuraEqui.DietData or {}
+    token             = tostring(token or ""):lower()
+    guid              = tostring(guid or "")
+    if token == "" or guid == "" then
+        System.LogAlways("[CuraEqui][Diet] Usage: curaequi_diet_add <token> <guid>")
+        return
+    end
+    CuraEqui.DietData[token] = { classId = guid }
+    System.LogAlways(("[CuraEqui][Diet] Mapped %s -> %s"):format(token, guid))
+end
+
+-- Resolve a token or guid and print the result
+function CuraEqui.Debug.DietResolve(spec)
+    local function looks_like_guid(s)
+        return type(s) == "string" and
+            s:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil
+    end
+    local s = tostring(spec or "")
+    if looks_like_guid(s) then
+        System.LogAlways(("[CuraEqui][Diet] %s is a GUID"):format(s))
+        return s
+    end
+    local token = s:lower()
+    local row = (CuraEqui.DietData and CuraEqui.DietData[token])
+        or (_G.DietData and (_G.DietData[token] or _G.DietData[s]))
+    local gid = row and (row.classId or row.class or row.cid or row.guid)
+    System.LogAlways(("[CuraEqui][Diet] %s -> %s"):format(token, tostring(gid)))
+    return gid
+end
+
+-- List current DietData mappings (first N)
+function CuraEqui.Debug.DietList(max)
+    local t, n = CuraEqui.DietData or {}, 0
+    max = tonumber(max or 50) or 50
+    System.LogAlways("[CuraEqui][Diet] ---- current mappings ----")
+    for k, v in pairs(t) do
+        local gid = v and (v.classId or v.class or v.cid or v.guid)
+        System.LogAlways(("  %s -> %s"):format(tostring(k), tostring(gid)))
+        n = n + 1; if n >= max then break end
+    end
+    System.LogAlways(("[CuraEqui][Diet] ---- total=%d (showing up to %d) ----"):format(n, max))
+end
+
+-- Scripts/CuraEqui/Debug.lua
+-- Uses DietData.byToken -> guid (from DietData.lua) and falls back to GUID input.
+function CuraEqui.Debug.SpawnFoodStrict(spec, qty, health)
+    -- guards
+    if not System or not System.GetEntity or not g_localActorId then
+        System.LogAlways("[CuraEqui][Spawn] System/GetEntity unavailable"); return
+    end
+    local player = System.GetEntity(g_localActorId)
+    if not (player and player.inventory) then
+        System.LogAlways("[CuraEqui][Spawn] Player or inventory missing"); return
+    end
+    local inv = player.inventory
+    if not (inv and (inv.CreateItem or inv.AddItem)) then
+        System.LogAlways("[CuraEqui][Spawn] Inventory API missing (CreateItem/AddItem)"); return
+    end
+
+    -- normalize
+    spec = tostring(spec or "")
+    if spec == "" then
+        System.LogAlways("[CuraEqui][Spawn] Missing <token|guid>"); return
+    end
+    qty    = math.max(1, math.floor(tonumber(qty or 1) + 0.5))
+    health = tonumber(health); if health == nil then health = 1.0 end
+    if health > 1 then health = health / 100.0 end
+    if health < 0 or health > 1 then
+        System.LogAlways("[CuraEqui][Spawn] health must be 0..1 (or 0..100)"); return
+    end
+
+    -- DietData resolution (byToken/byGuid from DietData.lua)
+    local function looks_like_guid(s)
+        return type(s) == "string" and
+            s:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil
+    end
+
+    local classId
+    local D       = CuraEqui.DietData or {} -- has byGuid & byToken populated
+    local byToken = D.byToken or {}         -- token -> { guid, nutrition }
+    local byGuid  = D.byGuid or {}          -- guid  -> { token, nutrition }
+
+    if looks_like_guid(spec) then
+        -- GUID given directly; accept even if not present in byGuid
+        classId = spec
+    else
+        local row = byToken[spec:lower()] or byToken[spec]
+        classId = row and row.guid
+    end
+
+    if not classId or classId == "" then
+        System.LogAlways(("[CuraEqui][Spawn] No GUID for '%s'. Add mapping to DietData.byToken or pass a GUID.")
+            :format(spec))
+        return
+    end
+
+    -- Prefer CreateItem (health-aware), fall back to AddItem fresh
+    if inv.CreateItem then
+        local ok, ret = pcall(inv.CreateItem, inv, classId, health, qty)
+        if ok and ret ~= false then
+            System.LogAlways(("[CuraEqui][Spawn] OK: %dx %s at health=%.2f (CreateItem)"):format(qty, classId, health))
+            return
+        else
+            System.LogAlways("[CuraEqui][Spawn] CreateItem failed or returned false; falling back to AddItem (fresh)")
+        end
+    end
+
+    if inv.AddItem then
+        local spawned = 0
+        for i = 1, qty do
+            if inv:AddItem(classId, 1) then spawned = spawned + 1 end
+        end
+        if spawned > 0 then
+            System.LogAlways(("[CuraEqui][Spawn] OK: %dx %s (AddItem fallback, fresh)"):format(spawned, classId))
+        else
+            System.LogAlways("[CuraEqui][Spawn] AddItem fallback failed")
+        end
+        return
+    end
+
+    System.LogAlways("[CuraEqui][Spawn] No usable spawn path executed")
+end
+
+function CuraEqui.Debug.SpawnRottenStrict(spec, qty)
+    return CuraEqui.Debug.SpawnFoodStrict(spec, qty, 0.10)
 end
 
 -- Optional: force a tier name for a short window (for UI testing)
@@ -632,10 +755,6 @@ function CuraEqui.Debug.MaybeResnapStamina(h)
         S._snap.staminaMax = math.max(S._snap.staminaMax or 0, cur)
     end
 end
-
--- Simple anim logger state
-CuraEqui = CuraEqui or {}
-CuraEqui.AnimProbe = CuraEqui.AnimProbe or { last = {}, enabled = false }
 
 -- Resolve target: "player" | "horse"
 local function _resolveTarget(which)
@@ -792,161 +911,34 @@ if System and System.AddCCommand then
     _add_cmd("curaequi_probe_water", "CuraEqui.Debug.ProbeWater(%1)", "Scan water sources around player (m)")
     _add_cmd("curaequi_probe_water_horse", "CuraEqui.Debug.ProbeWaterHorse(%1)",
         "Scan water sources around current horse (m)")
+    _add_cmd("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
+    _add_cmd("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show horse stats card")
+
+    _add_cmd("curaequi_spawn_food_strict",
+        "CuraEqui.Debug.SpawnFoodStrict(%1,%2,%3)",
+        "STRICT: spawn food <token|class> <qty> <health 0..1>")
+
+    _add_cmd("curaequi_spawn_rotten_strict",
+        "CuraEqui.Debug.SpawnRottenStrict(%1,%2)",
+        "STRICT: spawn rotten <token|class> <qty> (health=0.10)")
+
+    _add_cmd("curaequi_spawn_food",
+        "CuraEqui.Debug.SpawnFoodStrict(%1)",
+        "Spawn food <token|class> [qty defaults 1, health 1.0]")
+
+    _add_cmd("curaequi_spawn_rotten",
+        "CuraEqui.Debug.SpawnRottenStrict(%1)",
+        "Spawn rotten <token|class> [qty defaults 1]")
+
+    _add_cmd("curaequi_diet_add",
+        "CuraEqui.Debug.DietAdd(%1,%2)",
+        "Map diet token to GUID: <token> <guid>")
+
+    _add_cmd("curaequi_diet_resolve",
+        "CuraEqui.Debug.DietResolve(%1)",
+        "Resolve token/guid and print resolved GUID")
+
+    _add_cmd("curaequi_diet_list",
+        "CuraEqui.Debug.DietList(%1)",
+        "List current diet mappings [max=50]")
 end
-
--- /////////////////////////////////////////////////////////////////////////
--- STRICT food spawners (no fallbacks, no guessing, hard errors)
--- Usage:
---   curaequi_spawn_food_strict <token|class> <qty> <health(0..1)>
---   curaequi_spawn_rotten_strict <token|class> <qty>            -- health=0.10
--- Examples:
---   curaequi_spawn_food_strict cabbage 3 0.75
---   curaequi_spawn_rotten_strict 8d6964b1-b645-4aa1-adcc-db22646f3722 5
--- /////////////////////////////////////////////////////////////////////////
-
-local function _player_and_inv_strict()
-    if not g_localActorId or not System or not System.GetEntity then
-        error("[CuraEqui][Spawn] System/GetEntity unavailable", 0)
-    end
-    local ply = System.GetEntity(g_localActorId)
-    if not ply then error("[CuraEqui][Spawn] player entity not found", 0) end
-    local inv = ply.inventory
-    if not inv then error("[CuraEqui][Spawn] player inventory not available", 0) end
-    return ply, inv
-end
-
-local function _assert_item_apis()
-    if not Item then error("[CuraEqui][Spawn] Item API table missing", 0) end
-    if not Item.SetHealth then error("[CuraEqui][Spawn] Item.SetHealth(wuid, health) required", 0) end
-    if not Item.GetHealth then error("[CuraEqui][Spawn] Item.GetHealth(wuid) required", 0) end
-end
-
--- Resolve token|class to a single classId. Hard-fail on ambiguity / not found.
-local function _resolve_single_class_strict(spec)
-    spec = tostring(spec or "")
-    if spec == "" then error("[CuraEqui][Spawn] missing token|class", 0) end
-
-    -- direct GUID (has a dash) → accept as-is
-    if spec:find("%-") then return spec end
-
-    local DD = CuraEqui and CuraEqui.DietData or DietData
-    if type(DD) ~= "table" then error("[CuraEqui][Spawn] DietData table missing", 0) end
-
-    -- try exact key
-    local bucket = DD[spec]
-    if type(bucket) == "table" then
-        local cls = bucket.class or bucket.classId or bucket.guid or bucket.id
-        if cls then return cls end
-    end
-
-    -- search every bucket for token/name match
-    local found = nil
-    for _, b in pairs(DD) do
-        if type(b) == "table" then
-            -- bucket can be a list or a single entry; check both shapes
-            if b.class or b.classId or b.guid or b.id or b.token then
-                local tok = b.token or b.name
-                if tok == spec then
-                    local cls = b.class or b.classId or b.guid or b.id
-                    if not cls then error("[CuraEqui][Spawn] matched token but missing class id", 0) end
-                    if found and found ~= cls then
-                        error("[CuraEqui][Spawn] ambiguous token: multiple classes match", 0)
-                    end
-                    found = cls
-                end
-            else
-                for _, it in pairs(b) do
-                    if type(it) == "table" then
-                        local tok = it.token or it.name
-                        if tok == spec then
-                            local cls = it.class or it.classId or it.guid or it.id
-                            if not cls then error("[CuraEqui][Spawn] matched token but missing class id", 0) end
-                            if found and found ~= cls then
-                                error("[CuraEqui][Spawn] ambiguous token: multiple classes match", 0)
-                            end
-                            found = cls
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    if not found then
-        error(("[CuraEqui][Spawn] no class found for token '%s'"):format(spec), 0)
-    end
-    return found
-end
-
-local function _parse_args_strict(args, rottenDefault)
-    local a, b, c = "", "", ""
-    if args then
-        local i = 0
-        for s in string.gmatch(args, "%S+") do
-            i = i + 1
-            if i == 1 then
-                a = s
-            elseif i == 2 then
-                b = s
-            elseif i == 3 then
-                c = s
-            end
-        end
-    end
-    local qty = tonumber(b) or 1
-    if qty < 1 then error("[CuraEqui][Spawn] qty must be >= 1", 0) end
-    local h = c ~= "" and tonumber(c) or (rottenDefault and 0.10 or 1.00)
-    if not h then error("[CuraEqui][Spawn] health must be a number (0..1)", 0) end
-    if h > 1 then h = h / 100.0 end
-    if h < 0 or h > 1 then error("[CuraEqui][Spawn] health must be 0..1", 0) end
-    return a, math.floor(qty + 0.5), h
-end
-
-local function _spawn_strict(args, rottenDefault)
-    _assert_item_apis()
-    local _, inv = _player_and_inv_strict()
-    if not inv.AddItem then error("[CuraEqui][Spawn] inventory:AddItem(classId, 1) required", 0) end
-
-    local spec, qty, health = _parse_args_strict(args, rottenDefault)
-    local classId = _resolve_single_class_strict(spec)
-
-    -- Spawn one-by-one so we always get the WUID from AddItem
-    for i = 1, qty do
-        local wuid = inv:AddItem(classId, 1)
-        if not wuid then
-            error("[CuraEqui][Spawn] AddItem did not return a WUID; cannot set health strictly", 0)
-        end
-        Item.SetHealth(wuid, health)
-        local got = Item.GetHealth(wuid)
-        if type(got) ~= "number" or math.abs(got - health) > 0.01 then
-            error(("[CuraEqui][Spawn] health verify failed (set %.2f, got %s)"):format(health, tostring(got)), 0)
-        end
-    end
-
-    System.LogAlways(("[CuraEqui][Spawn] OK: %dx %s at health=%.2f")
-        :format(qty, tostring(classId), health))
-end
-
-System.AddCCommand("curaequi_spawn_food_strict",
-    function(args)
-        local ok, err = pcall(function() _spawn_strict(args, false) end)
-        if not ok then System.LogAlways(err) end
-    end,
-    "STRICT: spawn food by token|class with health (0..1). Usage: curaequi_spawn_food_strict <token|class> <qty> <health>")
-
-System.AddCCommand("curaequi_spawn_rotten_strict",
-    function(args)
-        local ok, err = pcall(function() _spawn_strict(args, true) end)
-        if not ok then System.LogAlways(err) end
-    end,
-    "STRICT: spawn rotten food (health=0.10). Usage: curaequi_spawn_rotten_strict <token|class> <qty>")
-
-
--- Console commands
-System.AddCCommand("curaequi_spawn_food",
-    function(args) _spawn_food_impl(args, false) end,
-    "Spawn food from DietData by token|class|all. Usage: curaequi_spawn_food <token|class|all> [qty=1] [health=1.0]")
-
-System.AddCCommand("curaequi_spawn_rotten",
-    function(args) _spawn_food_impl(args, true) end,
-    "Spawn spoiled food (health≈0.10). Usage: curaequi_spawn_rotten <token|class|all> [qty=1]")
