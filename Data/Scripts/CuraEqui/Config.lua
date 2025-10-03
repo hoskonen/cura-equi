@@ -153,7 +153,7 @@ CuraEqui.Config = {
         -- Sated Mode (goal-based planning; picker path)
         needMode               = "sated", -- "hunger" | "sated"
         needCapPerFeed         = 25,
-        satedMinSec            = 300,
+        satedMinSec            = 0,
         satedMaxSec            = 900,
         satedSecPerPoint       = 6,
         satedAlsoReducesHunger = true,

@@ -167,9 +167,16 @@ local function _plan_remove(picks, needPoints, over)
                 local key = info.wuidStr or tostring(info._wuid)
                 local rec = removePlan[key]
                 if not rec then
-                    rec = { wuid = info._wuid, units = 0, label = label, per = per }
+                    rec = {
+                        wuid    = info._wuid,
+                        units   = 0,
+                        label   = label,
+                        per     = per,
+                        classId = info.classId, -- <-- add this here (Position 1)
+                    }
                     removePlan[key] = rec
                 end
+
                 rec.units = rec.units + wantUnits
                 used = used + wantUnits * per
             end
@@ -301,8 +308,6 @@ local function _is_acceptable_food(info)
     if minQ <= 0 then return true end
     return _get_item_quality(info) >= minQ
 end
-
-
 
 function CuraEqui.Horse.Debug_LogPlayerHorseHandles()
     local function log(label, ok, val)
@@ -445,6 +450,45 @@ function CuraEqui.Horse.IsMounted()
     return (ok and v) and true or false
 end
 
+-- Debug: show where "quality/health" comes from for a picked item.
+local function _dbg_dump_quality_sources(info)
+    local function norm(q)
+        if type(q) ~= "number" then return nil end
+        if q < 0 then q = 0 end
+        if q <= 1.0 then return q end
+        if q <= 100.0 then return q / 100.0 end
+        return 1.0
+    end
+
+    local raw_ui = tonumber(info and info.health)
+    local ui_q   = raw_ui and norm(raw_ui) or nil
+
+    local raw_item, item_q
+    if info and info.item and (info.item.GetHealth or info.item.getHealth) then
+        local ok, v = pcall(info.item.GetHealth, info.item)
+        if ok then
+            raw_item = v; item_q = norm(tonumber(v))
+        end
+    end
+
+    local raw_wuid, wuid_q
+    if info and info._wuid and Item and Item.GetHealth then
+        local ok, v = pcall(Item.GetHealth, info._wuid)
+        if ok then
+            raw_wuid = v; wuid_q = norm(tonumber(v))
+        end
+    end
+
+    System.LogAlways(("[CuraEqui][Feed][dbg] health sources for %s (class=%s) ui=%s (q=%s) item=%s (q=%s) wuid=%s (q=%s)")
+        :format(
+            tostring(info and (info.uiName or info.dbName or info.wuidStr or "?")),
+            tostring(info and info.classId or "?"),
+            tostring(raw_ui), tostring(ui_q),
+            tostring(raw_item), tostring(item_q),
+            tostring(raw_wuid), tostring(wuid_q)
+        ))
+end
+
 -- Collect selected items - store light info for logs & nutrition
 function Horse:OnInventoryItemUsed(id)
     self._feedSel = self._feedSel or {}
@@ -452,6 +496,10 @@ function Horse:OnInventoryItemUsed(id)
     info._wuid    = id           -- keep the real handle for DeleteItem
     info.wuidStr  = tostring(id) -- for logs
     table.insert(self._feedSel, info)
+
+    -- NEW: log raw health from UI/item/wuid (no behavior change)
+    _dbg_dump_quality_sources(info)
+
     FeedLog(("[CuraEqui][Feed] Picked: %s (class=%s, qty=%s)")
         :format(tostring(info.uiName or info.dbName or info.wuidStr), tostring(info.classId), tostring(info.qty)))
 end
@@ -624,23 +672,48 @@ function Horse:OnInventoryClosed()
     end
 
     if FCFG.removeItems then
-        local inv = (player and (player.inventory or (player.actor and player.actor.inventory))) or nil
+        local inv = (player and player.inventory) or nil
         if not inv or not inv.DeleteItem then
             System.LogAlways("[CuraEqui][Feed][WARN] inventory:DeleteItem not available; keeping items.")
             return
         end
+
         local removed, failed = 0, 0
-        for _, rec in pairs(removePlan) do
-            if rec.units and rec.units > 0 then
-                local ok = pcall(inv.DeleteItem, inv, rec.wuid, rec.units)
-                if ok then removed = removed + rec.units else failed = failed + rec.units end
+        local xfer = {}                      -- classId -> total units actually removed
+
+        for _, rec in pairs(removePlan or {}) do -- NOTE: pairs (map keyed by WUID)
+            local n = tonumber(rec.units) or 0
+            if n > 0 and rec.wuid then
+                local ok = pcall(inv.DeleteItem, inv, rec.wuid, n)
+                if ok then
+                    removed = removed + n
+                    local cid = rec.classId or rec.class or rec.cid
+                    if cid then xfer[cid] = (xfer[cid] or 0) + n end
+                else
+                    failed = failed + n
+                end
             end
         end
+
         if failed > 0 then
             System.LogAlways(("[CuraEqui][Feed][WARN] Remove: %d ok, %d fail via inventory:DeleteItem"):format(removed,
                 failed))
         else
             FeedLog("Remove: %d unit(s) ok via inventory:DeleteItem", removed)
+        end
+
+        -- Batched transfer toasts (largest first)
+        local UI_F = ((CuraEqui.Config or {}).UI or {}).feed or {}
+        local NT   = UI_F.notif or {}
+        if (NT.showTransfers ~= false) and next(xfer) then
+            local list = {}
+            for cid, n in pairs(xfer) do list[#list + 1] = { cid = tostring(cid), n = tonumber(n) or 0 } end
+            table.sort(list, function(a, b) return a.n > b.n end)
+            local maxN = NT.maxItems or 8
+            for i = 1, math.min(#list, maxN) do
+                local it = list[i]
+                pcall(Game.ShowItemsTransfer, it.cid, -it.n) -- negative → removal
+            end
         end
     end
 end
