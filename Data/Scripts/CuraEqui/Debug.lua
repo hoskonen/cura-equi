@@ -121,6 +121,7 @@ end
 local function _horse()
     return CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
 end
+
 local function _state(h)
     return CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or {}
 end
@@ -580,16 +581,6 @@ function CuraEqui.Debug.Help(pattern)
     end
 end
 
--- === Speed helpers ==========================================================
-local function _soul(h)
-    return h and (h.soul or (h.GetSoul and h:GetSoul())) or nil
-end
-local function _gd(soul, key)
-    if not (soul and soul.GetDerivedStat) then return nil end
-    local ok, v = pcall(function() return soul:GetDerivedStat(key, {}, nil) end)
-    return ok and v or nil
-end
-
 -- Returns a table of whatever the build exposes + a preferred "speed" pick
 -- Debug.lua
 function CuraEqui.Debug.ReadHorseSpeed(h)
@@ -802,3 +793,160 @@ if System and System.AddCCommand then
     _add_cmd("curaequi_probe_water_horse", "CuraEqui.Debug.ProbeWaterHorse(%1)",
         "Scan water sources around current horse (m)")
 end
+
+-- /////////////////////////////////////////////////////////////////////////
+-- STRICT food spawners (no fallbacks, no guessing, hard errors)
+-- Usage:
+--   curaequi_spawn_food_strict <token|class> <qty> <health(0..1)>
+--   curaequi_spawn_rotten_strict <token|class> <qty>            -- health=0.10
+-- Examples:
+--   curaequi_spawn_food_strict cabbage 3 0.75
+--   curaequi_spawn_rotten_strict 8d6964b1-b645-4aa1-adcc-db22646f3722 5
+-- /////////////////////////////////////////////////////////////////////////
+
+local function _player_and_inv_strict()
+    if not g_localActorId or not System or not System.GetEntity then
+        error("[CuraEqui][Spawn] System/GetEntity unavailable", 0)
+    end
+    local ply = System.GetEntity(g_localActorId)
+    if not ply then error("[CuraEqui][Spawn] player entity not found", 0) end
+    local inv = ply.inventory
+    if not inv then error("[CuraEqui][Spawn] player inventory not available", 0) end
+    return ply, inv
+end
+
+local function _assert_item_apis()
+    if not Item then error("[CuraEqui][Spawn] Item API table missing", 0) end
+    if not Item.SetHealth then error("[CuraEqui][Spawn] Item.SetHealth(wuid, health) required", 0) end
+    if not Item.GetHealth then error("[CuraEqui][Spawn] Item.GetHealth(wuid) required", 0) end
+end
+
+-- Resolve token|class to a single classId. Hard-fail on ambiguity / not found.
+local function _resolve_single_class_strict(spec)
+    spec = tostring(spec or "")
+    if spec == "" then error("[CuraEqui][Spawn] missing token|class", 0) end
+
+    -- direct GUID (has a dash) → accept as-is
+    if spec:find("%-") then return spec end
+
+    local DD = CuraEqui and CuraEqui.DietData or DietData
+    if type(DD) ~= "table" then error("[CuraEqui][Spawn] DietData table missing", 0) end
+
+    -- try exact key
+    local bucket = DD[spec]
+    if type(bucket) == "table" then
+        local cls = bucket.class or bucket.classId or bucket.guid or bucket.id
+        if cls then return cls end
+    end
+
+    -- search every bucket for token/name match
+    local found = nil
+    for _, b in pairs(DD) do
+        if type(b) == "table" then
+            -- bucket can be a list or a single entry; check both shapes
+            if b.class or b.classId or b.guid or b.id or b.token then
+                local tok = b.token or b.name
+                if tok == spec then
+                    local cls = b.class or b.classId or b.guid or b.id
+                    if not cls then error("[CuraEqui][Spawn] matched token but missing class id", 0) end
+                    if found and found ~= cls then
+                        error("[CuraEqui][Spawn] ambiguous token: multiple classes match", 0)
+                    end
+                    found = cls
+                end
+            else
+                for _, it in pairs(b) do
+                    if type(it) == "table" then
+                        local tok = it.token or it.name
+                        if tok == spec then
+                            local cls = it.class or it.classId or it.guid or it.id
+                            if not cls then error("[CuraEqui][Spawn] matched token but missing class id", 0) end
+                            if found and found ~= cls then
+                                error("[CuraEqui][Spawn] ambiguous token: multiple classes match", 0)
+                            end
+                            found = cls
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if not found then
+        error(("[CuraEqui][Spawn] no class found for token '%s'"):format(spec), 0)
+    end
+    return found
+end
+
+local function _parse_args_strict(args, rottenDefault)
+    local a, b, c = "", "", ""
+    if args then
+        local i = 0
+        for s in string.gmatch(args, "%S+") do
+            i = i + 1
+            if i == 1 then
+                a = s
+            elseif i == 2 then
+                b = s
+            elseif i == 3 then
+                c = s
+            end
+        end
+    end
+    local qty = tonumber(b) or 1
+    if qty < 1 then error("[CuraEqui][Spawn] qty must be >= 1", 0) end
+    local h = c ~= "" and tonumber(c) or (rottenDefault and 0.10 or 1.00)
+    if not h then error("[CuraEqui][Spawn] health must be a number (0..1)", 0) end
+    if h > 1 then h = h / 100.0 end
+    if h < 0 or h > 1 then error("[CuraEqui][Spawn] health must be 0..1", 0) end
+    return a, math.floor(qty + 0.5), h
+end
+
+local function _spawn_strict(args, rottenDefault)
+    _assert_item_apis()
+    local _, inv = _player_and_inv_strict()
+    if not inv.AddItem then error("[CuraEqui][Spawn] inventory:AddItem(classId, 1) required", 0) end
+
+    local spec, qty, health = _parse_args_strict(args, rottenDefault)
+    local classId = _resolve_single_class_strict(spec)
+
+    -- Spawn one-by-one so we always get the WUID from AddItem
+    for i = 1, qty do
+        local wuid = inv:AddItem(classId, 1)
+        if not wuid then
+            error("[CuraEqui][Spawn] AddItem did not return a WUID; cannot set health strictly", 0)
+        end
+        Item.SetHealth(wuid, health)
+        local got = Item.GetHealth(wuid)
+        if type(got) ~= "number" or math.abs(got - health) > 0.01 then
+            error(("[CuraEqui][Spawn] health verify failed (set %.2f, got %s)"):format(health, tostring(got)), 0)
+        end
+    end
+
+    System.LogAlways(("[CuraEqui][Spawn] OK: %dx %s at health=%.2f")
+        :format(qty, tostring(classId), health))
+end
+
+System.AddCCommand("curaequi_spawn_food_strict",
+    function(args)
+        local ok, err = pcall(function() _spawn_strict(args, false) end)
+        if not ok then System.LogAlways(err) end
+    end,
+    "STRICT: spawn food by token|class with health (0..1). Usage: curaequi_spawn_food_strict <token|class> <qty> <health>")
+
+System.AddCCommand("curaequi_spawn_rotten_strict",
+    function(args)
+        local ok, err = pcall(function() _spawn_strict(args, true) end)
+        if not ok then System.LogAlways(err) end
+    end,
+    "STRICT: spawn rotten food (health=0.10). Usage: curaequi_spawn_rotten_strict <token|class> <qty>")
+
+
+-- Console commands
+System.AddCCommand("curaequi_spawn_food",
+    function(args) _spawn_food_impl(args, false) end,
+    "Spawn food from DietData by token|class|all. Usage: curaequi_spawn_food <token|class|all> [qty=1] [health=1.0]")
+
+System.AddCCommand("curaequi_spawn_rotten",
+    function(args) _spawn_food_impl(args, true) end,
+    "Spawn spoiled food (health≈0.10). Usage: curaequi_spawn_rotten <token|class|all> [qty=1]")
