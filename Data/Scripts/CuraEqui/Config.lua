@@ -10,6 +10,7 @@ CuraEqui.Config = {
             sec  = 2.0,        -- default duration for center messages (seconds)
             prio = 0,          -- priority for the lane
             msg  = {
+                onEat        = "@curaequi_horse_eats_happily",
                 onFull       = "@curaequi_horse_full",
                 onRefusal    = "@curaequi_horse_refuse",
                 onLeftovers  = "@curaequi_feed_leftovers",

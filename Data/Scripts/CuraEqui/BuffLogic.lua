@@ -64,6 +64,13 @@ M._lastPlayerUuid     = M._lastPlayerUuid or nil
 M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
 M._playerApplyPending = M._playerApplyPending or false
 
+-- Return: bucketSec, bucketUuid
+function M.DebugPickSatedBucket(remS)
+    local b = (_pick_sated_bucket or _pick_bucket_floor)(remS)
+    if not b then return 0, nil end
+    return b.sec, b.uuid
+end
+
 function M.SyncPlayerStatus(horseEnt, S)
     -- Legacy one-time cleanup: remove any old non-timer 'sated' status buff
     if not CuraEqui._clearedLegacySated then

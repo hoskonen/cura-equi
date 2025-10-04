@@ -62,24 +62,34 @@ end
 local function _per_unit_from_info(info)
     local label  = info.uiName or info.dbName or "food"
 
-    -- 1) exact class match from DietData
     local DD     = CuraEqui.DietData or CuraEqui.Diet or {}
     local byGuid = DD.byGuid or DD.ByGuid or {}
-    local rec    = info.classId and byGuid[info.classId] or nil
-    if rec then
-        local v = tonumber(rec.nutrition or 0) or 0
-        if v > 0 then return v, (rec.token or label) end
+
+    local gid    = info.classId or info.class or info.cid
+    if gid then
+        local g1 = tostring(gid)
+        local g2 = g1:lower()
+        local g3 = g1:upper()
+
+        local rec = byGuid[g1] or byGuid[g2] or byGuid[g3]
+        if not rec and byGuid.guid then
+            -- some tables are shaped like byGuid.guid[<id>]
+            rec = byGuid.guid[g1] or byGuid.guid[g2] or byGuid.guid[g3]
+        end
+
+        if rec then
+            local v = tonumber(rec.nutrition or 0) or 0
+            if v > 0 then return v, (rec.token or label) end
+        end
     end
 
-    -- 2) keywords (supports either a list or a {kw=value} map), only if allowed
+    -- keyword fallback (only if explicitly allowed in config)
     local DCFG = (CuraEqui.Config and CuraEqui.Config.Diet) or {}
     local allowKW = (DCFG.allowKeywordFallback == true)
     if allowKW then
-        local kws  = DCFG.allowKeywords or { "apple", "bread", "carrot" }
         local name = tostring(label):lower()
-
+        local kws  = DCFG.allowKeywords or { "apple", "bread", "carrot" }
         if #kws > 0 then
-            -- list → use keywordNutrition
             local perKW = tonumber(DCFG.keywordNutrition or 10) or 10
             for _, kw in ipairs(kws) do
                 kw = tostring(kw):lower()
@@ -88,7 +98,6 @@ local function _per_unit_from_info(info)
                 end
             end
         else
-            -- map → per-keyword values
             for kw, val in pairs(kws) do
                 local kwl = tostring(kw):lower()
                 if kwl ~= "" and name:find(kwl, 1, true) then
@@ -99,9 +108,9 @@ local function _per_unit_from_info(info)
         end
     end
 
-    -- 3) default (nothing matched)
     return 0, label
 end
+
 
 local function _sated_cfg()
     local F    = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
@@ -128,7 +137,7 @@ local function _calc_need_points(S, mode)
 
         -- points needed to reach the minimum sated target
         local target     = math.max(C.minSec, math.min(C.maxSec, C.minSec))
-        local missingSec = math.max(0, target - remS)
+        local missingSec = math.max(0, C.minSec - remS)
         local sNeedPt    = math.ceil(missingSec / math.max(1, C.perPt))
 
         if C.alsoHun then
@@ -144,7 +153,6 @@ local function _calc_need_points(S, mode)
     local h = math.max(0, tonumber(S.hunger or 0) or 0)
     return math.min(h, cap)
 end
-
 
 local function _plan_remove(picks, needPoints, over)
     local removePlan, used = {}, 0
@@ -169,10 +177,10 @@ local function _plan_remove(picks, needPoints, over)
                 if not rec then
                     rec = {
                         wuid    = info._wuid,
+                        classId = info.classId, -- <-- add this here (Position 1)
                         units   = 0,
                         label   = label,
                         per     = per,
-                        classId = info.classId, -- <-- add this here (Position 1)
                     }
                     removePlan[key] = rec
                 end
@@ -419,14 +427,29 @@ end
 
 -- Vanilla-style: simulate feeding on close (no removal yet)
 function Horse:OnInventoryClosed()
-    local picks   = self._feedSel or {}; self._feedSel = nil
+    -- 1) Snapshot selection FIRST, then clear the field
+    local picks   = self._feedSel or {}
+    self._feedSel = nil
+
+    -- 2) Early-out: user canceled / nothing actually selected (no toast)
+    do
+        local totalQty = 0
+        for _, info in ipairs(picks) do
+            totalQty = totalQty + (tonumber(info.qty or 0) or 0)
+        end
+        if totalQty <= 0 then
+            FeedLog("Picker closed (no selection).")
+            FeedLog("A: after snapshot & early-cancel check")
+            return
+        end
+    end
 
     -- Partition selection (quality disabled): just keep items with qty > 0
-    local good    = {}
-    for _, info in ipairs(picks) do
-        local qty = tonumber(info.qty or 0) or 0
-        if qty > 0 then good[#good + 1] = info end
-    end
+    local good = picks
+    -- for _, info in ipairs(picks) do
+    --     local qty = tonumber(info.qty or 0) or 0
+    --     if qty > 0 then good[#good + 1] = info end
+    -- end
 
     local CFG  = CuraEqui.Config or {}; local FCFG = CFG.Feeding or {}
     local UF   = (CFG.UI and CFG.UI.feed) or {}
@@ -464,6 +487,8 @@ function Horse:OnInventoryClosed()
         end
     end
 
+    FeedLog("B: after sated hard-block gate")
+
     -- only toast full when truly full
     local needPoints = _calc_need_points(S, mode)
     if needPoints <= 0 then
@@ -482,39 +507,50 @@ function Horse:OnInventoryClosed()
             local txt  = (UF.msg and UF.msg.onFull) or "@curaequi_horse_full"
             CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
         end
-
+        FeedLog(("C: computed need=%d hungerNow=%d"):format(needPoints, hungerNow))
         FeedLog(pickedAny and "Picker: need=0 (selection) hunger=" .. tostring(hungerNow) or
             "Picker closed (no selection).")
         return
     end
 
+
     if #good == 0 then
-        -- No selected items with qty > 0
-        if CuraEqui.UI and CuraEqui.UI.Toast then
-            local UF   = (CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
-            local lane = UF.lane or "infotext"
-            local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
-            local txt  = (UF.msg and UF.msg.onRefusal) or "@curaequi_horse_refuse"
-            CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
-        end
-        FeedLog("Refusal: no valid items selected.")
+        -- Nothing with qty>0 survived selection normalization → treat as cancel
+        FeedLog("Picker had no positive-qty items (treat as cancel).")
         return
     end
+
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D and D.feedTrace then
+            for i, it in ipairs(good or {}) do
+                System.LogAlways(("[CuraEqui][Feed] pick#%d class=%s qty=%s wuid=%s")
+                    :format(i, tostring(it.classId or it.class or "-"), tostring(it.qty or 0), tostring(it._wuid or "-")))
+                -- peek per-unit value
+                local per, label = _per_unit_from_info(it)
+                System.LogAlways(("[CuraEqui][Feed]  → per=%s label=%s"):format(tostring(per), tostring(label)))
+            end
+        end
+    end
+
 
     local removePlan, used, selectedUnits, consumedUnits =
         _plan_remove(good, needPoints, FCFG.overfeedPolicy or "allow")
 
+    FeedLog(("D: plan built entries=%d"):format(#removePlan or 0))
+
     -- Nothing consumed on this close
-    if used <= 0 then
-        local pickedAny = (selectedUnits or 0) > 0
+    if (used or 0) <= 0 then
+        local pickedAny = (tonumber(selectedUnits or 0) or 0) > 0
         if pickedAny and CuraEqui.UI and CuraEqui.UI.Toast then
-            -- They chose items but all resolved to 0 nutrition → refusal
+            local UF   = (CuraEqui.Config and CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
             local lane = UF.lane or "infotext"
             local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
             local txt  = (UF.msg and UF.msg.onRefusal) or "@curaequi_horse_refuse"
             CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
         end
-        FeedLog(pickedAny and "Refusal: all selections resolved to 0." or "Picker closed without selection.")
+        FeedLog(pickedAny and "Refusal: all selections resolved to 0."
+            or "Picker closed without selection.")
         return
     end
 
@@ -523,6 +559,42 @@ function Horse:OnInventoryClosed()
 
     -- Apply feed effects (+ immediate HUD sync)
     _apply_feed(S, mode, used)
+
+    -- Clamp internal sated to the bucket we actually show
+    do
+        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+        if CuraEqui.Buffs and CuraEqui.Buffs.DebugPickSatedBucket then
+            local bucketSec, bucketUuid = CuraEqui.Buffs.DebugPickSatedBucket(rem) -- returns sec, uuid (seconds!)
+            if bucketSec and bucketSec > 0 then
+                S.satedUntil = now + bucketSec
+                -- force visual timer to match immediately
+                pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
+                -- and use bucketSec for any user-facing "Sated Xs" text
+                rem = bucketSec
+            end
+        end
+
+        -- optional dev line (seconds only)
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D and D.feedTrace then
+            System.LogAlways(("[CuraEqui][Sated] used=%d → bucket=%ds (internal clamped)")
+                :format(tonumber(used) or 0, tonumber(rem) or 0))
+        end
+    end
+
+
+    -- player feedback of succesfully eaten food
+    do
+        local UF = (CuraEqui.Config and CuraEqui.Config.UI and CuraEqui.Config.UI.feed) or {}
+        if CuraEqui.UI and CuraEqui.UI.Toast and (tonumber(used) or 0) > 0 then
+            local lane = UF.lane or "infotext"
+            local ms   = math.floor(((UF.sec or 2.0) * 1000) + 0.5)
+            local txt  = (UF.msg and UF.msg.onEat) or "@curaequi_horse_eats_happily"
+            CuraEqui.UI.Toast(txt, ms, UF.prio or 0, "CuraEquiFeed", lane)
+        end
+    end
 
     if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
         System.LogAlways(("[CuraEqui][Feed] Apply: mode=%s used=%d hunger=%d→%d satedNow=%.0fs")
@@ -540,6 +612,27 @@ function Horse:OnInventoryClosed()
         pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
     end
 
+    -- ---- SATED CALC DEBUG (after _apply_feed updated S.satedUntil) ----
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D and D.feedTrace then
+            local now         = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+            local H           = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+            local per         = tonumber(H.satedSecPerNutrition or H.satedSecPerPoint or 6) or 6
+            local minS        = tonumber(H.satedMinSec or 0) or 0
+            local maxS        = tonumber(H.satedCapSec or H.satedMaxSec or 600) or 600
+
+            local remS        = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+            local bSec, bUuid = 0, nil
+            if CuraEqui.Buffs and CuraEqui.Buffs.DebugPickSatedBucket then
+                bSec, bUuid = CuraEqui.Buffs.DebugPickSatedBucket(remS) -- returns (sec, uuid)
+            end
+
+            System.LogAlways(("[CuraEqui][Sated] used=%d pt→sec=%.0f min=%ds max=%ds rem=%.0fs → bucket=%ds uuid=%s")
+                :format(used or 0, per, minS, maxS, remS, bSec,
+                    bUuid and (#bUuid > 8 and (bUuid:sub(1, 8) .. "…") or bUuid) or "-"))
+        end
+    end
 
     -- Persist immediately on successful feed so players never lose the effect
     do
@@ -575,7 +668,19 @@ function Horse:OnInventoryClosed()
         end)(),
         used, mode)
 
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if D and D.feedTrace then
+        local n = 0
+        for _, rec in pairs(removePlan) do
+            n = n + 1
+            System.LogAlways(("[CuraEqui][Feed] Plan #%d: cid=%s wuid=%s units=%s")
+                :format(n, tostring(rec.classId or "-"), tostring(rec.wuid or "-"), tostring(rec.units or 0)))
+        end
+    end
+
+    FeedLog("F: before REMOVAL GUARD (FCFG.removeItems)")
     if FCFG.removeItems then
+        FeedLog("G: inside REMOVAL GUARD")
         local inv = (player and player.inventory) or nil
         if not inv then
             System.LogAlways("[CuraEqui][Feed][WARN] inventory not available; keeping items.")
