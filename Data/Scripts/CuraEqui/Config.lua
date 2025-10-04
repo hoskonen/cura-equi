@@ -14,8 +14,6 @@ CuraEqui.Config = {
                 onRefusal    = "@curaequi_horse_refuse",
                 onLeftovers  = "@curaequi_feed_leftovers",
                 onSatedBlock = "@curaequi_horse_not_hungry_yet",
-                refuseAll    = "@curaequi_horse_refuses_spoiled",      -- “Horse refuses spoiled food.”
-                refuseSome   = "@curaequi_horse_refused_some_spoiled", -- “Refused spoiled items; ate the rest.”
             },
         }
     },
@@ -32,9 +30,6 @@ CuraEqui.Config = {
         tickTrace = true,
         buffTraceVerbose = false, -- false = log only when buff changes
         staminaSnapshot = true,   -- capture a reference staminaMax (debug only)
-    },
-    Food = {
-        minQuality = 0.25,
     },
     Hunger = {
         preset                   = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"
