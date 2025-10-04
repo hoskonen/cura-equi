@@ -56,7 +56,6 @@ local function _schedule(ms, fn)
     end
 end
 
-
 -- state
 M._lastPlayerUuid     = nil -- last player status GUID
 
@@ -66,6 +65,17 @@ M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
 M._playerApplyPending = M._playerApplyPending or false
 
 function M.SyncPlayerStatus(horseEnt, S)
+    -- Legacy one-time cleanup: remove any old non-timer 'sated' status buff
+    if not CuraEqui._clearedLegacySated then
+        CuraEqui._clearedLegacySated = true
+        local LEGACY_SATED_STATUS = {
+            "1a638e4c-e931-415d-b3bd-c8402ed836ea", -- <-- legacy 'sated' UUID
+        }
+        for _, u in ipairs(LEGACY_SATED_STATUS) do
+            pcall(CuraEqui.Effects.Remove, "player", u)
+        end
+    end
+
     local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.playerStatusTiers
     if not S or not list then
         if M._lastPlayerUuid then
@@ -74,8 +84,26 @@ function M.SyncPlayerStatus(horseEnt, S)
         return
     end
 
+    -- 🔹 if Sated timer is active, don't show any status-tier (OK/min/mod/crit)
+    do
+        local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+        if remS > 0 then
+            if M._lastPlayerUuid then
+                -- This clears only status-tier buffs; make sure your ClearPlayerStatus() does NOT remove the sated timer UUIDs
+                CuraEqui.Effects.ClearPlayerStatus()
+                M._lastPlayerUuid = nil
+            end
+            return
+        end
+    end
+
     local hval = tonumber(S.hunger or 0) or 0
     local tier = _pickTierName(hval, S.satedUntil)
+
+    -- (Optional guard: if your picker can return 'sated', map to 'ok' here)
+    if tier == "sated" then tier = "ok" end
+
     local uuid = _uuidFromList(list, tier)
 
     -- decision crumb (quiet unless Debug.enabled)
@@ -181,4 +209,72 @@ end
 function M.SyncAll(horseEnt, S)
     M.SyncHorseDebuff(horseEnt, S)
     M.SyncPlayerStatus(horseEnt, S)
+end
+
+-- ===== Visible Sated Timer (player-only; bucketed, fixed-duration buffs) =====
+local M = CuraEqui.Buffs or {}
+CuraEqui.Buffs = M
+
+-- Map remaining seconds -> fixed-duration Sated buff
+M.SATED_TIERS = {
+    { sec = 500, uuid = "7b3e1a6a-23f4-41af-b892-205d8340d6ee" },
+    { sec = 400, uuid = "6eecf4fa-9b5e-48bb-9b02-3875f9f609b7" },
+    { sec = 300, uuid = "2d8939b7-8af5-40b7-a1fb-1f937a3a6afc" },
+    { sec = 200, uuid = "f9ad23a8-7d3d-4e43-96f2-1d5cc84f2d40" },
+    { sec = 100, uuid = "c5b2d9f6-12f1-44d4-b04c-46f6b3e5c711" },
+}
+
+local function _pick_bucket_floor(remS)
+    remS = math.max(0, tonumber(remS or 0) or 0)
+    for _, t in ipairs(M.SATED_TIERS) do
+        if remS >= t.sec then return t end
+    end
+    if remS > 0 then return M.SATED_TIERS[#M.SATED_TIERS] end -- show 100 for tiny remainders
+    return nil
+end
+
+function M.ClearSatedTimers()
+    if not CuraEqui.Effects then return end
+    for _, t in ipairs(M.SATED_TIERS) do
+        pcall(CuraEqui.Effects.Remove, "player", t.uuid)
+    end
+end
+
+-- opts.force=true → re-apply even if bucket unchanged (used after feeding to reset countdown)
+function M.SyncSatedTimer(h, S, opts)
+    if not (S and S.satedUntil) then
+        if M._lastSatedUuid then
+            M.ClearSatedTimers(); M._lastSatedUuid = nil
+        end
+        return
+    end
+
+    local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+    if remS <= 0 then
+        if M._lastSatedUuid then
+            M.ClearSatedTimers(); M._lastSatedUuid = nil
+        end
+        return
+    end
+
+    local bucket = _pick_bucket_floor(remS)
+    if not bucket then
+        if M._lastSatedUuid then
+            M.ClearSatedTimers(); M._lastSatedUuid = nil
+        end
+        return
+    end
+
+    if (not (opts and opts.force)) and M._lastSatedUuid == bucket.uuid then
+        return -- same bucket: keep current countdown
+    end
+
+    -- Switch (or refresh): clear all, then apply fixed-duration buff (engine counts down)
+    M.ClearSatedTimers()
+    local ok = false
+    if CuraEqui.Effects and CuraEqui.Effects.ApplyPlayer then
+        ok = pcall(CuraEqui.Effects.ApplyPlayer, bucket.uuid)
+    end
+    if ok then M._lastSatedUuid = bucket.uuid end
 end

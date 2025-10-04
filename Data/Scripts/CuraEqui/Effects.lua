@@ -2,6 +2,9 @@
 System.LogAlways("[CuraEqui][Buff] Effects loaded")
 
 CuraEqui.Effects = CuraEqui.Effects or {}
+local E = CuraEqui.Effects
+
+E._satedGen = E._satedGen or 0
 
 local function _playerSoul()
     local p = g_localActor or player
@@ -75,4 +78,27 @@ function CuraEqui.Effects.ClearHorseDebuffs(ent)
     for i = 1, #list do
         local g = list[i].uidd; if _has(g) then CuraEqui.Effects.RemoveHorse(ent, g) end
     end
+end
+
+-- Apply a player buff and auto-remove after durationSec (fallback if engine lacks native duration)
+function E.ApplyPlayerTimed(uuid, durationSec)
+    if not (uuid and durationSec and durationSec > 0) then return false end
+    local ok = pcall(E.ApplyPlayer, uuid) -- you already have ApplyPlayer()
+    if not ok then return false end
+
+    E._satedGen = (E._satedGen or 0) + 1
+    local myGen = E._satedGen
+    local ms    = math.floor(durationSec * 1000 + 0.5)
+
+    Script.SetTimer(ms, function()
+        if myGen == E._satedGen then
+            pcall(E.Remove, "player", uuid) -- you already have Remove(target, uuid)
+        end
+    end)
+    return true
+end
+
+function E.ClearPlayerSatedTimers(uuids)
+    if not uuids then return end
+    for _, u in ipairs(uuids) do pcall(E.Remove, "player", u) end
 end

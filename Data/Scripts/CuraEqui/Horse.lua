@@ -535,6 +535,12 @@ function Horse:OnInventoryClosed()
         )
     end
 
+    -- Player-facing Sated timer buff (force refresh after feeding)
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+        pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
+    end
+
+
     -- Persist immediately on successful feed so players never lose the effect
     do
         if CuraEqui.Persist and CuraEqui.Persist.Save then

@@ -300,6 +300,11 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     local afterH = math.max(0, math.min(100, beforeH + delta))
     S.hunger     = afterH
 
+    -- No force: only switches bucket or clears if needed. Won’t reset countdown.
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+        pcall(CuraEqui.Buffs.SyncSatedTimer, h, S) -- no force
+    end
+
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
         pcall(CuraEqui.Buffs.SyncAll, h, S)
     end
@@ -592,6 +597,10 @@ function CuraEqui._HungerTickBody()
                     :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, ginfo, mul,
                         totalDrain, math.floor(before), math.floor(after), remS))
             end
+        end
+
+        if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S) -- no force
         end
 
         -- consume this tick's distance so next tick doesn't double-count
