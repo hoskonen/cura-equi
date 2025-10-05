@@ -5,23 +5,25 @@ local U = CuraEqui.Utils or {}
 Utils = Utils or {}
 
 function U.GetPlayer()
-    -- your stable fallback first
-    local p = System.GetEntityByName and (System.GetEntityByName("Henry") or System.GetEntityByName("dude"))
-    if p then return p end
+    return System.GetEntityByName("Henry")
+        or System.GetEntityByName("dude")
+        or _G.player
+        or nil
+end
 
-    -- id-based fallbacks
-    if Game and Game.GetPlayerId then
-        local ok, pid = pcall(Game.GetPlayerId, Game); if ok then p = System.GetEntity(pid) end
-        if p then return p end
+-- Utils-ish helper (drop near top of Horse.lua or into Utils.lua if you prefer)
+function U.GetPlayerInventory()
+    local p = M.GetPlayer()
+    if not p then return nil end
+    -- common bindings
+    if p.inventory then return p.inventory end
+    if p.GetInventory then
+        local ok, inv = pcall(p.GetInventory, p)
+        if ok and inv then return inv end
     end
-    if g_localActorId then
-        p = System.GetEntity(g_localActorId); if p then return p end
-    end
-
-    -- last resort: whichever has player component
-    if System.GetEntitiesByClass then
-        local list = System.GetEntitiesByClass("Player") or {}
-        if #list > 0 then return list[1] end
+    if p.actor and p.actor.GetInventory then
+        local ok, inv = pcall(p.actor.GetInventory, p.actor)
+        if ok and inv then return inv end
     end
     return nil
 end
