@@ -1,57 +1,85 @@
+-- Scripts/CuraEqui/Utils.lua
+
+-- Root namespace for the mod
 CuraEqui = CuraEqui or {}
-local U = CuraEqui.Utils or {}
 
--- Scripts/CuraEqui/Utils.lua (or wherever your Utils live)
-Utils = Utils or {}
+-- One and only Utils table
+CuraEqui.Utils = CuraEqui.Utils or {}
+local M = CuraEqui.Utils -- local alias for this file only
 
-function U.GetPlayer()
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Player/entity helpers
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function M.GetPlayer()
+    -- Keep your usual resolution order; extend if needed.
     return System.GetEntityByName("Henry")
         or System.GetEntityByName("dude")
         or _G.player
         or nil
 end
 
--- Utils-ish helper (drop near top of Horse.lua or into Utils.lua if you prefer)
-function U.GetPlayerInventory()
-    local p = U.GetPlayer()
+function M.GetPlayerInventory()
+    local p = M.GetPlayer()
     if not p then return nil end
-    -- common bindings
+
+    -- common bindings across builds
     if p.inventory then return p.inventory end
+
     if p.GetInventory then
         local ok, inv = pcall(p.GetInventory, p)
         if ok and inv then return inv end
     end
+
     if p.actor and p.actor.GetInventory then
         local ok, inv = pcall(p.actor.GetInventory, p.actor)
         if ok and inv then return inv end
     end
+
     return nil
 end
 
-function U.clamp(x, lo, hi)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Logging helpers (optional but handy)
+-- ─────────────────────────────────────────────────────────────────────────────
+function M.Log(tag, fmt, ...)
+    System.LogAlways(("[CuraEqui][%s] " .. tostring(fmt)):format(tag, ...))
+end
+
+-- Tiny one-shot inspector while debugging inventory availability
+function M.LogInventoryIntrospection()
+    local inv = M.GetPlayerInventory()
+    System.LogAlways(("[CuraEqui][Inspect] inv=%s DeleteItem=%s DeleteItemOfClass=%s FindItem=%s")
+        :format(tostring(inv),
+            tostring(inv and inv.DeleteItem),
+            tostring(inv and inv.DeleteItemOfClass),
+            tostring(inv and inv.FindItem)))
+end
+
+function M.clamp(x, lo, hi)
     if x < lo then return lo end
     if x > hi then return hi end
     return x
 end
 
-function U.vlen2(a, b)
+function M.vlen2(a, b)
     if not (a and b) then return 0 end
     local dx, dy, dz = a.x - b.x, a.y - b.y, a.z - b.z
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 end
 
 -- Treat small numbers as seconds (≤60), larger as ms → seconds
-function CuraEqui.Utils.ms_to_s(v)
+function M.ms_to_s(v)
     local n = tonumber(v or 0) or 0
     if n <= 60 then return math.max(0.1, n) end
     return math.max(0.1, n / 1000.0)
 end
 
 -- Returns true only when enough time passed for this key.
--- Usage: if U.throttle("tick-fired", 10) then System.LogAlways("fired") end
+-- Usage: if M.throttle("tick-fired", 10) then System.LogAlways("fired") end
 do
     local _next = {} -- key → nextAllowedTime (seconds)
-    function CuraEqui.Utils.throttle(key, intervalSec)
+    function M.throttle(key, intervalSec)
         local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
         local t   = tonumber(intervalSec or 1) or 1
         local nxt = _next[key] or 0
@@ -62,7 +90,7 @@ do
         return false
     end
 end
-function U.hunger_label(hungerPct, satedUntil)
+function M.hunger_label(hungerPct, satedUntil)
     local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
     local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
     local names = HUD.hungerNames or {
@@ -124,7 +152,7 @@ do
     end
 
     -- Public: find all configured sources around a world position
-    function U.Drinking_FindAt(pos, radius)
+    function M.Drinking_FindAt(pos, radius)
         local cfg = (CuraEqui.Config and CuraEqui.Config.Drinking and CuraEqui.Config.Drinking.sources) or {}
         if not pos or not cfg or #cfg == 0 then return {} end
         local hits, seen = {}, {}
@@ -143,24 +171,21 @@ do
     end
 
     -- Convenience: around player / around entity
-    function U.Drinking_FindAroundPlayer(radius)
-        local p = U.GetPlayer and U.GetPlayer() or nil
+    function M.Drinking_FindAroundPlayer(radius)
+        local p = M.GetPlayer and M.GetPlayer() or nil
         local pos = p and p.GetWorldPos and p:GetWorldPos() or nil
         if not pos then return {} end
-        return U.Drinking_FindAt(pos, tonumber(radius) or 12.0)
+        return M.Drinking_FindAt(pos, tonumber(radius) or 12.0)
     end
 
-    function U.Drinking_FindAroundEntity(ent, radius)
+    function M.Drinking_FindAroundEntity(ent, radius)
         local pos = _posOf(ent); if not pos then return {} end
-        return U.Drinking_FindAt(pos, tonumber(radius) or 12.0)
+        return M.Drinking_FindAt(pos, tonumber(radius) or 12.0)
     end
 
     -- Boolean helper for gameplay code
-    function U.Drinking_IsNear(pos, radius)
-        local t = U.Drinking_FindAt(pos, radius)
+    function M.Drinking_IsNear(pos, radius)
+        local t = M.Drinking_FindAt(pos, radius)
         return t and #t > 0
     end
 end
-
-
-CuraEqui.Utils = U

@@ -430,7 +430,6 @@ end
 
 -- Vanilla-style: simulate feeding on close (no removal yet)
 function Horse:OnInventoryClosed()
-    --local U       = CuraEqui.Utils or {}
     -- 1) Snapshot selection FIRST, then clear the field
     local picks   = self._feedSel or {}
     self._feedSel = nil
@@ -447,11 +446,6 @@ function Horse:OnInventoryClosed()
             return
         end
     end
-
-    -- local player = U.GetPlayer();
-    -- System.LogAlways(("[CuraEqui][DEBUG] → player=" .. tostring(player)))
-    -- local inv = player.inventory
-    -- System.LogAlways(("[CuraEqui][DEBUG] → inv" .. tostring(inv)))
 
     -- Partition selection (quality disabled): just keep items with qty > 0
     local good = picks
