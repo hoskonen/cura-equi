@@ -180,7 +180,7 @@ local function _plan_remove(picks, needPoints, over)
                 if not rec then
                     rec = {
                         wuid    = info._wuid,
-                        classId = info.classId, -- <-- add this here (Position 1)
+                        classId = info.classId,
                         units   = 0,
                         label   = label,
                         per     = per,
@@ -747,72 +747,93 @@ function Horse:OnInventoryClosed()
 
     FeedLog("F: before REMOVAL GUARD (FCFG.removeItems)")
 
-    -- ===== Removal guard =====
+    -- ===== Removal guard (exact class delete, then fallback) =====
     if FCFG.removeItems then
-        FeedLog("G: inside REMOVAL GUARD")
-
-        local U   = CuraEqui.Utils or {}
-        local inv = (U.GetPlayerInventory and U.GetPlayerInventory()) or nil
+        -- 1) get the inventory the same way the working branch does
+        local inv = (player and player.inventory) or nil
         if not inv then
             System.LogAlways("[CuraEqui][Feed][WARN] inventory not available; keeping items.")
             return
         end
 
-        System.LogAlways(("[CuraEqui][Feed] inv=%s DeleteItem=%s FindItem=%s")
-            :format(tostring(inv),
-                tostring(inv and inv.DeleteItem),
-                tostring(inv and inv.FindItem)))
+        -- 2) aggregate by classId (make sure the plan records carry classId)
+        local byClass = {} -- classId -> total units
+        for _, rec in pairs(removePlan or {}) do
+            local n   = tonumber(rec.units) or 0
+            local cid = rec.classId or rec.class or rec.cid
+            if n > 0 and cid then
+                byClass[cid] = (byClass[cid] or 0) + n
+            end
+        end
 
-        -- Delete exactly what we planned, by WUID (most reliable)
         local removed, failed = 0, 0
         local xfer = {} -- classId -> actually removed (for transfer toasts)
 
-        for _, rec in pairs(removePlan or {}) do
-            local n   = math.max(0, math.floor(tonumber(rec.units) or 0))
-            local w   = rec.wuid
-            local cid = tostring(rec.cid or rec.classId or rec.class or "")
-            if n > 0 and w then
-                -- Some builds ignore the "amount" param. Be safe: delete per unit.
-                local took = 0
-                for i = 1, n do
-                    local ok, ret = pcall(inv.DeleteItem, inv, w) -- delete one unit of this WUID
-                    if ok and ret ~= false then
-                        took = took + 1
-                    else
-                        break
+        -- 3) prefer DeleteItemOfClass (your API), normalize its return
+        for cid, need in pairs(byClass) do
+            local took = 0
+            if inv.DeleteItemOfClass then
+                local ok, ret = pcall(inv.DeleteItemOfClass, inv, cid, need)
+                if ok then
+                    if type(ret) == "number" then
+                        took = ret
+                    elseif ret ~= false then
+                        took = need
                     end
                 end
-                if took > 0 then
-                    removed = removed + took
-                    if cid ~= "" then xfer[cid] = (xfer[cid] or 0) + took end
+            end
+
+            -- 4) fallback: per-item deletion if class call wasn’t available or short
+            if took < need then
+                local want = need - took
+                -- walk planned WUIDs for this class to delete the remainder
+                for _, rec in pairs(removePlan or {}) do
+                    if want <= 0 then break end
+                    if (rec.classId or rec.class or rec.cid) == cid and rec.wuid and (rec.units or 0) > 0 then
+                        local step = math.min(rec.units, want)
+                        for i = 1, step do
+                            local okD, r = pcall(inv.DeleteItem, inv, rec.wuid)
+                            if okD and r ~= false then
+                                took = took + 1
+                                want = want - 1
+                            else
+                                break
+                            end
+                        end
+                    end
                 end
-                if took < n then
-                    failed = failed + (n - took)
-                end
+            end
+
+            if took > 0 then
+                removed   = removed + took
+                xfer[cid] = (xfer[cid] or 0) + took
+            end
+            if took < need then
+                failed = failed + (need - took)
             end
         end
 
         if failed > 0 then
             System.LogAlways(("[CuraEqui][Feed][WARN] Remove: %d ok, %d fail via inventory"):format(removed, failed))
         else
-            FeedLog("Remove: %d unit(s) ok via inventory", removed)
+            System.LogAlways(("[CuraEqui][Feed] Remove: %d unit(s) ok via inventory"):format(removed))
         end
 
-        -- Batched “items transfer” toasts (largest first) — purely cosmetic
+        -- optional: vanilla-style transfer toasts (largest first)
         local UI_F = ((CuraEqui.Config or {}).UI or {}).feed or {}
         local NT   = UI_F.notif or {}
         if (NT.showTransfers ~= false) and next(xfer) and Game and Game.ShowItemsTransfer then
             local list = {}
-            for cid, n in pairs(xfer) do list[#list + 1] = { cid = cid, n = tonumber(n) or 0 } end
+            for cid, n in pairs(xfer) do list[#list + 1] = { cid = tostring(cid), n = tonumber(n) or 0 } end
             table.sort(list, function(a, b) return a.n > b.n end)
             local maxN = NT.maxItems or 8
             for i = 1, math.min(#list, maxN) do
                 local it = list[i]
-                -- Negative amount means removal (matches base game convention)
-                pcall(Game.ShowItemsTransfer, it.cid, -it.n)
+                pcall(Game.ShowItemsTransfer, it.cid, -it.n) -- negative → removal
             end
         end
     end
+
 
     -- if FCFG.removeItems then
     --     -- =================== HARDENED DELETE BLOCK (instrumented) ===================
