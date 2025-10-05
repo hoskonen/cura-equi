@@ -13,7 +13,7 @@ end
 
 -- Utils-ish helper (drop near top of Horse.lua or into Utils.lua if you prefer)
 function U.GetPlayerInventory()
-    local p = M.GetPlayer()
+    local p = U.GetPlayer()
     if not p then return nil end
     -- common bindings
     if p.inventory then return p.inventory end
