@@ -11,6 +11,10 @@ local function FeedLog(fmt, ...)
     CuraEqui.Log("Feed", fmt, ...)
 end
 
+local function _count_pairs(t)
+    local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n
+end
+
 local function _feed_toast_cfg()
     local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
     local lane = F.toastLane or "infotext"
@@ -62,10 +66,11 @@ end
 local function _per_unit_from_info(info)
     local label  = info.uiName or info.dbName or "food"
 
+    -- 1) exact class match from DietData (tolerant keys)
     local DD     = CuraEqui.DietData or CuraEqui.Diet or {}
     local byGuid = DD.byGuid or DD.ByGuid or {}
-
     local gid    = info.classId or info.class or info.cid
+
     if gid then
         local g1 = tostring(gid)
         local g2 = g1:lower()
@@ -73,7 +78,6 @@ local function _per_unit_from_info(info)
 
         local rec = byGuid[g1] or byGuid[g2] or byGuid[g3]
         if not rec and byGuid.guid then
-            -- some tables are shaped like byGuid.guid[<id>]
             rec = byGuid.guid[g1] or byGuid.guid[g2] or byGuid.guid[g3]
         end
 
@@ -110,7 +114,6 @@ local function _per_unit_from_info(info)
 
     return 0, label
 end
-
 
 local function _sated_cfg()
     local F    = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
@@ -533,11 +536,37 @@ function Horse:OnInventoryClosed()
         end
     end
 
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D and D.feedTrace then
+            for i, it in ipairs(good or {}) do
+                local per, label = _per_unit_from_info(it)
+                System.LogAlways(("[CuraEqui][Feed] pick#%d class=%s qty=%s → per=%s label=%s")
+                    :format(i, tostring(it.classId or it.class or "-"),
+                        tostring(it.qty or 0),
+                        tostring(per), tostring(label)))
+            end
+        end
+    end
 
     local removePlan, used, selectedUnits, consumedUnits =
         _plan_remove(good, needPoints, FCFG.overfeedPolicy or "allow")
 
-    FeedLog(("D: plan built entries=%d"):format(#removePlan or 0))
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if D and D.feedTrace then
+        local n = 0
+        for _, rec in pairs(removePlan or {}) do
+            n = n + 1
+            System.LogAlways(("[CuraEqui][Feed] Plan#%d cid=%s wuid=%s units=%s per=%s")
+                :format(n,
+                    tostring(rec.classId or rec.class or rec.cid or "-"),
+                    tostring(rec.wuid or "-"),
+                    tostring(rec.units or 0),
+                    tostring(rec.per or "-")))
+        end
+    end
+
+    FeedLog(("D: plan built entries=%d"):format(_count_pairs(removePlan)))
 
     -- Nothing consumed on this close
     if (used or 0) <= 0 then
@@ -557,33 +586,37 @@ function Horse:OnInventoryClosed()
     -- before applying feed effects
     local beforeH = math.floor(tonumber(S.hunger or 0) or 0)
 
+    FeedLog("D: before _apply_feed")
     -- Apply feed effects (+ immediate HUD sync)
     _apply_feed(S, mode, used)
 
+    FeedLog("D: after _apply_feed")
+
     -- Clamp internal sated to the bucket we actually show
-    do
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-        local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+    -- do
+    --     local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    --     local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
-        if CuraEqui.Buffs and CuraEqui.Buffs.DebugPickSatedBucket then
-            local bucketSec, bucketUuid = CuraEqui.Buffs.DebugPickSatedBucket(rem) -- returns sec, uuid (seconds!)
-            if bucketSec and bucketSec > 0 then
-                S.satedUntil = now + bucketSec
-                -- force visual timer to match immediately
-                pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
-                -- and use bucketSec for any user-facing "Sated Xs" text
-                rem = bucketSec
-            end
-        end
+    --     if CuraEqui.Buffs and CuraEqui.Buffs.DebugPickSatedBucket then
+    --         local bucketSec, bucketUuid = CuraEqui.Buffs.DebugPickSatedBucket(rem) -- returns sec, uuid (seconds!)
+    --         if bucketSec and bucketSec > 0 then
+    --             S.satedUntil = now + bucketSec
+    --             -- force visual timer to match immediately
+    --             pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
+    --             -- and use bucketSec for any user-facing "Sated Xs" text
+    --             rem = bucketSec
+    --         end
+    --     end
 
-        -- optional dev line (seconds only)
-        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-        if D and D.feedTrace then
-            System.LogAlways(("[CuraEqui][Sated] used=%d → bucket=%ds (internal clamped)")
-                :format(tonumber(used) or 0, tonumber(rem) or 0))
-        end
-    end
+    --     -- optional dev line (seconds only)
+    --     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    --     if D and D.feedTrace then
+    --         System.LogAlways(("[CuraEqui][Sated] used=%d → bucket=%ds (internal clamped)")
+    --             :format(tonumber(used) or 0, tonumber(rem) or 0))
+    --     end
+    -- end
 
+    FeedLog("D: after clamp")
 
     -- player feedback of succesfully eaten food
     do
@@ -607,33 +640,38 @@ function Horse:OnInventoryClosed()
         )
     end
 
+    FeedLog("D: after apply log")
+
     -- Player-facing Sated timer buff (force refresh after feeding)
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
         pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
     end
 
-    -- ---- SATED CALC DEBUG (after _apply_feed updated S.satedUntil) ----
-    do
+    -- ---- SATED CALC DEBUG (safe) ----
+    pcall(function()
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-        if D and D.feedTrace then
-            local now         = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-            local H           = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
-            local per         = tonumber(H.satedSecPerNutrition or H.satedSecPerPoint or 6) or 6
-            local minS        = tonumber(H.satedMinSec or 0) or 0
-            local maxS        = tonumber(H.satedCapSec or H.satedMaxSec or 600) or 600
+        if not (D and D.feedTrace) then return end
 
-            local remS        = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-            local bSec, bUuid = 0, nil
-            if CuraEqui.Buffs and CuraEqui.Buffs.DebugPickSatedBucket then
-                bSec, bUuid = CuraEqui.Buffs.DebugPickSatedBucket(remS) -- returns (sec, uuid)
-            end
+        local now         = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local H           = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
+        local per         = tonumber(H.satedSecPerNutrition or H.satedSecPerPoint or 6) or 6
+        local minS        = tonumber(H.satedMinSec or 0) or 0
+        local maxS        = tonumber(H.satedCapSec or H.satedMaxSec or 600) or 600
+        local remS        = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
-            System.LogAlways(("[CuraEqui][Sated] used=%d pt→sec=%.0f min=%ds max=%ds rem=%.0fs → bucket=%ds uuid=%s")
-                :format(used or 0, per, minS, maxS, remS, bSec,
-                    bUuid and (#bUuid > 8 and (bUuid:sub(1, 8) .. "…") or bUuid) or "-"))
+        local bSec, bUuid = 0, "-"
+        if CuraEqui.Effects and CuraEqui.Effects.DebugPickSatedBucket then
+            local s, u = CuraEqui.Effects.DebugPickSatedBucket(remS)
+            if type(s) == "number" and s > 0 then bSec = s end
+            if type(u) == "string" and #u > 0 then bUuid = (#u > 8) and (u:sub(1, 8) .. "…") or u end
         end
-    end
 
+        System.LogAlways(("[CuraEqui][Sated] used=%d pt→sec=%.0f min=%ds max=%ds rem=%.0fs → bucket=%ds uuid=%s")
+            :format(tonumber(used) or 0, per, minS, maxS, remS, bSec, bUuid))
+    end)
+
+
+    FeedLog("D: after sated calc debug")
     -- Persist immediately on successful feed so players never lose the effect
     do
         if CuraEqui.Persist and CuraEqui.Persist.Save then
@@ -644,6 +682,8 @@ function Horse:OnInventoryClosed()
             end
         end
     end
+
+    FeedLog("D: after persist")
 
     -- after successful feed - reset grazing cap
     local HC = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
@@ -680,76 +720,124 @@ function Horse:OnInventoryClosed()
 
     FeedLog("F: before REMOVAL GUARD (FCFG.removeItems)")
     if FCFG.removeItems then
-        FeedLog("G: inside REMOVAL GUARD")
-        local inv = (player and player.inventory) or nil
-        if not inv then
-            System.LogAlways("[CuraEqui][Feed][WARN] inventory not available; keeping items.")
-            return
-        end
+        -- =================== HARDENED DELETE BLOCK (instrumented) ===================
+        do
+            local FCFG = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
 
-        -- aggregate planned removals by classId
-        local byClass = {} -- classId -> total units
-        for _, rec in pairs(removePlan or {}) do
-            local n   = tonumber(rec.units) or 0
-            local cid = rec.classId or rec.class or rec.cid
-            if n > 0 and cid then
-                byClass[cid] = (byClass[cid] or 0) + n
-            end
-        end
+            System.LogAlways(("[CuraEqui][Feed] DEL:guard removeItems=%s"):format(tostring(FCFG.removeItems)))
+            if not FCFG.removeItems then
+                System.LogAlways("[CuraEqui][Feed] DEL:guard skipped (removeItems=false)")
+            else
+                -- resolve inventory from multiple known paths
+                local player = (CuraEqui.Utils and CuraEqui.Utils.GetPlayer and CuraEqui.Utils.GetPlayer()) or nil
+                local inv = (player and (player.inventory or (player.GetInventory and player:GetInventory()))) or nil
 
-        local removed, failed = 0, 0
-        local xfer = {} -- classId -> actually removed
+                local function _has(obj, name)
+                    return obj and (type(obj[name]) == "function")
+                end
 
-        for cid, need in pairs(byClass) do
-            local took = 0
-            if inv.DeleteItemOfClass then
-                local ok, ret = pcall(inv.DeleteItemOfClass, inv, cid, need)
-                -- normalize return: some builds return number, others bool
-                if ok then
-                    if type(ret) == "number" then
-                        took = ret
-                    elseif ret ~= false then
-                        took = need
+                if not inv then
+                    System.LogAlways("[CuraEqui][Feed] DEL:inv=nil (no inventory) → keeping items")
+                else
+                    System.LogAlways(("[CuraEqui][Feed] DEL:inv=ok methods: DeleteItem=%s DeleteItemOfClass=%s FindItem=%s")
+                        :format(_has(inv, "DeleteItem"), _has(inv, "DeleteItemOfClass"), _has(inv, "FindItem")))
+
+                    local removed, failed = 0, 0
+                    local xfer = {}             -- cid -> actually removed
+                    local remainingByClass = {} -- cid -> leftover after WUID pass
+
+                    -- ---------- Pass #1: WUID deletion (two signatures) ----------
+                    for idx, rec in pairs(removePlan or {}) do
+                        local need = tonumber(rec.units or 0) or 0
+                        local took = 0
+                        local cid  = tostring(rec.classId or rec.class or rec.cid or "")
+                        local wuid = rec.wuid
+
+                        if need > 0 and wuid and _has(inv, "DeleteItem") then
+                            -- try with amount
+                            local ok1, ret1 = pcall(inv.DeleteItem, inv, wuid, need)
+                            System.LogAlways(("[CuraEqui][Feed] DEL#%s wuid=%s try(amount=%d) ok=%s ret=%s")
+                                :format(idx, tostring(wuid), need, tostring(ok1), tostring(ret1)))
+                            if ok1 and ret1 ~= false then
+                                took = need
+                            else
+                                -- try without amount (some builds expect just handle)
+                                local ok2, ret2 = pcall(inv.DeleteItem, inv, wuid)
+                                System.LogAlways(("[CuraEqui][Feed] DEL#%s wuid=%s try(no-amount) ok=%s ret=%s")
+                                    :format(idx, tostring(wuid), tostring(ok2), tostring(ret2)))
+                                if ok2 and ret2 ~= false then took = 1 end
+                            end
+                        end
+
+                        local left = math.max(0, need - took)
+                        if left > 0 and cid ~= "" then
+                            remainingByClass[cid] = (remainingByClass[cid] or 0) + left
+                        end
+                        if took > 0 then
+                            removed = removed + took
+                            if cid ~= "" then xfer[cid] = (xfer[cid] or 0) + took end
+                        end
+                        if took < need then
+                            failed = failed + (need - took)
+                        end
+                    end
+
+                    -- ---------- Pass #2: class deletion for leftovers ----------
+                    for cid, need in pairs(remainingByClass) do
+                        local took = 0
+                        if _has(inv, "DeleteItemOfClass") then
+                            local okC, retC = pcall(inv.DeleteItemOfClass, inv, cid, need)
+                            System.LogAlways(("[CuraEqui][Feed] DEL[class] cid=%s need=%d ok=%s ret=%s")
+                                :format(cid, need, tostring(okC), tostring(retC)))
+                            if okC then
+                                if type(retC) == "number" then
+                                    took = math.min(math.max(retC, 0), need)
+                                elseif retC ~= false then
+                                    took = need
+                                end
+                            end
+                        end
+
+                        -- Optional last resort: find + delete one-by-one if FindItem exists
+                        if took < need and _has(inv, "FindItem") and _has(inv, "DeleteItem") then
+                            for i = 1, (need - took) do
+                                local okF, w = pcall(inv.FindItem, inv, cid)
+                                if not okF or not w then break end
+                                local okD, r = pcall(inv.DeleteItem, inv, w)
+                                System.LogAlways(("[CuraEqui][Feed] DEL[class-fallback] cid=%s step=%d ok=%s ret=%s")
+                                    :format(cid, i, tostring(okD), tostring(r)))
+                                if okD and r ~= false then took = took + 1 else break end
+                            end
+                        end
+
+                        if took > 0 then
+                            removed   = removed + took
+                            xfer[cid] = (xfer[cid] or 0) + took
+                        end
+                        if took < need then
+                            failed = failed + (need - took)
+                        end
+                    end
+
+                    System.LogAlways(("[CuraEqui][Feed] DEL:result ok=%d fail=%d"):format(removed, failed))
+
+                    -- ---------- Transfer toasts (optional) ----------
+                    local UI_F = ((CuraEqui.Config or {}).UI or {}).feed or {}
+                    local NT   = UI_F.notif or {}
+                    if (NT.showTransfers ~= false) and next(xfer) and Game and type(Game.ShowItemsTransfer) == "function" then
+                        local list = {}
+                        for cid, n in pairs(xfer) do list[#list + 1] = { cid = cid, n = tonumber(n) or 0 } end
+                        table.sort(list, function(a, b) return a.n > b.n end)
+                        local maxN = NT.maxItems or 8
+                        for i = 1, math.min(#list, maxN) do
+                            local it = list[i]
+                            pcall(Game.ShowItemsTransfer, it.cid, -it.n)
+                        end
                     end
                 end
-            else
-                -- fallback: delete one-by-one
-                for i = 1, need do
-                    local okF, w = pcall(inv.FindItem, inv, cid)
-                    if not okF or not w then break end
-                    local okD, r = pcall(inv.DeleteItem, inv, w)
-                    if okD and r ~= false then took = took + 1 else break end
-                end
-            end
-
-            if took > 0 then
-                removed   = removed + took
-                xfer[cid] = (xfer[cid] or 0) + took
-            end
-            if took < need then
-                failed = failed + (need - took)
             end
         end
-
-        if failed > 0 then
-            System.LogAlways(("[CuraEqui][Feed][WARN] Remove: %d ok, %d fail via inventory"):format(removed, failed))
-        else
-            FeedLog("Remove: %d unit(s) ok via inventory", removed)
-        end
-
-        -- Batched vanilla-style transfer toasts (largest first)
-        local UI_F = ((CuraEqui.Config or {}).UI or {}).feed or {}
-        local NT   = UI_F.notif or {}
-        if (NT.showTransfers ~= false) and next(xfer) then
-            local list = {}
-            for cid, n in pairs(xfer) do list[#list + 1] = { cid = tostring(cid), n = tonumber(n) or 0 } end
-            table.sort(list, function(a, b) return a.n > b.n end)
-            local maxN = NT.maxItems or 8
-            for i = 1, math.min(#list, maxN) do
-                local it = list[i]
-                pcall(Game.ShowItemsTransfer, it.cid, -it.n) -- negative → removal
-            end
-        end
+        -- ================= END HARDENED DELETE BLOCK (instrumented) ================
     end
 end
 
