@@ -105,6 +105,20 @@ function M.SyncPlayerStatus(horseEnt, S)
         end
     end
 
+    -- Extra safety: if a sated timer buff was applied and hasn't been cleared yet,
+    -- keep status tiers hidden until it’s gone (prevents OK appearing under the timer icon)
+    do
+        if M._lastSatedUuid then
+            -- We assume SyncSatedTimer will clear this when the internal timer elapses.
+            -- With the clamp sync in Horse.lua, internal/end-of-buff now align.
+            if M._lastPlayerUuid then
+                CuraEqui.Effects.ClearPlayerStatus()
+                M._lastPlayerUuid = nil
+            end
+            return
+        end
+    end
+
     local hval = tonumber(S.hunger or 0) or 0
     local tier = _pickTierName(hval, S.satedUntil)
 

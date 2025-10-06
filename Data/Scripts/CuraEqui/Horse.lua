@@ -567,28 +567,39 @@ function Horse:OnInventoryClosed()
     -- Apply feed effects (+ immediate HUD sync)
     _apply_feed(S, mode, used)
 
-    -- Round 'rem' up to the next visible bucket and clamp internal sated
+    -- Round 'rem' up to the next visible bucket (from Buffs.SATED_TIERS) and clamp internal sated
+    -- Why? Because we are using fixed durations from the buff.xml so we clamp to the nearest buff
     do
         local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
         local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+        local BL  = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
 
-        local B   = CuraEqui.Config and CuraEqui.Config.SatedBuckets
-        if B and B.enabled and B.list then
-            -- find the next >= rem
+        if BL and #BL > 0 then
+            -- tiers are defined as {sec=500},{400},{300},{200},{100} (desc)
             local target = nil
-            for i = 1, #B.list do
-                local sec = tonumber(B.list[i].sec) or 0
+            for i = #BL, 1, -1 do
+                -- iterate ascending so we can "ceil" to the first >= rem
+                local sec = tonumber(BL[i].sec) or 0
                 if sec >= rem then
-                    target = sec; break
+                    target = sec
+                    break
                 end
             end
-            -- if we were above max, stick to the largest bucket
-            if not target and #B.list > 0 then
-                target = tonumber(B.list[#B.list].sec) or rem
+            -- if rem above max bucket, snap to largest
+            if not target then
+                target = tonumber(BL[1].sec) or math.max(0, rem)
             end
+
             if target and target > 0 then
-                S.satedUntil = now + target
-                -- keep your timed buff sync if you’ve got one:
+                local buffDur = math.floor(target + 0.5)
+                S.satedUntil  = math.floor(now + buffDur + 0.5)
+
+                -- optional neat one-liner in logs
+                if _log_sated_summary then
+                    _log_sated_summary(used, rem, buffDur, buffDur)
+                end
+
+                -- refresh visible timer to this exact bucket
                 pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
             end
         end
@@ -606,7 +617,7 @@ function Horse:OnInventoryClosed()
     end
 
     if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
-        System.LogAlways(("[CuraEqui][Feed] old Apply: mode=%s used=%d hunger=%d→%d satedNow=%.0fs")
+        System.LogAlways(("[CuraEqui][Feed] Apply: mode=%s used=%d hunger=%d→%d satedNow=%.0fs")
             :format(
                 mode, used, beforeH,
                 math.floor(tonumber(S.hunger or 0) or 0),

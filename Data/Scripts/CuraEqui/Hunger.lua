@@ -770,3 +770,95 @@ function CuraEqui._ApplyNutrition(diet, label)
     )
     return true
 end
+
+-- =========================
+-- Pause API Probe Utilities
+-- =========================
+CuraEqui = CuraEqui or {}
+CuraEqui.Debug = CuraEqui.Debug or {}
+do
+    local PROBE = { timer = nil, last = nil, startedAt = nil }
+
+    local function now_s()
+        return (os.clock and os.clock()) or 0
+    end
+    local function is_paused()
+        return (Calendar and Calendar.IsWorldTimePaused and Calendar.IsWorldTimePaused()) or false
+    end
+    local function ghour()
+        return (CuraEqui._get_player_hour and CuraEqui._get_player_hour()) or -1
+    end
+
+    local function log(fmt, ...)
+        System.LogAlways(("[CE][PauseProbe] " .. fmt):format(...))
+    end
+
+    local function tick()
+        local paused = is_paused()
+        if PROBE.last == nil then
+            PROBE.last = paused
+            log("init paused=%s t=%.2fs hour=%.2f", tostring(paused), now_s() - (PROBE.startedAt or now_s()), ghour())
+        elseif paused ~= PROBE.last then
+            PROBE.last = paused
+            log("flip paused=%s t=%.2fs hour=%.2f", tostring(paused), now_s() - (PROBE.startedAt or now_s()), ghour())
+        end
+        -- rearm
+        PROBE.timer = Script.SetTimerForFunction(200, "CuraEqui_PauseProbeTick")
+    end
+
+    _G["CuraEqui_PauseProbeTick"] = tick
+
+    function CuraEqui.Debug.StartPauseProbe()
+        if PROBE.timer then Script.KillTimer(PROBE.timer) end
+        PROBE.startedAt = now_s()
+        PROBE.last = nil
+        PROBE.timer = Script.SetTimerForFunction(10, "CuraEqui_PauseProbeTick")
+        log("started")
+    end
+
+    function CuraEqui.Debug.StopPauseProbe()
+        if PROBE.timer then Script.KillTimer(PROBE.timer) end
+        PROBE.timer = nil
+        log("stopped")
+    end
+
+    -- =========================
+    -- 10s Sated Mini-Test
+    -- =========================
+    -- Forces a 10s sated timer via your own buff logic.
+    -- Steps to test:
+    --  1) Call StartPauseProbe()
+    --  2) Call StartSatedMiniTest(10)
+    --  3) After ~3s, open inventory for ~5s real-time
+    --  4) Close inventory: if the UI timer still shows ~7s (not ~2s), engine BasicTimed pauses with world time.
+    function CuraEqui.Debug.StartSatedMiniTest(sec)
+        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        if not (h and S) then
+            log("no horse/state; cannot run mini-test")
+            return
+        end
+
+        local dur = tonumber(sec or 10) or 10
+        if dur < 1 then dur = 1 end
+
+        local tnow     = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+
+        -- Set both fields so your current code paths work:
+        S._satedRemain = dur
+        S.satedUntil   = math.floor(tnow + dur + 0.5)
+
+        -- Force re-apply the sated timed buff (uses your BuffLogic)
+        local ok       = pcall(function()
+            if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+                CuraEqui.Buffs.SyncSatedTimer(h, S, { cause = "probe", force = true })
+            end
+            if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+                CuraEqui.Buffs.SyncAll(h, S)
+            end
+        end)
+
+        log("mini-test applied for %ds (ok=%s). Watch the UI timer, then open inventory for a few seconds.",
+            dur, tostring(ok))
+    end
+end
