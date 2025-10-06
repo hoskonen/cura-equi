@@ -11,13 +11,31 @@ local function FeedLog(fmt, ...)
     CuraEqui.Log("Feed", fmt, ...)
 end
 
+-- Pretty summary for feed → sated timers, showing clamp if any.
 local function _log_sated_summary(used, rawSec, bucketSec, buffSec)
     -- used: total nutrition consumed this feed
-    -- rawSec: used * satedSecPerNutrition (pre-clamp)
-    -- bucketSec: what we decided to show (rounded / clamped), seconds
-    -- buffSec: the timed buff you actually applied (seconds)
-    System.LogAlways(("[CuraEqui][Feed] Ate %d nutrition → Sated %ds (applied buff=%ds)")
-        :format(tonumber(used) or 0, tonumber(bucketSec or rawSec or 0) or 0, tonumber(buffSec or bucketSec or 0) or 0))
+    -- rawSec: pre-clamp remain (post-add, pre-bucket), seconds
+    -- bucketSec: chosen bucket (what UI shows as full tier), seconds
+    -- buffSec: actual timed buff duration applied (usually = bucketSec), seconds
+
+    local u         = math.floor(tonumber(used) or 0)
+    local raw       = math.max(0, tonumber(rawSec or 0) or 0)
+    local buck      = math.max(0, tonumber(bucketSec or 0) or 0)
+    local buff      = math.max(0, tonumber(buffSec or bucketSec or 0) or 0)
+
+    -- Round to readable ints for logging
+    local rawI      = math.floor(raw + 0.5)
+    local buckI     = math.floor(buck + 0.5)
+    local buffI     = math.floor(buff + 0.5)
+
+    local clampPart = ""
+    -- Only show the clamp arrow when bucket differs from raw by ~0.5s or more
+    if buckI ~= rawI and buckI > 0 and rawI > 0 then
+        clampPart = (" (%ds \226\134\146 %ds)"):format(rawI, buckI) -- "87s → 100s"
+    end
+
+    System.LogAlways(("[CuraEqui][Feed] Ate %d nutrition \226\134\146 Sated %ds%s (applied buff=%ds)")
+        :format(u, buckI, clampPart, buffI))
 end
 
 local function _feed_toast_cfg()
