@@ -18,7 +18,7 @@ CuraEqui.DietData = {
         ["2264f217-590e-4c0f-a4c6-f50c6532b9f6"] = { token = "apple", nutrition = 6 },
         ["295c54f8-76a3-42fa-8fe1-8f1ecb63576b"] = { token = "applecooked", nutrition = 9 },
         ["02d9c556-6c40-4e5e-abab-48b2acc7287a"] = { token = "appledried", nutrition = 9 },
-        ["d2ffc509-509f-4db0-81b6-ad5311231e10"] = { token = "apple_story", nutrition = 4 }, -- tiny nibble
+        ["d2ffc509-509f-4db0-81b6-ad5311231e10"] = { token = "apple_story", nutrition = 4 },
         ["2eeb7bf7-f0ac-4c46-9468-97c2f76cb254"] = { token = "pear", nutrition = 6 },
         ["f0c9f56f-cd0f-4973-bfb5-3cea3e756bcc"] = { token = "pearcooked", nutrition = 9 },
         ["f2ee05db-430c-4505-8b39-ce658fb4bb74"] = { token = "peardried", nutrition = 9 },
