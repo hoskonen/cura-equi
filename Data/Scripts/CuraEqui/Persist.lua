@@ -37,6 +37,7 @@ function P.Load()
     if hunger then hunger = math.max(0, math.min(100, hunger)) end
 
     local now = _now()
+    local minResume = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.satedResumeMinSec) or 0
     local satedUntil = 0
 
     if tonumber(t.version or 1) >= 2 then
@@ -44,6 +45,7 @@ function P.Load()
         local rem = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
         -- sanity clamp: >24h remaining is likely corrupt/old → clamp to 0
         if rem > 24 * 3600 then rem = 0 end
+        if rem < minResume then rem = 0 end
         satedUntil = (rem > 0) and (now + rem) or 0
     else
         -- V1 migration path: we stored absolute using a process clock.
@@ -52,6 +54,7 @@ function P.Load()
         local saved = tonumber(t.savedAt or 0) or 0
         local rem   = math.max(0, abs - saved)      -- intended remaining at save
         if rem > 24 * 3600 then rem = 0 end         -- guard nonsense
+        if rem < minResume then rem = 0 end
         satedUntil = (rem > 0) and (now + rem) or 0 -- rebase to current clock
     end
 
@@ -74,12 +77,14 @@ function P.Save(hunger, satedUntil)
     local rec = {
         version        = P._ver,
         hunger         = math.max(0, math.min(100, tonumber(hunger or 0) or 0)),
-        satedRemainSec = rem,  -- <-- store remaining, not absolute
+        satedRemainSec = rem, -- <-- store remaining, not absolute
         savedAt        = now,
     }
-    local ok = pcall(function() if _db.Set then
+    local ok = pcall(function()
+        if _db.Set then
             _db:Set(P._localKey, rec); return true
-        end end)
+        end
+    end)
     if not ok then
         System.LogAlways("[CuraEqui][Persist] Save failed (DB.Set missing?)")
         return false

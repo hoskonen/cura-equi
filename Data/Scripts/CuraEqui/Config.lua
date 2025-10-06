@@ -47,6 +47,7 @@ CuraEqui.Config = {
         satedDrainMul            = 0.75,
         satedSecPerNutrition     = 5, -- x per nutrition
         satedCapSec              = 600,
+        satedResumeMinSec        = 45,
         -- Sated feeding policy: “block whenever sated is active, set satedBlockIfRemainingSec = 1 or if you want a softer rule (“block only if ≥ 10 min left”), set 600.
         satedHardBlock           = true,                      -- if true, block feeding while plenty of sated time remains
         satedBlockIfRemainingSec = 1,                         -- threshold in seconds; 0 disables blocking (used only if satedHardBlock=true)-- 10 min max

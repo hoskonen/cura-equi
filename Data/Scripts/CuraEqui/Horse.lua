@@ -632,8 +632,10 @@ function Horse:OnInventoryClosed()
         if CuraEqui.Persist and CuraEqui.Persist.Save then
             CuraEqui.Persist.Save(S.hunger, S.satedUntil)
             if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-                System.LogAlways(("[CuraEqui][Persist] Saved (feed) hunger=%d sated=%s")
-                    :format(math.floor(tonumber(S.hunger or 0) or 0), tostring(S.satedUntil)))
+                local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                local h   = math.floor(tonumber(S.hunger or 0) or 0)
+                local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+                System.LogAlways(("[CuraEqui][Persist] Saved (feed) hunger=%d satedRemain=%.0f"):format(h, rem))
             end
         end
     end
