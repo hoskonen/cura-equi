@@ -19,7 +19,8 @@ do
 end
 
 local function _now()
-    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    return (CuraEqui and CuraEqui.Now and CuraEqui.Now())
+        or ((Script and Script.GetTime and Script.GetTime()) or os.clock())
 end
 
 -- Load returns (hunger:number|nil, satedUntil:number|nil)

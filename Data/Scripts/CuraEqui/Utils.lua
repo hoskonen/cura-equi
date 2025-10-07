@@ -8,6 +8,20 @@ CuraEqui.Utils = CuraEqui.Utils or {}
 local M = CuraEqui.Utils -- local alias for this file only
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Time
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- One gameplay clock for everyone
+CuraEqui = CuraEqui or {}
+CuraEqui.Now = CuraEqui.Now or function()
+    if GetCurrTime then return GetCurrTime() end
+    if System and System.GetCurrTime then return System.GetCurrTime() end
+    if Calendar and Calendar.GetGameTime then return Calendar.GetGameTime() end
+    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
+end
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Player/entity helpers
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -77,33 +91,28 @@ end
 
 -- Returns true only when enough time passed for this key.
 -- Usage: if M.throttle("tick-fired", 10) then System.LogAlways("fired") end
+-- throttle
 do
-    local _next = {} -- key → nextAllowedTime (seconds)
+    local _next = {}
     function M.throttle(key, intervalSec)
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local t   = tonumber(intervalSec or 1) or 1
         local nxt = _next[key] or 0
         if now >= nxt then
-            _next[key] = now + t
-            return true
+            _next[key] = now + t; return true
         end
         return false
     end
 end
+
+-- hunger_label
 function M.hunger_label(hungerPct, satedUntil)
     local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
     local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
-    local names = HUD.hungerNames or {
-        ok = "OK",
-        minor = "Mild",
-        moderate = "Hungry",
-        critical = "Starving",
-        sated =
-        "Sated"
-    }
+    local names = HUD.hungerNames or { ok = "OK", minor = "Mild", moderate = "Hungry", critical = "Starving", sated =
+    "Sated" }
 
-    -- Sated override
-    local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
     local rem   = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
     if rem > 0 then return names.sated, "sated" end
 
@@ -112,7 +121,6 @@ function M.hunger_label(hungerPct, satedUntil)
         or (h >= (th.moderate or 50)) and "moderate"
         or (h >= (th.minor or 20)) and "minor"
         or "ok"
-
     return names[tier] or tier, tier
 end
 

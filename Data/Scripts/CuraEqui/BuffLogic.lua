@@ -10,7 +10,7 @@ M._playerApplyPending = M._playerApplyPending or false
 M._playerGen          = M._playerGen or 0
 
 -- pick tier name from hunger/sated (HUD thresholds)
-local function _now() return (Script and Script.GetTime and Script.GetTime()) or os.clock() end
+local function _now() return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock() end
 local function _pickTierName(hunger, satedUntil)
     if (satedUntil or 0) > _now() then return "sated" end
     local hud      = CuraEqui.Config and CuraEqui.Config.HUD or {}
@@ -89,7 +89,7 @@ function M.SyncPlayerStatus(horseEnt, S)
 
     -- 🔹 if Sated timer is active, don't show any status-tier (OK/min/mod/crit)
     do
-        local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now  = _now()
         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         if remS > 0 then
             if M._lastPlayerUuid then
@@ -128,7 +128,7 @@ function M.SyncPlayerStatus(horseEnt, S)
     local wantPickLog = D and D.buffPickTrace and (uuid ~= M._lastPlayerUuid)
 
     if wantPickLog then
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now = _now()
         local rem = math.max(0, (S.satedUntil or 0) - now)
         CuraEqui.Log("buff",
             "PlayerStatus pick tier=%s hunger=%d remSated=%.1f uuid=%s",
@@ -287,7 +287,7 @@ function M.SyncSatedTimer(h, S, opts)
         return
     end
 
-    local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local now  = _now()
     local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
     -- Expired → clear
@@ -300,13 +300,9 @@ function M.SyncSatedTimer(h, S, opts)
 
     -- 🔒 while a sated timer is active, DO NOT switch buckets mid-run unless forced
     if (not (opts and opts.force)) and M._lastSatedUuid then
-        if (not (opts and opts.force)) and M._lastSatedUuid then
-            if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
-                CuraEqui.Log("Buff", "Sated: skip mid-run (rem=%.0fs, last=%s)", remS, tostring(M._lastSatedUuid))
-            end
-            return
+        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
+            CuraEqui.Log("Buff", "Sated: skip mid-run (rem=%.0fs, last=%s)", remS, tostring(M._lastSatedUuid))
         end
-
         return
     end
 

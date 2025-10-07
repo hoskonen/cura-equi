@@ -155,7 +155,7 @@ local function _calc_need_points(S, mode)
 
     if mode == "sated" then
         local C          = _sated_cfg() -- minSec, maxSec, perPt, capPts, alsoHun
-        local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local remS       = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
         -- points needed to reach the minimum sated target
@@ -250,7 +250,7 @@ local function _apply_feed(S, mode, used)
     local newH    = beforeH
     if mode == "sated" then
         local C     = _sated_cfg()
-        local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local add   = used * C.perPt
         local base  = math.max(now, tonumber(S.satedUntil or 0) or 0)
         local capA  = now + C.maxSec
@@ -286,7 +286,7 @@ local function _emit_feed_toasts(removePlan, used, mode, S)
     end
     local msg
     if mode == "sated" then
-        local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now  = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         msg        = string.format("Fed %d type(s) (-%d) → Sated %.0fs", #parts, used, remS)
     else
@@ -483,7 +483,7 @@ function Horse:OnInventoryClosed()
         local thrSec = tonumber((H.satedBlockIfRemainingSec ~= nil) and H.satedBlockIfRemainingSec or
             F.satedBlockIfRemainingSec or 0) or 0
         if hard and thrSec > 0 then
-            local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+            local now  = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
             local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
             if remS >= thrSec then
                 local pickedAny = false
@@ -588,7 +588,7 @@ function Horse:OnInventoryClosed()
     -- Round 'rem' up to the next visible bucket (from Buffs.SATED_TIERS) and clamp internal sated
     -- Why? Because we are using fixed durations from the buff.xml so we clamp to the nearest buff
     do
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         local BL  = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
 
@@ -639,8 +639,8 @@ function Horse:OnInventoryClosed()
             :format(
                 mode, used, beforeH,
                 math.floor(tonumber(S.hunger or 0) or 0),
-                math.max(0, ((tonumber(S.satedUntil or 0) or 0) -
-                    ((Script and Script.GetTime and Script.GetTime()) or os.clock())))
+                math.max(0,
+                    ((tonumber(S.satedUntil or 0) or 0) - ((CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock())))
             )
         )
     end
@@ -650,7 +650,7 @@ function Horse:OnInventoryClosed()
         if CuraEqui.Persist and CuraEqui.Persist.Save then
             CuraEqui.Persist.Save(S.hunger, S.satedUntil)
             if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-                local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
                 local h   = math.floor(tonumber(S.hunger or 0) or 0)
                 local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
                 System.LogAlways(("[CuraEqui][Persist] Saved (feed) hunger=%d satedRemain=%.0f"):format(h, rem))
@@ -795,7 +795,7 @@ function Horse:OnFeedHorse(user)
                     local thrSec = tonumber((H.satedBlockIfRemainingSec ~= nil) and H.satedBlockIfRemainingSec or
                         F.satedBlockIfRemainingSec or 0) or 0
                     if hard and thrSec > 0 then
-                        local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                        local now  = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
                         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
                         if remS >= thrSec then
                             if CuraEqui.UI and CuraEqui.UI.Toast then

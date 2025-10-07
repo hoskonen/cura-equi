@@ -13,7 +13,7 @@ do
 
     local _next = {}
     U.throttle = U.throttle or function(key, intervalSec)
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local t   = tonumber(intervalSec or 1) or 1
         local nxt = _next[key] or 0
         if now >= nxt then
@@ -37,7 +37,7 @@ do
             "Sated"
         }
 
-        local now   = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local rem   = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
         if rem > 0 then return names.sated, "sated" end
 
@@ -47,6 +47,16 @@ do
             or (h >= (th.minor or 20)) and "minor"
             or "ok"
         return names[tier] or tier, tier
+    end
+end
+
+-- Pause-aware gameplay clock (fallback if Utils.lua didn’t define it yet)
+if not CuraEqui.Now then
+    function CuraEqui.Now()
+        if GetCurrTime then return GetCurrTime() end
+        if System and System.GetCurrTime then return System.GetCurrTime() end
+        if Calendar and Calendar.GetGameTime then return Calendar.GetGameTime() end
+        return (Script and Script.GetTime and Script.GetTime()) or os.clock()
     end
 end
 
@@ -249,7 +259,7 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     if maxMin > 0 and minutes > maxMin then minutes = maxMin end
 
     -- Snapshot before
-    local now       = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local now       = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
     local beforeH   = tonumber(S.hunger or 0) or 0
     local remBefore = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
@@ -273,8 +283,8 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     local isNightNow = (Calendar and Calendar.IsNightTimeOfDay and Calendar.IsNightTimeOfDay()) or false
 
     -- Sated multiplier (same as tick)
-    local now2       = (Script and Script.GetTime and Script.GetTime()) or os.clock()
-    local mul        = (((tonumber(S.satedUntil or 0) or 0) > now2) and (tonumber(H.satedDrainMul) or 0.75)) or 1.0
+    local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and (tonumber(H.satedDrainMul) or 0.75)) or 1.0
 
     local timeMul    = isNightNow and (tonumber(NC.timeDrainMul) or 1.0) or 1.0
     local perMinute  = (perMin * timeMul)
@@ -313,7 +323,6 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     if CuraEqui.Persist and CuraEqui.Persist.Save then
         pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil)
         if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-            local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
             local h   = math.floor(tonumber(S.hunger or 0) or 0)
             local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
             System.LogAlways(("[CuraEqui][Persist] Saved (sleep) hunger=%d satedRemain=%.0f"):format(h, rem))
@@ -345,6 +354,20 @@ function CuraEqui._HungerTickBody()
     do
         CuraEqui.state = CuraEqui.state or {}
         local nowHour = CuraEqui._get_player_hour()
+
+        -- Pause-aware seconds: only advance when world hour advances
+        do
+            CuraEqui.Clock = CuraEqui.Clock or { t = 0, lastHour = nil }
+            if nowHour then
+                local C = CuraEqui.Clock
+                if C.lastHour ~= nil then
+                    local mins = CuraEqui._minutes_between_hours(C.lastHour, nowHour) or 0
+                    if mins > 0 then C.t = (C.t or 0) + mins * 60 end
+                end
+                C.lastHour = nowHour
+            end
+        end
+
         if nowHour then
             -- optional safety net: detect large jumps between 10s ticks (e.g., Wait 1h+)
             local prev = CuraEqui.state._prevHour
@@ -526,7 +549,7 @@ function CuraEqui._HungerTickBody()
         end
 
         -- Sated multiplier (by design, only drains)
-        local now        = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
 
         local passive    = (timeDrain * mul) + graze
@@ -640,7 +663,7 @@ function CuraEqui._HungerTickBody()
             local preset = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
             local U      = CuraEqui.Utils
             local h      = math.floor(tonumber(S.hunger or 0) or 0)
-            local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+            local now    = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
             local rem    = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
             local pretty = (U and U.hunger_label) and select(1, U.hunger_label(h, S.satedUntil))
                 or ((rem > 0) and "Sated" or "OK")
@@ -734,7 +757,7 @@ function CuraEqui.StopWatching()
         if S and CuraEqui.Persist and CuraEqui.Persist.Save then
             CuraEqui.Persist.Save(S.hunger, S.satedUntil)
             if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-                local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+                local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
                 local h   = math.floor(tonumber(S.hunger or 0) or 0)
                 local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
                 System.LogAlways(("[CuraEqui][Persist] Saved (stop) hunger=%d satedRemain=%.0f"):format(h, rem))
@@ -763,7 +786,7 @@ function CuraEqui._ApplyNutrition(diet, label)
 
     -- 2) sated timing
     local H      = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
-    local now    = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    local now    = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
     local perSec = tonumber(H.satedSecPerNutrition or 6) -- dial
     local capSec = tonumber(H.satedCapSec or 600)        -- dial
     local addSec = n * perSec
@@ -772,7 +795,7 @@ function CuraEqui._ApplyNutrition(diet, label)
 
     -- Ceil to the next visible bucket so internal == buff duration
     do
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         local BL  = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
         if BL and #BL > 0 then
