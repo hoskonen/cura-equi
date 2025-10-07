@@ -45,8 +45,8 @@ CuraEqui.Config = {
         speedIdleMps             = 0.2,  -- below this → idle
         -- Sated
         satedDrainMul            = 0.75,
-        satedSecPerNutrition     = 5, -- x per nutrition
-        satedCapSec              = 600,
+        satedSecPerNutrition     = 12, -- x per nutrition
+        satedCapSec              = 2000,
         satedResumeMinSec        = 45,
         -- Sated feeding policy: “block whenever sated is active, set satedBlockIfRemainingSec = 1 or if you want a softer rule (“block only if ≥ 10 min left”), set 600.
         satedHardBlock           = true,                      -- if true, block feeding while plenty of sated time remains
@@ -148,10 +148,10 @@ CuraEqui.Config = {
         removeItems            = true,    -- ← keep false until you verify removal works on your build
         -- Sated Mode (goal-based planning; picker path)
         needMode               = "sated", -- "hunger" | "sated"
-        needCapPerFeed         = 25,
+        needCapPerFeed         = 35,
         satedMinSec            = 0,
-        satedMaxSec            = 900,
-        satedSecPerPoint       = 6,
+        satedMaxSec            = 2000,
+        satedSecPerPoint       = 10,
         satedAlsoReducesHunger = true,
         -- Toasts (dev-style, no localization)
         toastOnDone            = true,

@@ -58,6 +58,30 @@ function P.Load()
         satedUntil = (rem > 0) and (now + rem) or 0 -- rebase to current clock
     end
 
+    -- Apply "nearest-with-no-invisible-tail" policy to loaded remain
+    do
+        local rem = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
+        local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
+        if rem > 0 and T and #T > 0 then
+            -- find nearest tier by absolute difference
+            local nearest = T[1].sec
+            local best = math.huge
+            for i = 1, #T do
+                local d = math.abs(rem - (tonumber(T[i].sec) or 0))
+                if d < best then best, nearest = d, (tonumber(T[i].sec) or 0) end
+            end
+            if nearest <= 0 then
+                -- nothing sane; leave satedUntil as-is
+            elseif nearest > rem then
+                -- ceil case: keep internal rem so the icon will clear early
+                -- (leave satedUntil unchanged)
+            else
+                -- floor case: clamp internal to the lower tier to avoid a hidden tail
+                satedUntil = now + nearest
+            end
+        end
+    end
+
     if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
         System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s → satedUntil=%.2f (rem=%.0fs)")
             :format(tostring(hunger), satedUntil, math.max(0, satedUntil - now)))
