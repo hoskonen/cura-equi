@@ -709,6 +709,16 @@ function CuraEqui.StartWatching()
     CuraEqui.state.hungerTimer =
         Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
     CuraEqui.Log("poll", "Hunger watcher started (timerId=%s)", tostring(CuraEqui.state.hungerTimer))
+
+    -- apply the sated timed buff immediately on start
+    do
+        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = true })
+            if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+        end
+    end
 end
 
 function CuraEqui.StopWatching()
@@ -760,7 +770,30 @@ function CuraEqui._ApplyNutrition(diet, label)
     local base   = math.max(now, tonumber(S.satedUntil or 0) or 0)
     S.satedUntil = math.min(base + addSec, now + capSec)
 
-    -- 3) immediate buff refresh so the HUD flips right away
+    -- Ceil to the next visible bucket so internal == buff duration
+    do
+        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+        local BL  = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
+        if BL and #BL > 0 then
+            local target = nil
+            for i = #BL, 1, -1 do
+                local sec = tonumber(BL[i].sec) or 0
+                if sec >= rem then
+                    target = sec; break
+                end
+            end
+            if not target then target = tonumber(BL[1].sec) or rem end
+            if target and target > 0 then
+                S.satedUntil = now + target
+            end
+        end
+    end
+    -- then force-apply
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+        pcall(CuraEqui.Buffs.SyncSatedTimer, horse, S, { cause = "diet", force = true })
+    end
+
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
         pcall(CuraEqui.Buffs.SyncAll, horse, S)
     end

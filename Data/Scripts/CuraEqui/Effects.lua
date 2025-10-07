@@ -23,8 +23,9 @@ function CuraEqui.Effects.RemovePlayer(guid)
     local ok = pcall(function() s:RemoveAllBuffsByGuid(guid) end)
     local D = CuraEqui.Config and CuraEqui.Config.Debug
     if D and D.buffTraceVerbose then
-        CuraEqui.Log("Buff", "player remove %s ok=%s", uuid, tostring(ok))
+        CuraEqui.Log("Buff", "player remove %s ok=%s", guid, tostring(ok))
     end
+
     return ok and true or false
 end
 
@@ -92,7 +93,7 @@ function E.ApplyPlayerTimed(uuid, durationSec)
 
     Script.SetTimer(ms, function()
         if myGen == E._satedGen then
-            pcall(E.Remove, "player", uuid) -- you already have Remove(target, uuid)
+            pcall(E.RemovePlayer, uuid) -- you already have Remove(target, uuid)
         end
     end)
     return true
@@ -100,5 +101,5 @@ end
 
 function E.ClearPlayerSatedTimers(uuids)
     if not uuids then return end
-    for _, u in ipairs(uuids) do pcall(E.Remove, "player", u) end
+    for _, u in ipairs(uuids) do pcall(E.RemovePlayer, u) end
 end

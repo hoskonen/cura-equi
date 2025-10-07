@@ -13,7 +13,6 @@ local _db        = nil
 do
     local ok, inst = pcall(function()
         if DB and DB.Create then return DB:Create("CuraEqui") end
-        if DB and DB.Create then return DB.Create("CuraEqui") end
         return nil
     end)
     if ok and inst then _db = inst end
@@ -37,7 +36,6 @@ function P.Load()
     if hunger then hunger = math.max(0, math.min(100, hunger)) end
 
     local now = _now()
-    local minResume = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.satedResumeMinSec) or 0
     local satedUntil = 0
 
     if tonumber(t.version or 1) >= 2 then
@@ -45,7 +43,7 @@ function P.Load()
         local rem = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
         -- sanity clamp: >24h remaining is likely corrupt/old → clamp to 0
         if rem > 24 * 3600 then rem = 0 end
-        if rem < minResume then rem = 0 end
+
         satedUntil = (rem > 0) and (now + rem) or 0
     else
         -- V1 migration path: we stored absolute using a process clock.
@@ -54,38 +52,46 @@ function P.Load()
         local saved = tonumber(t.savedAt or 0) or 0
         local rem   = math.max(0, abs - saved)      -- intended remaining at save
         if rem > 24 * 3600 then rem = 0 end         -- guard nonsense
-        if rem < minResume then rem = 0 end
+
         satedUntil = (rem > 0) and (now + rem) or 0 -- rebase to current clock
     end
 
-    -- Apply "nearest-with-no-invisible-tail" policy to loaded remain
+    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
+        CuraEqui._dbg_rawLoadedUntil = satedUntil
+    else
+        CuraEqui._dbg_rawLoadedUntil = nil
+    end
+
+    -- Round-to-nearest-full-tier (ties go up), then set internal to that tier.
     do
         local rem = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
         local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
         if rem > 0 and T and #T > 0 then
-            -- find nearest tier by absolute difference
-            local nearest = T[1].sec
-            local best = math.huge
+            local nearest  = 0
+            local bestDiff = math.huge
             for i = 1, #T do
-                local d = math.abs(rem - (tonumber(T[i].sec) or 0))
-                if d < best then best, nearest = d, (tonumber(T[i].sec) or 0) end
+                local sec = tonumber(T[i].sec) or 0
+                local d   = math.abs(rem - sec)
+                if (d < bestDiff) or (d == bestDiff and sec > nearest) then
+                    -- tie-break upward
+                    bestDiff, nearest = d, sec
+                end
             end
-            if nearest <= 0 then
-                -- nothing sane; leave satedUntil as-is
-            elseif nearest > rem then
-                -- ceil case: keep internal rem so the icon will clear early
-                -- (leave satedUntil unchanged)
-            else
-                -- floor case: clamp internal to the lower tier to avoid a hidden tail
-                satedUntil = now + nearest
-            end
+            satedUntil = (nearest > 0) and (now + nearest) or 0
+        else
+            -- nearest to 0 -> drop
+            satedUntil = 0
         end
     end
 
+    -- (optional but nice) show what happened
     if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-        System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s → satedUntil=%.2f (rem=%.0fs)")
-            :format(tostring(hunger), satedUntil, math.max(0, satedUntil - now)))
+        local remOld = math.max(0, (tonumber((CuraEqui._dbg_rawLoadedUntil or satedUntil) or 0) - now))
+        local remNew = math.max(0, (tonumber(satedUntil or 0) - now))
+        System.LogAlways(("[CuraEqui][Persist] Load-round: rem=%.0fs → tier=%.0fs"):format(remOld, remNew))
     end
+
+    CuraEqui._dbg_rawLoadedUntil = nil
 
     return hunger, satedUntil
 end
@@ -101,15 +107,16 @@ function P.Save(hunger, satedUntil)
     local rec = {
         version        = P._ver,
         hunger         = math.max(0, math.min(100, tonumber(hunger or 0) or 0)),
-        satedRemainSec = rem, -- <-- store remaining, not absolute
+        satedRemainSec = rem,
         savedAt        = now,
     }
-    local ok = pcall(function()
+    local ok, wrote = pcall(function()
         if _db.Set then
             _db:Set(P._localKey, rec); return true
         end
+        return false
     end)
-    if not ok then
+    if not ok or not wrote then
         System.LogAlways("[CuraEqui][Persist] Save failed (DB.Set missing?)")
         return false
     end
@@ -122,42 +129,33 @@ end
 
 -- Throttled saver: writes only on >=1% delta or every N seconds
 do
-    local _lastPct, _nextAt = nil, 0
-    do
-        local _lastPct, _nextAt = nil, 0
-        local _lastRem = nil
+    local _lastPct, _nextAt, _lastRem = nil, 0, nil
+    function P.MaybeSave(hunger, satedUntil, minDeltaPct, minEverySec)
+        local now = _now()
+        if not _db then return false end
+        minDeltaPct = tonumber(minDeltaPct or 1) or 1
+        minEverySec = tonumber(minEverySec or 20) or 20
 
-        function P.MaybeSave(hunger, satedUntil, minDeltaPct, minEverySec)
-            local state = CuraEqui.state or {}
-            local now = _now()
-            if state.persistMuteUntil and now < state.persistMuteUntil then
-                return false
-            end
-            if not _db then return false end
-            minDeltaPct = tonumber(minDeltaPct or 1) or 1
-            minEverySec = tonumber(minEverySec or 20) or 20
+        local pct = math.floor(tonumber(hunger or 0) + 0.5)
+        local due = now >= (_nextAt or 0)
+        local movedPct = (not _lastPct) or (math.abs(pct - _lastPct) >= minDeltaPct)
 
-            local pct = math.floor(tonumber(hunger or 0) + 0.5)
-            local due = now >= (_nextAt or 0)
-            local movedPct = (not _lastPct) or (math.abs(pct - _lastPct) >= minDeltaPct)
-
-            local rem = 0
-            if satedUntil and tonumber(satedUntil) then
-                rem = math.max(0, tonumber(satedUntil) - now)
-            end
-            local movedRem = (_lastRem == nil) or (math.abs(rem - _lastRem) >= (minEverySec or 20))
-
-            if due or movedPct or movedRem then
-                local ok = P.Save(hunger, satedUntil)
-                if ok then
-                    _lastPct = pct
-                    _lastRem = rem
-                    _nextAt  = now + minEverySec
-                end
-                return ok
-            end
-            return false
+        local rem = 0
+        if satedUntil and tonumber(satedUntil) then
+            rem = math.max(0, tonumber(satedUntil) - now)
         end
+        local movedRem = (_lastRem == nil) or (math.abs(rem - _lastRem) >= minEverySec)
+
+        if due or movedPct or movedRem then
+            local ok = P.Save(hunger, satedUntil)
+            if ok then
+                _lastPct = pct
+                _lastRem = rem
+                _nextAt  = now + minEverySec
+            end
+            return ok
+        end
+        return false
     end
 end
 

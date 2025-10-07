@@ -56,11 +56,7 @@ local function _schedule(ms, fn)
     end
 end
 
--- state
-M._lastPlayerUuid     = nil -- last player status GUID
-
 -- module locals for debouncing
-M._lastPlayerUuid     = M._lastPlayerUuid or nil
 M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
 M._playerApplyPending = M._playerApplyPending or false
 
@@ -79,7 +75,7 @@ function M.SyncPlayerStatus(horseEnt, S)
             "1a638e4c-e931-415d-b3bd-c8402ed836ea", -- <-- legacy 'sated' UUID
         }
         for _, u in ipairs(LEGACY_SATED_STATUS) do
-            pcall(CuraEqui.Effects.Remove, "player", u)
+            pcall(CuraEqui.Effects.RemovePlayer, u)
         end
     end
 
@@ -278,11 +274,11 @@ end
 function M.ClearSatedTimers()
     if not CuraEqui.Effects then return end
     for _, t in ipairs(M.SATED_TIERS) do
-        pcall(CuraEqui.Effects.Remove, "player", t.uuid)
+        pcall(CuraEqui.Effects.RemovePlayer, t.uuid)
     end
 end
 
--- opts.force=true → re-apply even if bucket unchanged (used after feeding to reset countdown)
+-- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
 function M.SyncSatedTimer(h, S, opts)
     if not (S and S.satedUntil) then
         if M._lastSatedUuid then
@@ -293,6 +289,8 @@ function M.SyncSatedTimer(h, S, opts)
 
     local now  = (Script and Script.GetTime and Script.GetTime()) or os.clock()
     local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+    -- Expired → clear
     if remS <= 0 then
         if M._lastSatedUuid then
             M.ClearSatedTimers(); M._lastSatedUuid = nil
@@ -300,23 +298,27 @@ function M.SyncSatedTimer(h, S, opts)
         return
     end
 
-    -- pick bucket
-    local picker = _pick_bucket_floor
-    if opts and opts.round == "ceil" then picker = _pick_bucket_ceil end
-    local bucket = picker(remS)
-
-    if not bucket then
-        if M._lastSatedUuid then
-            M.ClearSatedTimers(); M._lastSatedUuid = nil
+    -- 🔒 while a sated timer is active, DO NOT switch buckets mid-run unless forced
+    if (not (opts and opts.force)) and M._lastSatedUuid then
+        if (not (opts and opts.force)) and M._lastSatedUuid then
+            if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
+                CuraEqui.Log("Buff", "Sated: skip mid-run (rem=%.0fs, last=%s)", remS, tostring(M._lastSatedUuid))
+            end
+            return
         end
+
         return
     end
 
+    -- We’re either forced (feed/load/diet) or starting fresh (no timer active):
+    -- pick with CEIL so the icon shows a full tier.
+    local bucket = _pick_bucket_ceil(remS)
+    if not bucket then return end
+
     if (not (opts and opts.force)) and M._lastSatedUuid == bucket.uuid then
-        return -- same bucket: keep current countdown
+        return -- same bucket; keep current countdown
     end
 
-    -- Switch (or refresh): clear all, then apply fixed-duration buff (engine counts down)
     M.ClearSatedTimers()
     local ok = false
     if CuraEqui.Effects and CuraEqui.Effects.ApplyPlayer then

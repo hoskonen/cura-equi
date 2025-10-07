@@ -444,7 +444,7 @@ function Horse:OnInventoryItemUsed(id)
     info.wuidStr  = tostring(id) -- for logs
     table.insert(self._feedSel, info)
 
-    FeedLog(("[CuraEqui][Feed] Picked: %s (class=%s, qty=%s)")
+    FeedLog(("Picked: %s (class=%s, qty=%s)")
         :format(tostring(info.uiName or info.dbName or info.wuidStr), tostring(info.classId), tostring(info.qty)))
 end
 
