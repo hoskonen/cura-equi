@@ -241,7 +241,7 @@ function CuraEqui.Initialize(fullInit)
     -- Mute persistence for a short window during boot/load
     do
         CuraEqui.state = CuraEqui.state or {}
-        local now = (Script and Script.GetTime and Script.GetTime()) or os.clock()
+        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         CuraEqui.state.persistMuteUntil = now + 5.0 -- 5s grace on boot
     end
 

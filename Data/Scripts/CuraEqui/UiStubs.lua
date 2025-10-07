@@ -6,9 +6,9 @@ local UI                 = CuraEqui.UI
 -- ── dedupe (avoid spam) ─────────────────────────────────────────────────────
 local _lastText, _lastAt = nil, 0
 local function _dedupe(text)
-    local now = (System.GetCurrTime and System.GetCurrTime() * 1000) or (os.clock() * 1000)
-    if text == _lastText and (now - _lastAt) < 800 then return true end
-    _lastText, _lastAt = text, now
+    local nowMs = ((CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()) * 1000
+    if text == _lastText and (nowMs - _lastAt) < 800 then return true end
+    _lastText, _lastAt = text, nowMs
     return false
 end
 
