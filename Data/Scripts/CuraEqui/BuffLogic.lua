@@ -9,6 +9,30 @@ M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
 M._playerApplyPending = M._playerApplyPending or false
 M._playerGen          = M._playerGen or 0
 
+-- Timed "Sated" tiers (descending). UUIDs must match buff__curaequi.xml
+M.SATED_TIERS         = {
+    { sec = 2000, uuid = "f5a6b7c8-9d0e-4be4-9a8b-9f0a1b2c3d4e" },
+    { sec = 1900, uuid = "e4f5a6b7-8c9d-4ad3-8b9a-8e9f0a1b2c3d" },
+    { sec = 1800, uuid = "d3e4f5a6-7b8c-4fc2-9a8b-7d8e9f0a1b2c" },
+    { sec = 1700, uuid = "c2d3e4f5-6a7b-4eb1-8b9c-6c7d8e9f0a1b" },
+    { sec = 1600, uuid = "b1c2d3e4-5f6a-4da0-9a8c-5b6c7d8e9f0a" },
+    { sec = 1500, uuid = "a0b1c2d3-4e5f-4b99-8c9b-4a5b6c7d8e9f" },
+    { sec = 1400, uuid = "9d3f5b7c-2e4a-4a88-b8a9-3f4a5b6c7d8e" },
+    { sec = 1300, uuid = "7c2e4a6b-1d3f-4f77-8b9c-2e3f4a5b6c7d" },
+    { sec = 1200, uuid = "6b1d3f5a-9c2e-4e66-9a8c-1d2e3f4a5b6c" },
+    { sec = 1100, uuid = "5a3c1e7d-2b8f-4d55-8b9a-0c1d2e3f4a5b" },
+    { sec = 1000, uuid = "4f1a2b3c-8d7e-4c44-9a8b-7c0d1e2f3a4b" },
+    { sec = 900,  uuid = "3e5a7c19-5d2b-4a33-a8b9-6f1e2d3c4b5a" },
+    { sec = 800,  uuid = "2c7e5a91-6b3d-4f22-8c9d-5e1a3b7c0d2f" },
+    { sec = 700,  uuid = "1a9c3e5b-7d2f-4e10-9b8a-3c1d5e7f0a2b" },
+    { sec = 600,  uuid = "8f6d7a21-3c5e-4b2a-8a6f-2f19b7e3c4d1" },
+    { sec = 500,  uuid = "7b3e1a6a-23f4-41af-b892-205d8340d6ee" },
+    { sec = 400,  uuid = "6eecf4fa-9b5e-48bb-9b02-3875f9f609b7" },
+    { sec = 300,  uuid = "2d8939b7-8af5-40b7-a1fb-1f937a3a6afc" },
+    { sec = 200,  uuid = "f9ad23a8-7d3d-4e43-96f2-1d5cc84f2d40" },
+    { sec = 100,  uuid = "c5b2d9f6-12f1-44d4-b04c-46f6b3e5c711" },
+}
+
 -- pick tier name from hunger/sated (HUD thresholds)
 local function _now() return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock() end
 local function _pickTierName(hunger, satedUntil)
@@ -228,30 +252,6 @@ function M.SyncAll(horseEnt, S)
     M.SyncPlayerStatus(horseEnt, S)
 end
 
--- Timed "Sated" tiers (descending). UUIDs must match buff__curaequi.xml
-M.SATED_TIERS = {
-    { sec = 2000, uuid = "f5a6b7c8-9d0e-4be4-9a8b-9f0a1b2c3d4e" },
-    { sec = 1900, uuid = "e4f5a6b7-8c9d-4ad3-8b9a-8e9f0a1b2c3d" },
-    { sec = 1800, uuid = "d3e4f5a6-7b8c-4fc2-9a8b-7d8e9f0a1b2c" },
-    { sec = 1700, uuid = "c2d3e4f5-6a7b-4eb1-8b9c-6c7d8e9f0a1b" },
-    { sec = 1600, uuid = "b1c2d3e4-5f6a-4da0-9a8c-5b6c7d8e9f0a" },
-    { sec = 1500, uuid = "a0b1c2d3-4e5f-4b99-8c9b-4a5b6c7d8e9f" },
-    { sec = 1400, uuid = "9d3f5b7c-2e4a-4a88-b8a9-3f4a5b6c7d8e" },
-    { sec = 1300, uuid = "7c2e4a6b-1d3f-4f77-8b9c-2e3f4a5b6c7d" },
-    { sec = 1200, uuid = "6b1d3f5a-9c2e-4e66-9a8c-1d2e3f4a5b6c" },
-    { sec = 1100, uuid = "5a3c1e7d-2b8f-4d55-8b9a-0c1d2e3f4a5b" },
-    { sec = 1000, uuid = "4f1a2b3c-8d7e-4c44-9a8b-7c0d1e2f3a4b" },
-    { sec = 900,  uuid = "3e5a7c19-5d2b-4a33-a8b9-6f1e2d3c4b5a" },
-    { sec = 800,  uuid = "2c7e5a91-6b3d-4f22-8c9d-5e1a3b7c0d2f" },
-    { sec = 700,  uuid = "1a9c3e5b-7d2f-4e10-9b8a-3c1d5e7f0a2b" },
-    { sec = 600,  uuid = "8f6d7a21-3c5e-4b2a-8a6f-2f19b7e3c4d1" },
-    { sec = 500,  uuid = "7b3e1a6a-23f4-41af-b892-205d8340d6ee" },
-    { sec = 400,  uuid = "6eecf4fa-9b5e-48bb-9b02-3875f9f609b7" },
-    { sec = 300,  uuid = "2d8939b7-8af5-40b7-a1fb-1f937a3a6afc" },
-    { sec = 200,  uuid = "f9ad23a8-7d3d-4e43-96f2-1d5cc84f2d40" },
-    { sec = 100,  uuid = "c5b2d9f6-12f1-44d4-b04c-46f6b3e5c711" },
-}
-
 local function _pick_bucket_floor(remS)
     remS = math.max(0, tonumber(remS or 0) or 0)
     for _, t in ipairs(M.SATED_TIERS) do
@@ -270,12 +270,17 @@ local function _pick_bucket_ceil(remS)
     return T[1]
 end
 
-
-function M.ClearSatedTimers()
-    if not CuraEqui.Effects then return end
+-- remove all sated timed-buffs (player channel), using the tier table
+function CuraEqui.Buffs.ClearSatedTimers()
+    local M = CuraEqui.Buffs
+    if not (M and M.SATED_TIERS) then return end
     for _, t in ipairs(M.SATED_TIERS) do
-        pcall(CuraEqui.Effects.RemovePlayer, t.uuid)
+        local uid = t.uid or t.uuid or t.uidd
+        if uid and CuraEqui.Effects and CuraEqui.Effects.RemovePlayer then
+            pcall(CuraEqui.Effects.RemovePlayer, uid)
+        end
     end
+    M._lastSatedUuid = nil
 end
 
 -- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
@@ -300,9 +305,15 @@ function M.SyncSatedTimer(h, S, opts)
 
     -- 🔒 while a sated timer is active, DO NOT switch buckets mid-run unless forced
     if (not (opts and opts.force)) and M._lastSatedUuid then
-        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
-            CuraEqui.Log("Buff", "Sated: skip mid-run (rem=%.0fs, last=%s)", remS, tostring(M._lastSatedUuid))
+        -- wherever you print "Sated: skip mid-run ..."
+        do
+            local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+            if D and D.buffTraceVerbose then
+                CuraEqui.Log("Buff", "Sated: skip mid-run (rem=%.0fs, last=%s)",
+                    rem, tostring(M._lastPlayerUuid))
+            end
         end
+
         return
     end
 
@@ -321,4 +332,29 @@ function M.SyncSatedTimer(h, S, opts)
         ok = pcall(CuraEqui.Effects.ApplyPlayer, bucket.uuid)
     end
     if ok then M._lastSatedUuid = bucket.uuid end
+end
+
+function CuraEqui.Buffs.Remove(target, guid, horse)
+    if target == "player" then
+        return CuraEqui.Effects.RemovePlayer and CuraEqui.Effects.RemovePlayer(guid)
+    elseif target == "horse" then
+        return CuraEqui.Effects.RemoveHorse and CuraEqui.Effects.RemoveHorse(horse, guid)
+    end
+end
+
+function CuraEqui.Buffs.RemoveAllOurs(horse)
+    -- player status
+    local hud = CuraEqui.Config and CuraEqui.Config.HUD or {}
+    for _, r in ipairs(hud.playerStatusTiers or {}) do
+        if r.uidd then pcall(CuraEqui.Effects.RemovePlayer, r.uidd) end
+    end
+    -- horse debuffs
+    for _, r in ipairs(hud.horseDebuffTiers or {}) do
+        if r.uidd and horse then pcall(CuraEqui.Effects.RemoveHorse, horse, r.uidd) end
+    end
+    -- all sated timed tiers (player)
+    for _, t in ipairs(CuraEqui.Buffs.SATED_TIERS or {}) do
+        if t.uuid then pcall(CuraEqui.Effects.RemovePlayer, t.uuid) end
+    end
+    CuraEqui.Buffs._lastSatedUuid = nil
 end

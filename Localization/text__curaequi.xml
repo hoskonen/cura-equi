@@ -74,10 +74,10 @@
 
 <!-- Buffs & Debuffs -->
 <Row>
-    <Cell>buff_ce_sated</Cell><Cell>Sated</Cell><Cell>Sated</Cell>
+    <Cell>buff_ce_horse_sated</Cell><Cell>Sated</Cell><Cell>Sated</Cell>
 </Row>
 <Row>
-    <Cell>buff_ce_sated_desc</Cell>
+    <Cell>buff_ce_horse_sated_desc</Cell>
     <Cell>Well-fed and calm. Hunger builds more slowly; handling and courage improve while this lasts.</Cell><Cell>Well-fed and calm. Hunger builds more slowly; handling and courage improve while this lasts.</Cell>
 </Row>
 

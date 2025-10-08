@@ -27,10 +27,10 @@ CuraEqui.Config = {
         hungerTraceEvery = 10000,
         mountTrace = true,
         feedTrace = true,
-        persistTrace = true,      -- log saving
+        persistTrace = true,     -- log saving
         tickTrace = true,
-        buffTraceVerbose = false, -- false = log only when buff changes
-        staminaSnapshot = true,   -- capture a reference staminaMax (debug only)
+        buffTraceVerbose = true, -- false = log only when buff changes
+        staminaSnapshot = true,  -- capture a reference staminaMax (debug only)
     },
     Hunger = {
         preset                   = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"
@@ -62,7 +62,8 @@ CuraEqui.Config = {
             maxDeltaPerNight = 35,  -- absolute cap on hunger gained from sunset→sunrise
 
         },
-        waitCatchup              = { enabled = true, maxCatchupSec = 6 * 3600 }
+        waitCatchup              = { enabled = true, maxCatchupSec = 6 * 3600 },
+        EnableFallbackCatchUp    = false
     },
     Presets = {
         Hunger = {

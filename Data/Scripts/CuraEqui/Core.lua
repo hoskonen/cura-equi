@@ -282,15 +282,23 @@ function CuraEqui.Initialize(fullInit)
 
                 System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s"):format(tostring(ph), tostring(ps)))
 
-                -- After successful hydration
-                CuraEqui.state.persistMuteUntil = ((Script and Script.GetTime and Script.GetTime()) or os.clock()) + 1.0
+                -- clean slate → apply exactly one sated tier for S.satedUntil, then status
+                pcall(CuraEqui.Buffs.ClearSatedTimers)                       -- ← removes all sated timers (player)
+                pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { force = true }) -- ← applies one correct tier
+                pcall(CuraEqui.Buffs.SyncAll, h, S)                          -- ← refresh OK/min/mod/crit
+
+                do
+                    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                    local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+                    System.LogAlways(("[CuraEqui][LoadApply] post-apply satedRemain=%.0fs"):format(rem))
+                end
             end
         end
     end
-    if h then
-        if CuraEqui.StartWatching then CuraEqui.StartWatching() end
-    else
-        if CuraEqui.StartProbing then CuraEqui.StartProbing() end -- light 10s probe until a horse appears
+    -- Do not start the periodic watcher here; OnGameplayStarted’s resolver owns it.
+    -- If there is no horse yet, keep a light probe running so try() will pick it up.
+    if (not h) and CuraEqui.StartProbing then
+        CuraEqui.StartProbing()
     end
 end
 
@@ -300,6 +308,12 @@ end
 --   UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
 -- ===========================================================================
 function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
+    System.LogAlways(("[CuraEqui][Fader] %s %s a1=%s a2=%s")
+        :format(tostring(elementName), tostring(eventName),
+            tostring(argTable and argTable[1] or "nil"),
+            tostring(argTable and argTable[2] or "nil")))
+
+
     local a1        = argTable and tostring(argTable[1]) or "nil"
     local a2        = argTable and tostring(argTable[2]) or "nil"
 
@@ -375,6 +389,11 @@ end
 --   UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
 -- ===========================================================================
 function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
+    System.LogAlways(("[CuraEqui][Fader] %s %s a1=%s a2=%s")
+        :format(tostring(elementName), tostring(eventName),
+            tostring(argTable and argTable[1] or "nil"),
+            tostring(argTable and argTable[2] or "nil")))
+
     -- --- noisy trace so we see what this build emits
     local a1 = argTable and tostring(argTable[1]) or "nil"
     local a2 = argTable and tostring(argTable[2]) or "nil"
@@ -465,7 +484,7 @@ end
 function CuraEqui.OnGameplayStarted()
     CuraEqui.ValidateBuffGuids()
     CuraEqui.Initialize(true)
-    CuraEqui.Bootstrap("OnGameplayStarted")
+    --CuraEqui.Bootstrap("OnGameplayStarted")
 
     -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
     local tries = { 0, 300, 1200 }
@@ -478,7 +497,7 @@ function CuraEqui.OnGameplayStarted()
             if CuraEqui.StartWatching then CuraEqui.StartWatching() end
 
             -- one-shot hard clear → next-tick re-apply (and a second pass shortly)
-            if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
+            --if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
         else
             if i < #tries then
                 if Script and Script.SetTimer then Script.SetTimer(tries[i + 1], function() try(i + 1) end) end
@@ -501,7 +520,7 @@ function CuraEqui.OnGameplayStarted()
     end
 
     -- Fallback resync in case resolution was late; harmless if already done
-    Script.SetTimer(600, function()
-        if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
-    end)
+    -- Script.SetTimer(600, function()
+    --     if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
+    -- end)
 end

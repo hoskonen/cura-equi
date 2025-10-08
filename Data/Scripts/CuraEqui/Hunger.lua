@@ -374,7 +374,12 @@ function CuraEqui._HungerTickBody()
             CuraEqui.state._prevHour = nowHour
             if prev then
                 local minutes = CuraEqui._minutes_between_hours(prev, nowHour)
-                if minutes > 2.0 and not CuraEqui.state._skipSessionOpen then
+
+                -- disable timebased catchup logic
+                local Hcfg = CuraEqui.Config and CuraEqui.Config.Hunger or {}
+                local enableFallback = (Hcfg.EnableFallbackCatchUp == true)
+
+                if enableFallback and minutes > 2.0 and not (CuraEqui.state and CuraEqui.state._skipSessionOpen) then
                     -- UI events didn’t arrive: run catch-up using prev as start
                     CuraEqui.state._sleepStartHour = CuraEqui.state._sleepStartHour or prev
                     System.LogAlways(("[CuraEqui][SkipTime][fallback] jump %.1f min → catch-up"):format(minutes))
