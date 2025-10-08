@@ -282,9 +282,23 @@ function CuraEqui.Initialize(fullInit)
 
                 System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s"):format(tostring(ph), tostring(ps)))
 
+                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+                if D and D.buffTraceVerbose then
+                    System.LogAlways("[CE][LOAD] clear: horse debuffs, player sated tiers")
+                end
+
                 -- clean slate → apply exactly one sated tier for S.satedUntil, then status
-                pcall(CuraEqui.Buffs.ClearSatedTimers)                       -- ← removes all sated timers (player)
+                pcall(CuraEqui.Effects.ClearHorseDebuffs, h) -- one-off horse strip clear
+                pcall(CuraEqui.Buffs.ClearSatedTimers)       -- ← removes all sated timers (player)
+
+                if D and D.buffTraceVerbose then
+                    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                    local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+                    System.LogAlways(("[CE][LOAD] apply: sated player (rem≈%ds)"):format(rem))
+                end
+
                 pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { force = true }) -- ← applies one correct tier
+                CuraEqui.state.didInitialSatedApply = true
                 pcall(CuraEqui.Buffs.SyncAll, h, S)                          -- ← refresh OK/min/mod/crit
 
                 do
@@ -484,7 +498,6 @@ end
 function CuraEqui.OnGameplayStarted()
     CuraEqui.ValidateBuffGuids()
     CuraEqui.Initialize(true)
-    --CuraEqui.Bootstrap("OnGameplayStarted")
 
     -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
     local tries = { 0, 300, 1200 }
@@ -495,9 +508,6 @@ function CuraEqui.OnGameplayStarted()
                 :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
             if CuraEqui.StopProbing then CuraEqui.StopProbing() end
             if CuraEqui.StartWatching then CuraEqui.StartWatching() end
-
-            -- one-shot hard clear → next-tick re-apply (and a second pass shortly)
-            --if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
         else
             if i < #tries then
                 if Script and Script.SetTimer then Script.SetTimer(tries[i + 1], function() try(i + 1) end) end
@@ -518,9 +528,4 @@ function CuraEqui.OnGameplayStarted()
         CuraEqui.__skipBound = true
         System.LogAlways("[CuraEqui] Bound SkipTime element listener")
     end
-
-    -- Fallback resync in case resolution was late; harmless if already done
-    -- Script.SetTimer(600, function()
-    --     if CuraEqui.EnsureBuffsResynced then CuraEqui.EnsureBuffsResynced() end
-    -- end)
 end

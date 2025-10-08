@@ -92,17 +92,6 @@ function M.DebugPickSatedBucket(remS)
 end
 
 function M.SyncPlayerStatus(horseEnt, S)
-    -- Legacy one-time cleanup: remove any old non-timer 'sated' status buff
-    if not CuraEqui._clearedLegacySated then
-        CuraEqui._clearedLegacySated = true
-        local LEGACY_SATED_STATUS = {
-            "1a638e4c-e931-415d-b3bd-c8402ed836ea", -- <-- legacy 'sated' UUID
-        }
-        for _, u in ipairs(LEGACY_SATED_STATUS) do
-            pcall(CuraEqui.Effects.RemovePlayer, u)
-        end
-    end
-
     local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.playerStatusTiers
     if not S or not list then
         if M._lastPlayerUuid then
@@ -116,11 +105,9 @@ function M.SyncPlayerStatus(horseEnt, S)
         local now  = _now()
         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         if remS > 0 then
-            if M._lastPlayerUuid then
-                -- This clears only status-tier buffs; make sure your ClearPlayerStatus() does NOT remove the sated timer UUIDs
-                CuraEqui.Effects.ClearPlayerStatus()
-                M._lastPlayerUuid = nil
-            end
+            -- This clears only status-tier buffs; make sure your ClearPlayerStatus() does NOT remove the sated timer UUIDs
+            CuraEqui.Effects.ClearPlayerStatus()
+            M._lastPlayerUuid = nil
             return
         end
     end
@@ -195,6 +182,12 @@ function M.SyncPlayerStatus(horseEnt, S)
 end
 
 function M.SyncHorseDebuff(horseEnt, S)
+    -- if sated is active, keep horse strip empty (no 'sated' in horseDebuffTiers)
+    if (tonumber(S.satedUntil or 0) or 0) > _now() then
+        CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
+        S._lastHorseDebuffUuid = nil
+        return
+    end
     local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.horseDebuffTiers
     if not horseEnt or not S or not list then return end
 
@@ -284,18 +277,31 @@ function CuraEqui.Buffs.ClearSatedTimers()
 end
 
 -- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
-function M.SyncSatedTimer(h, S, opts)
-    if not (S and S.satedUntil) then
+function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
+    local D    = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    local now  = _now()
+    local remS = math.max(0, (tonumber(S and S.satedUntil or 0) or 0) - now)
+
+    if D and D.buffTraceVerbose then
+        System.LogAlways(("[CE][SatedSync] cause=%s force=%s rem=%.0fs")
+            :format(tostring(opts and opts.cause or "tick"), tostring(opts and opts.force or false), remS))
+    end
+
+    -- nothing tracked → make sure no timed tier lingers
+    if not S then
         if M._lastSatedUuid then
             M.ClearSatedTimers(); M._lastSatedUuid = nil
         end
         return
     end
 
-    local now  = _now()
-    local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+    -- block re-entrant force bursts (startup races)
+    if M._satedFence and now < M._satedFence then
+        if D and D.buffTraceVerbose then System.LogAlways("[CE][SatedSync] fenced (drop reentry)") end
+        return
+    end
 
-    -- Expired → clear
+    -- expired → clear once and leave
     if remS <= 0 then
         if M._lastSatedUuid then
             M.ClearSatedTimers(); M._lastSatedUuid = nil
@@ -303,35 +309,43 @@ function M.SyncSatedTimer(h, S, opts)
         return
     end
 
-    -- 🔒 while a sated timer is active, DO NOT switch buckets mid-run unless forced
-    if (not (opts and opts.force)) and M._lastSatedUuid then
-        -- wherever you print "Sated: skip mid-run ..."
-        do
-            local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-            if D and D.buffTraceVerbose then
-                CuraEqui.Log("Buff", "Sated: skip mid-run (rem=%.0fs, last=%s)",
-                    rem, tostring(M._lastPlayerUuid))
-            end
-        end
+    -- compute desired bucket (ceil so UI shows full tier)
+    local bucket = _pick_bucket_ceil(remS)
+    if not bucket or not bucket.uuid then return end
 
+    local forcing = (opts and opts.force) == true
+
+    -- mid-run (no force) and already on this bucket → do nothing
+    if (not forcing) and M._lastSatedUuid == bucket.uuid then
+        if D and D.buffTraceVerbose then
+            System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%.0fs, last=%s)")
+                :format(remS, tostring(M._lastSatedUuid)))
+        end
         return
     end
 
-    -- We’re either forced (feed/load/diet) or starting fresh (no timer active):
-    -- pick with CEIL so the icon shows a full tier.
-    local bucket = _pick_bucket_ceil(remS)
-    if not bucket then return end
-
-    if (not (opts and opts.force)) and M._lastSatedUuid == bucket.uuid then
-        return -- same bucket; keep current countdown
+    -- mid-run (no force) but bucket would change (e.g., we grew/rounded) → DO NOT switch mid-run
+    if (not forcing) and M._lastSatedUuid and M._lastSatedUuid ~= bucket.uuid then
+        if D and D.buffTraceVerbose then
+            System.LogAlways(("[CuraEqui][Buff] Sated: hold bucket mid-run (rem=%.0fs, last=%s, want=%s)")
+                :format(remS, tostring(M._lastSatedUuid), tostring(bucket.uuid)))
+        end
+        return
     end
 
+    -- (re)apply path: clear all timed sated tiers, then apply exactly one
     M.ClearSatedTimers()
     local ok = false
     if CuraEqui.Effects and CuraEqui.Effects.ApplyPlayer then
         ok = pcall(CuraEqui.Effects.ApplyPlayer, bucket.uuid)
     end
-    if ok then M._lastSatedUuid = bucket.uuid end
+
+    if ok then
+        M._lastSatedUuid = bucket.uuid
+        M._satedFence    = now + 0.30 -- small debounce window
+    else
+        M._lastSatedUuid = nil
+    end
 end
 
 function CuraEqui.Buffs.Remove(target, guid, horse)

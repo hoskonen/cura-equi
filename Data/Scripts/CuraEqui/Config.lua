@@ -123,7 +123,6 @@ CuraEqui.Config = {
             { name = "ok",       uidd = "f3d4b5e2-7f8a-4d6b-9a31-8b0d1c9a7c52" },
         },
         horseDebuffTiers  = {
-            { name = "sated",    uidd = "7d3c2a91-8c6b-4f3f-9a6e-2b1d3e94a6b0" },
             { name = "minor",    uidd = "c4b7f9d2-1e35-4a07-8b3a-1b6e9b2a0c18" },
             { name = "moderate", uidd = "e1a5c0f7-2d4c-41f9-8d45-7a9f0c3e1b72" },
             { name = "critical", uidd = "9f2e6b84-3a10-4719-b6d9-5d0c8f2a4c63" },

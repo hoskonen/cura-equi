@@ -743,7 +743,7 @@ function CuraEqui.StartWatching()
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = true })
+            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = false })
             if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
         end
     end
