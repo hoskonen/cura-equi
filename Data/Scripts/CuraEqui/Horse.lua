@@ -571,15 +571,18 @@ function Horse:OnInventoryClosed()
     local removePlan, used, selectedUnits, consumedUnits =
         _plan_remove(good, needPoints, FCFG.overfeedPolicy or "allow")
 
-    -- We may have overshot the cap; apply only up to the cap, but keep the extra item(s) removed.
-    local usedEff                                        = math.min(used or 0, needPoints or 0)
-    local overshoot                                      = math.max(0, (used or 0) - (needPoints or 0))
+    -- Cap-aware application (simple “always fill cap” policy)
+    local capPts                                         = math.floor(tonumber(needPoints or 0) or 0)
+    local usedPts                                        = math.floor(tonumber(used or 0) or 0)
+    local appliedPts                                     = math.min(usedPts, capPts)         -- what we actually apply
+    local overshoot                                      = math.max(0, usedPts - appliedPts) -- points wasted
 
-    -- Derive seconds exactly like _apply_feed uses
-    local C                                              = _sated_cfg() -- has perPt
-    local addSec                                         = usedEff * (C.perPt or 10)
+    -- Seconds to add (mirror _apply_feed logic)
+    local C                                              = _sated_cfg() -- C.perPt, etc.
+    local perPt                                          = math.max(1, tonumber(C and C.perPt or 10) or 10)
+    local addSec                                         = appliedPts * perPt
 
-    -- Peek the bucket we’re about to show (ceil of remaining sated)
+    -- Predict bucket we will show (ceil on post-feed remainder)
     local bucketSec                                      = 0
     do
         local now     = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
@@ -622,11 +625,11 @@ function Horse:OnInventoryClosed()
     -- before applying feed effects
     local beforeH = math.floor(tonumber(S.hunger or 0) or 0)
 
-    -- 🔎 Log what we’re about to do (cap, overshoot, units, seconds, bucket)
-    _log_feed_cap(S, needPoints, used, usedEff, overshoot, consumedUnits, selectedUnits, addSec, bucketSec)
+    -- Single, authoritative cap log
+    _log_feed_cap(S, capPts, usedPts, appliedPts, overshoot, consumedUnits, selectedUnits, addSec, bucketSec)
 
-    -- Apply feed effects (+ immediate HUD sync)
-    _apply_feed(S, mode, usedEff)
+    -- Apply using the cap-aware points (appliedPts)
+    _apply_feed(S, mode, appliedPts)
 
     -- Round 'rem' up to the next visible bucket (from Buffs.SATED_TIERS) and clamp internal sated
     -- Why? Because we are using fixed durations from the buff.xml so we clamp to the nearest buff
@@ -678,12 +681,10 @@ function Horse:OnInventoryClosed()
     end
 
     if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
-        local applied   = math.min(used or 0, needPoints or 0)
-        local overshoot = math.max(0, (used or 0) - applied)
         System.LogAlways(("[CuraEqui][Feed] Apply: mode=%s applied=%d (consumed=%d, overshoot=%d) hunger=%d→%d satedNow=%.0fs")
             :format(
                 mode,
-                applied, used, overshoot,
+                appliedPts, usedPts, overshoot,
                 beforeH, math.floor(tonumber(S.hunger or 0) or 0),
                 math.max(0,
                     ((tonumber(S.satedUntil or 0) or 0) - ((CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock())))
