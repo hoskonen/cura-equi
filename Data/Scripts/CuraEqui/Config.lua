@@ -27,10 +27,10 @@ CuraEqui.Config = {
         hungerTraceEvery = 10000,
         mountTrace = true,
         feedTrace = true,
-        persistTrace = true,     -- log saving
+        persistTrace = true,      -- log saving
         tickTrace = true,
-        buffTraceVerbose = true, -- false = log only when buff changes
-        staminaSnapshot = true,  -- capture a reference staminaMax (debug only)
+        buffTraceVerbose = false, -- false = log only when buff changes
+        staminaSnapshot = true,   -- capture a reference staminaMax (debug only)
     },
     Hunger = {
         preset                   = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"

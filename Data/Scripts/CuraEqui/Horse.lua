@@ -5,10 +5,28 @@ CuraEqui.HorseState = CuraEqui.HorseState or {}
 CuraEqui.HorseCfg = CuraEqui.HorseCfg or
     { hungerMax = 100, hungerStart = 30, tickSec = 10, debuffAt = 70 }
 
+-- logging ---------------------------------------------------------------
 local function FeedLog(fmt, ...)
     local D = CuraEqui.Config and CuraEqui.Config.Debug
     if not (D and D.feedTrace) then return end
     CuraEqui.Log("Feed", fmt, ...)
+end
+
+local function _log_feed_cap(S, needPoints, used, usedEff, overshoot, consumedUnits, selectedUnits, addSec, bucketSec)
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if not (D and D.feedTrace) then return end
+
+    System.LogAlways(("[CuraEqui][Feed] cap=%d used=%.0f applied=%.0f overshoot=%.0f units=%d sel=%d → +%ds (bucket=%ds)")
+        :format(
+            tonumber(needPoints or 0) or 0,
+            tonumber(used or 0) or 0,
+            tonumber(usedEff or 0) or 0,
+            tonumber(overshoot or 0) or 0,
+            tonumber(consumedUnits or 0) or 0,
+            tonumber(selectedUnits or 0) or 0,
+            tonumber(addSec or 0) or 0,
+            tonumber(bucketSec or 0) or 0
+        ))
 end
 
 -- Pretty summary for feed → sated timers, showing clamp if any.
@@ -225,8 +243,10 @@ local function _plan_remove(picks, needPoints, over)
         consumedUnits = consumedUnits + (tonumber(rec.units) or 0)
     end
 
-    -- final clamp in case of overshoot
-    if used > needPoints then
+    -- overshoot handling:
+    -- when 'over' == "allow", KEEP the last extra unit that crosses the cap (simple + predictable).
+    -- when 'over' ~= "allow", preserve the old behavior and clamp back to needPoints.
+    if over ~= "allow" and used > needPoints then
         local excess = used - needPoints
         for k, rec in pairs(removePlan) do
             if excess <= 0 then break end
@@ -550,6 +570,31 @@ function Horse:OnInventoryClosed()
     local removePlan, used, selectedUnits, consumedUnits =
         _plan_remove(good, needPoints, FCFG.overfeedPolicy or "allow")
 
+    -- We may have overshot the cap; apply only up to the cap, but keep the extra item(s) removed.
+    local usedEff                                        = math.min(used or 0, needPoints or 0)
+    local overshoot                                      = math.max(0, (used or 0) - (needPoints or 0))
+
+    -- Peek the bucket we’re about to show (ceil of remaining sated)
+    local bucketSec                                      = 0
+    do
+        local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now) +
+            (usedEff * (CuraEqui.Config.Hunger.satedSecPerPoint or 10))
+        local pick = (CuraEqui.Buffs and CuraEqui.Buffs.PickSatedBucket) and
+            CuraEqui.Buffs.PickSatedBucket(rem, { ceil = true })
+        bucketSec = (pick and pick.sec) or 0
+    end
+
+    -- LOG (gate behind a debug flag)
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D and D.feedTrace then
+            System.LogAlways(("[CuraEqui][Feed] cap=%d used=%.0f applied=%.0f overshoot=%.0f units=%d sel=%d → bucket=%ds")
+                :format(needPoints or 0, used or 0, usedEff or 0, overshoot or 0,
+                    tonumber(consumedUnits or 0) or 0, tonumber(selectedUnits or 0) or 0, bucketSec))
+        end
+    end
+
     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
     if D and D.feedTrace then
         local n = 0
@@ -582,8 +627,11 @@ function Horse:OnInventoryClosed()
     -- before applying feed effects
     local beforeH = math.floor(tonumber(S.hunger or 0) or 0)
 
+    -- 🔎 Log what we’re about to do (cap, overshoot, units, seconds, bucket)
+    _log_feed_cap(S, needPoints, used, usedEff, overshoot, consumedUnits, selectedUnits, addSec, bucketSec)
+
     -- Apply feed effects (+ immediate HUD sync)
-    _apply_feed(S, mode, used)
+    _apply_feed(S, mode, usedEff)
 
     -- Round 'rem' up to the next visible bucket (from Buffs.SATED_TIERS) and clamp internal sated
     -- Why? Because we are using fixed durations from the buff.xml so we clamp to the nearest buff
