@@ -1,5 +1,6 @@
 .vscode
 .VSCodeCounter
+.continue
 Data/*.pak
 Data/Libs/UI/*.gfx
 Localization/*.pak
