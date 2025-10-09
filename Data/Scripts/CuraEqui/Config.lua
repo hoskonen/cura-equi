@@ -27,6 +27,7 @@ CuraEqui.Config = {
         hungerTraceEvery = 10000,
         mountTrace = true,
         feedTrace = true,
+        feedTraceVerbose = false,
         persistTrace = true,      -- log saving
         tickTrace = true,
         buffTraceVerbose = false, -- false = log only when buff changes

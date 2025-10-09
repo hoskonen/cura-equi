@@ -172,21 +172,22 @@ local function _calc_need_points(S, mode)
     local cap = tonumber(F.needCapPerFeed or 25) or 25
 
     if mode == "sated" then
-        local C          = _sated_cfg() -- minSec, maxSec, perPt, capPts, alsoHun
+        local C          = _sated_cfg() -- {minSec, maxSec, perPt, capPts, alsoHun}
         local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
         local remS       = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
-        -- points needed to reach the minimum sated target
-        local target     = math.max(C.minSec, math.min(C.maxSec, C.minSec))
-        local missingSec = math.max(0, C.minSec - remS)
-        local sNeedPt    = math.ceil(missingSec / math.max(1, C.perPt))
+        -- points needed to reach the minimum sated target (minSec)
+        local missingSec = math.max(0, (C.minSec or 0) - remS)
+        local perPt      = math.max(1, C.perPt or 1)
+        local sNeedPt    = math.ceil(missingSec / perPt)
+
+        local capPts     = math.min(C.capPts or cap, cap)
 
         if C.alsoHun then
-            -- allow feeding for hunger even if sated target is met
             local hNeedPt = math.max(0, tonumber(S.hunger or 0) or 0)
-            return math.max(0, math.min(math.max(sNeedPt, hNeedPt), math.min(C.capPts or cap, cap)))
+            return math.max(0, math.min(math.max(sNeedPt, hNeedPt), capPts))
         else
-            return math.max(0, math.min(sNeedPt, math.min(C.capPts or cap, cap)))
+            return math.max(0, math.min(sNeedPt, capPts))
         end
     end
 
@@ -677,10 +678,13 @@ function Horse:OnInventoryClosed()
     end
 
     if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
-        System.LogAlways(("[CuraEqui][Feed] Apply: mode=%s used=%d hunger=%d→%d satedNow=%.0fs")
+        local applied   = math.min(used or 0, needPoints or 0)
+        local overshoot = math.max(0, (used or 0) - applied)
+        System.LogAlways(("[CuraEqui][Feed] Apply: mode=%s applied=%d (consumed=%d, overshoot=%d) hunger=%d→%d satedNow=%.0fs")
             :format(
-                mode, used, beforeH,
-                math.floor(tonumber(S.hunger or 0) or 0),
+                mode,
+                applied, used, overshoot,
+                beforeH, math.floor(tonumber(S.hunger or 0) or 0),
                 math.max(0,
                     ((tonumber(S.satedUntil or 0) or 0) - ((CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock())))
             )
