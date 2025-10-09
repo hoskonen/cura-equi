@@ -574,29 +574,23 @@ function Horse:OnInventoryClosed()
     local usedEff                                        = math.min(used or 0, needPoints or 0)
     local overshoot                                      = math.max(0, (used or 0) - (needPoints or 0))
 
+    -- Derive seconds exactly like _apply_feed uses
+    local C                                              = _sated_cfg() -- has perPt
+    local addSec                                         = usedEff * (C.perPt or 10)
+
     -- Peek the bucket we’re about to show (ceil of remaining sated)
     local bucketSec                                      = 0
     do
-        local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-        local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now) +
-            (usedEff * (CuraEqui.Config.Hunger.satedSecPerPoint or 10))
-        local pick = (CuraEqui.Buffs and CuraEqui.Buffs.PickSatedBucket) and
-            CuraEqui.Buffs.PickSatedBucket(rem, { ceil = true })
-        bucketSec = (pick and pick.sec) or 0
-    end
-
-    -- LOG (gate behind a debug flag)
-    do
-        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-        if D and D.feedTrace then
-            System.LogAlways(("[CuraEqui][Feed] cap=%d used=%.0f applied=%.0f overshoot=%.0f units=%d sel=%d → bucket=%ds")
-                :format(needPoints or 0, used or 0, usedEff or 0, overshoot or 0,
-                    tonumber(consumedUnits or 0) or 0, tonumber(selectedUnits or 0) or 0, bucketSec))
-        end
+        local now     = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local rem     = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+        local postRem = rem + addSec
+        local pick    = (CuraEqui.Buffs and CuraEqui.Buffs.PickSatedBucket)
+            and CuraEqui.Buffs.PickSatedBucket(postRem, { ceil = true })
+        bucketSec     = (pick and pick.sec) or 0
     end
 
     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    if D and D.feedTrace then
+    if D and D.feedTraceVerbose then
         local n = 0
         for _, rec in pairs(removePlan or {}) do
             n = n + 1
