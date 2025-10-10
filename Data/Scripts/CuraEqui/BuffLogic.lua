@@ -263,6 +263,25 @@ local function _pick_bucket_ceil(remS)
     return T[1]
 end
 
+-- Public wrapper: choose ceil or floor rounding for sated tier selection
+function CuraEqui.Buffs.PickSatedBucket(remS, opts)
+    if not remS then return nil end
+    if opts and opts.ceil then
+        return _pick_bucket_ceil(remS)
+    else
+        return _pick_bucket_floor(remS)
+    end
+end
+
+-- Predict which tier (seconds) would be displayed if addSec extra were granted now
+function CuraEqui.Buffs.PredictBucketSecAfterAdd(S, addSec)
+    local now  = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local rem  = math.max(0, (tonumber(S and S.satedUntil or 0) or 0) - now)
+    local want = rem + math.max(0, tonumber(addSec or 0) or 0)
+    local b    = CuraEqui.Buffs.PickSatedBucket(want, { ceil = true })
+    return (b and b.sec) or 0
+end
+
 -- remove all sated timed-buffs (player channel), using the tier table
 function CuraEqui.Buffs.ClearSatedTimers()
     local M = CuraEqui.Buffs

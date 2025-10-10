@@ -98,7 +98,7 @@ CuraEqui.Config = {
                 night                = { disableGrazing = true, timeDrainMul = 0.9, maxDeltaPerNight = 12 },
             },
             dev = {
-                ratePerMinIdle       = 0.05,
+                ratePerMinIdle       = 0.02,
                 ratePerMinMounted    = 0.10,
                 ratePerKmMounted     = 0.12,
                 grazePerMinIdleUnmtd = -0.06,
@@ -162,7 +162,7 @@ CuraEqui.Config = {
         real_life              = { needCapPerFeed = 25, satedSecPerPoint = 7, satedMaxSec = 1200 },
         moderate               = { needCapPerFeed = 25, satedSecPerPoint = 6, satedMaxSec = 900 },
         laidback               = { needCapPerFeed = 30, satedSecPerPoint = 8, satedMaxSec = 1500 },
-        dev                    = { needCapPerFeed = 30, satedSecPerPoint = 8, satedMaxSec = 1500 }
+        dev                    = { needCapPerFeed = 30, satedSecPerPoint = 12, satedMaxSec = 2000 }
     },
     Drinking = {
         sources = {

@@ -584,13 +584,8 @@ function Horse:OnInventoryClosed()
 
     -- Predict bucket we will show (ceil on post-feed remainder)
     local bucketSec                                      = 0
-    do
-        local now     = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-        local rem     = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-        local postRem = rem + addSec
-        local pick    = (CuraEqui.Buffs and CuraEqui.Buffs.PickSatedBucket)
-            and CuraEqui.Buffs.PickSatedBucket(postRem, { ceil = true })
-        bucketSec     = (pick and pick.sec) or 0
+    if CuraEqui.Buffs and CuraEqui.Buffs.PredictBucketSecAfterAdd then
+        bucketSec = CuraEqui.Buffs.PredictBucketSecAfterAdd(S, addSec)
     end
 
     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
