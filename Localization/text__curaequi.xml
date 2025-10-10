@@ -25,12 +25,12 @@
 </Row>
 
 <!-- Custom Food: Hay Bundle SM-->
- <Row><Cell>ui_nm_curaequi_hay_bundle_sm</Cell><Cell>Horse - Hay Bundle Small</Cell><Cell>Hay Bundle</Cell></Row>
+ <Row><Cell>ui_nm_curaequi_hay_bundle_sm</Cell><Cell>Horse - Hay Bundle Small</Cell><Cell>Horse - Hay Bundle Small</Cell></Row>
  
  <Row><Cell>ui_in_curaequi_hay_bundle_sm</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell></Row>
 
  <!-- Custom Food: Hay Bundle LG -->
- <Row><Cell>ui_nm_curaequi_hay_bundle_lg</Cell><Cell>Horse - Hay Bundle Large</Cell><Cell>Hay Bundle</Cell></Row>
+ <Row><Cell>ui_nm_curaequi_hay_bundle_lg</Cell><Cell>Horse - Hay Bundle Large</Cell><Cell>Horse - Hay Bundle Large</Cell></Row>
  
  <Row><Cell>ui_in_curaequi_hay_bundle_lg</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell><Cell>A bundle of dried grass, coarse but lasting. Proper fodder for horses, though no feast for men.</Cell></Row>
 

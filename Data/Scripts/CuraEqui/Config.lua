@@ -153,16 +153,11 @@ CuraEqui.Config = {
         satedMaxSec            = 2000,
         satedSecPerPoint       = 10,
         satedAlsoReducesHunger = true,
+        satedHorsefeedMult     = 1.5,
         -- Toasts (dev-style, no localization)
         toastOnDone            = true,
         toastLane              = "notification", -- "notification" (right) | "tutorial" | "infotext"
         toastSec               = 2.0,
-        -- Feeding settings for Presets
-        hardcore               = { needCapPerFeed = 20, satedSecPerPoint = 5, satedMaxSec = 600 },
-        real_life              = { needCapPerFeed = 25, satedSecPerPoint = 7, satedMaxSec = 1200 },
-        moderate               = { needCapPerFeed = 25, satedSecPerPoint = 6, satedMaxSec = 900 },
-        laidback               = { needCapPerFeed = 30, satedSecPerPoint = 8, satedMaxSec = 1500 },
-        dev                    = { needCapPerFeed = 30, satedSecPerPoint = 12, satedMaxSec = 2000 }
     },
     Drinking = {
         sources = {

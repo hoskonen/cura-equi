@@ -121,7 +121,9 @@ local function _per_unit_from_info(info)
 
         if rec then
             local v = tonumber(rec.nutrition or 0) or 0
-            if v > 0 then return v, (rec.token or label) end
+            if v > 0 then
+                return v, (rec.token or label), (rec.horseFood == true)
+            end
         end
     end
 
@@ -150,21 +152,26 @@ local function _per_unit_from_info(info)
         end
     end
 
-    return 0, label
+    return 0, label, false
 end
 
 local function _sated_cfg()
     local F    = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
     local H    = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
 
-    -- Prefer Hunger.* if set; fall back to Feeding.*; then sensible defaults
     local per  = tonumber(H.satedSecPerNutrition) or tonumber(F.satedSecPerPoint) or 6
+    local perH = tonumber(F.satedSecPerPointHorse) or per -- horse seconds per point (default=per)
     local maxS = tonumber(H.satedCapSec) or tonumber(F.satedMaxSec) or 600
-    local minS = tonumber(F.satedMinSec) or 0 -- (you don’t have a Hunger.min; keep 0)
+    local minS = tonumber(F.satedMinSec) or 0
     local capP = tonumber(F.needCapPerFeed) or 25
     local also = (F.satedAlsoReducesHunger ~= false)
 
-    return { minSec = minS, maxSec = maxS, perPt = per, capPts = capP, alsoHun = also }
+    -- simple inline clamps (“validator”)
+    per        = math.max(1, per)
+    perH       = math.max(per, perH) -- never less than normal
+    capP       = math.max(1, math.min(200, capP))
+
+    return { minSec = minS, maxSec = maxS, perPt = per, perPtHorse = perH, capPts = capP, alsoHun = also }
 end
 
 local function _calc_need_points(S, mode)
@@ -201,7 +208,7 @@ local function _plan_remove(picks, needPoints, over)
     for _, info in ipairs(picks or {}) do
         if used >= needPoints then break end
 
-        local per, label = _per_unit_from_info(info)
+        local per, label, isHorse = _per_unit_from_info(info)
         if per > 0 then
             local maxUnits  = tonumber(info.qty or 1) or 1
             local remaining = math.max(0, needPoints - used)
@@ -223,6 +230,7 @@ local function _plan_remove(picks, needPoints, over)
                         units   = 0,
                         label   = label,
                         per     = per,
+                        horse   = isHorse,
                     }
                     removePlan[key] = rec
                 end
@@ -571,19 +579,55 @@ function Horse:OnInventoryClosed()
     local removePlan, used, selectedUnits, consumedUnits =
         _plan_remove(good, needPoints, FCFG.overfeedPolicy or "allow")
 
+    -- Compute how many points (not units) of the APPLIED cap came from horse vs normal foods,
+    -- preserving the user's selection order. We walk the original 'picks' so order is deterministic.
+    local function _split_applied_points(removePlan, picks, capPts)
+        local got = 0
+        local horsePts, normalPts = 0, 0
+
+        -- quick lookup: wuidStr -> rec
+        local byWuid = {}
+        for _, rec in pairs(removePlan or {}) do
+            if rec and rec.wuid then byWuid[tostring(rec.wuid)] = rec end
+        end
+
+        for _, info in ipairs(picks or {}) do
+            if got >= capPts then break end
+            local rec = byWuid[tostring(info._wuid)]
+            if rec and rec.units and rec.units > 0 and rec.per and rec.per > 0 then
+                -- points contributed by this item’s planned units
+                local pts = rec.units * rec.per
+                local take = math.min(pts, capPts - got)
+                if take > 0 then
+                    if rec.horse then horsePts = horsePts + take else normalPts = normalPts + take end
+                    got = got + take
+                end
+            end
+        end
+
+        return horsePts, normalPts
+    end
+
     -- Cap-aware application (simple “always fill cap” policy)
-    local capPts                                         = math.floor(tonumber(needPoints or 0) or 0)
-    local usedPts                                        = math.floor(tonumber(used or 0) or 0)
-    local appliedPts                                     = math.min(usedPts, capPts)         -- what we actually apply
-    local overshoot                                      = math.max(0, usedPts - appliedPts) -- points wasted
+    local capPts              = math.floor(tonumber(needPoints or 0) or 0)
+    local usedPts             = math.floor(tonumber(used or 0) or 0)
+    local appliedPts          = math.min(usedPts, capPts)         -- what we actually apply
+    local overshoot           = math.max(0, usedPts - appliedPts) -- points wasted
 
     -- Seconds to add (mirror _apply_feed logic)
-    local C                                              = _sated_cfg() -- C.perPt, etc.
-    local perPt                                          = math.max(1, tonumber(C and C.perPt or 10) or 10)
-    local addSec                                         = appliedPts * perPt
+    local C                   = _sated_cfg()
+    local perNorm             = math.max(1, tonumber(C and C.perPt or 10) or 10)
+    local perHorse            = math.max(perNorm, tonumber((C and C.perPtHorse) or 0) or 0) -- clamp: horse ≥ normal
+
+    -- Split applied points by source (horse vs normal)
+    local horsePts, normalPts = _split_applied_points(removePlan, good, appliedPts)
+
+    -- Seconds gained = normPts*perNorm + horsePts*perHorse
+    local addSec              = (normalPts * perNorm) + (horsePts * perHorse)
+
 
     -- Predict bucket we will show (ceil on post-feed remainder)
-    local bucketSec                                      = 0
+    local bucketSec = 0
     if CuraEqui.Buffs and CuraEqui.Buffs.PredictBucketSecAfterAdd then
         bucketSec = CuraEqui.Buffs.PredictBucketSecAfterAdd(S, addSec)
     end
@@ -623,8 +667,37 @@ function Horse:OnInventoryClosed()
     -- Single, authoritative cap log
     _log_feed_cap(S, capPts, usedPts, appliedPts, overshoot, consumedUnits, selectedUnits, addSec, bucketSec)
 
-    -- Apply using the cap-aware points (appliedPts)
-    _apply_feed(S, mode, appliedPts)
+    -- log horse bonus from horse food
+    do
+        local horsePts, _ = _split_applied_points(removePlan, good, appliedPts)
+        if (horsePts or 0) > 0 then
+            local C = _sated_cfg()
+            System.LogAlways(("[CuraEqui][Feed] horse bonus: %.0fpts × %ds/pt = +%ds")
+                :format(horsePts, math.floor(C.perPtHorse or 0), math.floor((C.perPtHorse or 0) * horsePts)))
+        end
+    end
+
+    -- Apply hunger-only if sated also reduces hunger
+    do
+        local C = _sated_cfg()
+        if C.alsoHun then
+            -- use the hunger path so satedUntil isn't touched here
+            _apply_feed(S, "hunger", appliedPts)
+        end
+    end
+
+    -- Now apply sated seconds using the composition-aware addSec we computed
+    do
+        local C     = _sated_cfg()
+        local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local base  = math.max(now, tonumber(S.satedUntil or 0) or 0)
+        local capA  = now + (C.maxSec or 0)
+        local next  = math.min(base + (addSec or 0), capA)
+        local floor = now + (C.minSec or 0)
+        if next < floor then next = math.min(floor, capA) end
+        S.satedUntil = next
+    end
+
 
     -- Round 'rem' up to the next visible bucket (from Buffs.SATED_TIERS) and clamp internal sated
     -- Why? Because we are using fixed durations from the buff.xml so we clamp to the nearest buff

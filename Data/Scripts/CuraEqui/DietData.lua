@@ -7,12 +7,12 @@ CuraEqui.DietData = {
     byGuid = {
         -- [template GUID] -> { token, nutrition }
         -- Custom Horse Food
-        ["3e2f9a64-8c2b-4f7a-a9d3-5c1b2e7d4f90"] = { token = "hay_bundle_sm", nutrition = 20 },
-        ["574bf779-db48-4c00-bb86-3205d4d02137"] = { token = "hay_bundle_lg", nutrition = 35 },
-        ["9b7c1d20-5e43-4c8f-b1f2-0d3a6e9c8247"] = { token = "oat_sack", nutrition = 24 },
-        ["5330951a-32e9-42c6-a21a-461c5934a074"] = { token = "apple_sack", nutrition = 16 },
-        ["52ecf20b-1f3f-442c-a4be-c486775654fe"] = { token = "pear_sack", nutrition = 18 },
-        ["d1f3f3e2-2a4e-4f7c-8b2a-5c3b2e7d4f91"] = { token = "carrot_bundle", nutrition = 20 },
+        ["3e2f9a64-8c2b-4f7a-a9d3-5c1b2e7d4f90"] = { token = "hay_bundle_sm", nutrition = 20, horseFood = true },
+        ["574bf779-db48-4c00-bb86-3205d4d02137"] = { token = "hay_bundle_lg", nutrition = 35, horseFood = true },
+        ["9b7c1d20-5e43-4c8f-b1f2-0d3a6e9c8247"] = { token = "oat_sack", nutrition = 24, horseFood = true },
+        ["5330951a-32e9-42c6-a21a-461c5934a074"] = { token = "apple_sack", nutrition = 16, horseFood = true },
+        ["52ecf20b-1f3f-442c-a4be-c486775654fe"] = { token = "pear_sack", nutrition = 18, horseFood = true },
+        ["d1f3f3e2-2a4e-4f7c-8b2a-5c3b2e7d4f91"] = { token = "carrot_bundle", nutrition = 20, horseFood = true },
         -- Fruits (treats)
         ["2264f217-590e-4c0f-a4c6-f50c6532b9f6"] = { token = "apple", nutrition = 5 },
         ["295c54f8-76a3-42fa-8fe1-8f1ecb63576b"] = { token = "applecooked", nutrition = 6 },
