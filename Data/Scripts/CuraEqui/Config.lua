@@ -152,8 +152,8 @@ CuraEqui.Config = {
         satedMinSec            = 0,
         satedMaxSec            = 2000,
         satedSecPerPoint       = 10,
+        satedSecPerPointHorse  = 20,
         satedAlsoReducesHunger = true,
-        satedHorsefeedMult     = 1.5,
         -- Toasts (dev-style, no localization)
         toastOnDone            = true,
         toastLane              = "notification", -- "notification" (right) | "tutorial" | "infotext"
