@@ -32,6 +32,7 @@ CuraEqui.Config = {
         tickTrace = true,
         buffTraceVerbose = false, -- false = log only when buff changes
         staminaSnapshot = true,   -- capture a reference staminaMax (debug only)
+        horseDerived = true,
     },
     Hunger = {
         preset                   = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"

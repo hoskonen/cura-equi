@@ -313,11 +313,33 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
     if CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina then
         stamCur, stamMax = CuraEqui.Debug.ReadHorseStamina(h)
     end
-    local capMax      = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or nil
-    local soul        = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
-    local hp          = (soul and soul.GetState and soul:GetState("health")) or nil
-    local courage     = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or nil
-    local sp          = CuraEqui.Debug.ReadHorseSpeed and CuraEqui.Debug.ReadHorseSpeed(h) or nil
+    local capMax                                                = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or
+        nil
+    local soul                                                  = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
+    local hp                                                    = (soul and soul.GetState and soul:GetState("health")) or
+        nil
+    local courage                                               = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or
+        nil
+    local sp                                                    = CuraEqui.Debug.ReadHorseSpeed and
+        CuraEqui.Debug.ReadHorseSpeed(h) or nil
+
+    -- Derived: horse-related (enable/disable via Config.Debug.horseDerived)
+    local showDer                                               = (CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.horseDerived) ~=
+        false
+    local dSRG, dMST, dHCM, dHML2, dNRW, dRTM, dRSB, dRMS, dMOR = nil, nil, nil, nil, nil, nil, nil, nil, nil
+    if showDer and soul then
+        dSRG = _gd(soul, "srg")  -- stamina regen
+        dMST = _gd(soul, "mst")  -- stamina pool
+        dHCM = _gd(soul, "hcm")  -- HorseCourageMod
+        dHML2 = _gd(soul, "hml") -- ThrowDownMoraleLimit
+        dNRW = _gd(soul, "nrw")  -- stamina recovery
+        dRTM = _gd(soul, "rtm")  -- RiderThreatsToHorseMorale
+        dRSB = _gd(soul, "rsb")  -- RunSpeedBase
+        dRMS = _gd(soul, "rms")  -- RealMoveSpeedMod
+        dMOR = _gd(soul, "mor")  -- Morale
+    end
+
+    local function fmt(x) return (x == nil) and "—" or string.format("%.3f", x) end
 
     -- Build once (declare BEFORE appending)
     local lines       = {}
@@ -337,10 +359,23 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
     if courage then lines[#lines + 1] = ("Courage: %d"):format(math.floor(courage + 0.5)) end
     if sp and sp.pick then
         if sp.pickSrc == "rms" then
-            lines[#lines + 1] = ("Speed Mod: %.3fx"):format(sp.pick)
+            lines[#lines + 1] = ("Speed (RMS): %.3fx"):format(sp.pick)
         else
             lines[#lines + 1] = ("Speed: %.2f (%s)"):format(sp.pick, sp.pickSrc)
         end
+    end
+
+    -- Derived block (only append if values exist)
+    if showDer then
+        if dSRG ~= nil then lines[#lines + 1] = ("Stamina Regen: %s"):format(fmt(dSRG)) end
+        if dMST ~= nil then lines[#lines + 1] = ("Stamina Pool: %s"):format(fmt(dMST)) end
+        if dHCM ~= nil then lines[#lines + 1] = ("Courage Mod: %s"):format(fmt(dHCM)) end
+        if dHML2 ~= nil then lines[#lines + 1] = ("Throw Down Morale Lim: %s"):format(fmt(dHML2)) end
+        if dNRW ~= nil then lines[#lines + 1] = ("Stamina Recovery: %s"):format(fmt(dNRW)) end
+        if dRTM ~= nil then lines[#lines + 1] = ("Rider Threat→Morale: %s"):format(fmt(dRTM)) end
+        if dRSB ~= nil then lines[#lines + 1] = ("Run Speed Base (RSB): %s"):format(fmt(dRSB)) end
+        if dRMS ~= nil then lines[#lines + 1] = ("Real Move Speed (RMS): %s"):format(fmt(dRMS)) end
+        if dMOR ~= nil then lines[#lines + 1] = ("Morale (MOR): %s"):format(fmt(dMOR)) end
     end
 
     local body = table.concat(lines, "\n")
@@ -408,10 +443,6 @@ end
 
 -- ==== CuraEqui Debug Cheats: Hunger & Sated ================================
 CuraEqui.Debug = CuraEqui.Debug or {}
-
-local function _now()
-    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
-end
 
 local function _horse_and_state()
     local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
@@ -888,10 +919,34 @@ function CuraEqui.Debug.ProbeWaterHorse(radius)
     end
 end
 
+function CuraEqui.Debug.DumpHorseDerived()
+    local h = (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    if not h then
+        System.LogAlways("[CuraEqui][HorseDerived] no horse"); return
+    end
+    local soul = (h.soul or (h.GetSoul and h:GetSoul())) or nil
+    if not (soul and soul.GetDerivedStat) then
+        System.LogAlways("[CuraEqui][HorseDerived] no soul/derived"); return
+    end
+
+    local function L(tag, key)
+        local v = _gd(soul, key, {})
+        System.LogAlways(("[CuraEqui][HorseDerived] %s (%s) = %s"):format(tag, key, tostring(v)))
+    end
+    L("stamina regen", "srg")
+    L("stamina pool", "mst")
+    L("courage mod", "hcm")
+    L("morale limit", "hml")
+    L("stam recovery", "nrw")
+    L("rider threat→morale", "rtm")
+    L("run speed base", "rsb")
+    L("real move speed mod", "rms")
+    L("morale", "mor")
+end
+
 -- Console bindings
 if System and System.AddCCommand then
     -- Register (or rebind) all existing commands here:
-    _add_cmd("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
     _add_cmd("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show Horse Status tutorial card")
     _add_cmd("curaequi_set_hunger", "CuraEqui.Debug.SetHunger(%1)", "Set horse hunger percent [0..100]")
     _add_cmd("curaequi_add_hunger", "CuraEqui.Debug.AddHunger(%1)", "Add delta to horse hunger (negative allowed)")
@@ -913,6 +968,7 @@ if System and System.AddCCommand then
         "Scan water sources around current horse (m)")
     _add_cmd("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
     _add_cmd("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show horse stats card")
+    _add_cmd("curaequi_horse_derived", "CuraEqui.Debug.DumpHorseDerived()", "Dump horse-related derived stats")
 
     _add_cmd("curaequi_spawn_food_strict",
         "CuraEqui.Debug.SpawnFoodStrict(%1,%2,%3)",
