@@ -313,20 +313,22 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
     if CuraEqui.Debug and CuraEqui.Debug.ReadHorseStamina then
         stamCur, stamMax = CuraEqui.Debug.ReadHorseStamina(h)
     end
-    local capMax                                                = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or
+    local capMax                                                                  = (CuraEqui.Debug.ReadHorseCapacity and select(1, CuraEqui.Debug.ReadHorseCapacity(h))) or
         nil
-    local soul                                                  = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or nil
-    local hp                                                    = (soul and soul.GetState and soul:GetState("health")) or
+    local soul                                                                    = (h and (h.soul or (h.GetSoul and h:GetSoul()))) or
         nil
-    local courage                                               = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or
+    local hp                                                                      = (soul and soul.GetState and soul:GetState("health")) or
         nil
-    local sp                                                    = CuraEqui.Debug.ReadHorseSpeed and
+    local courage                                                                 = (CuraEqui.Debug.ReadHorseCourage and select(1, CuraEqui.Debug.ReadHorseCourage(h))) or
+        nil
+    local sp                                                                      = CuraEqui.Debug.ReadHorseSpeed and
         CuraEqui.Debug.ReadHorseSpeed(h) or nil
 
     -- Derived: horse-related (enable/disable via Config.Debug.horseDerived)
-    local showDer                                               = (CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.horseDerived) ~=
+    local showDer                                                                 = (CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.horseDerived) ~=
         false
-    local dSRG, dMST, dHCM, dHML2, dNRW, dRTM, dRSB, dRMS, dMOR = nil, nil, nil, nil, nil, nil, nil, nil, nil
+    local dSRG, dMST, dHCM, dHML2, dNRW, dRTM, dRSB, dRMS, dMOR, dNRS, dNSB, dRSA = nil, nil, nil, nil, nil, nil, nil,
+        nil, nil, nil, nil, nil
     if showDer and soul then
         dSRG = _gd(soul, "srg")  -- stamina regen
         dMST = _gd(soul, "mst")  -- stamina pool
@@ -337,6 +339,9 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
         dRSB = _gd(soul, "rsb")  -- RunSpeedBase
         dRMS = _gd(soul, "rms")  -- RealMoveSpeedMod
         dMOR = _gd(soul, "mor")  -- Morale
+        dNRS = _gd(soul, "nrs")  -- DerivStat_NormalizedRunSpeed
+        dNSB = _gd(soul, "nsb")  -- DerivStat_NormalizedRunSpeedBase
+        dRSA = _gd(soul, "rsa")  -- DerivStat_RelativeMovementSpeedAddition
     end
 
     local function fmt(x) return (x == nil) and "—" or string.format("%.3f", x) end
@@ -376,6 +381,9 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
         if dRSB ~= nil then lines[#lines + 1] = ("Run Speed Base (RSB): %s"):format(fmt(dRSB)) end
         if dRMS ~= nil then lines[#lines + 1] = ("Real Move Speed (RMS): %s"):format(fmt(dRMS)) end
         if dMOR ~= nil then lines[#lines + 1] = ("Morale (MOR): %s"):format(fmt(dMOR)) end
+        if dNRS ~= nil then lines[#lines + 1] = ("Normalized Run Speed (NRS): %s"):format(fmt(dNRS)) end
+        if dNSB ~= nil then lines[#lines + 1] = ("Normalized Run Speed Base (NSB): %s"):format(fmt(dNSB)) end
+        if dRSA ~= nil then lines[#lines + 1] = ("Relative Movement Speed Addition (RSA): %s"):format(fmt(dRSA)) end
     end
 
     local body = table.concat(lines, "\n")
@@ -942,6 +950,9 @@ function CuraEqui.Debug.DumpHorseDerived()
     L("run speed base", "rsb")
     L("real move speed mod", "rms")
     L("morale", "mor")
+    L("normalized run speed", "nrs")
+    L("normalized run speed base", "nsb")
+    L("relative movement speed addition", "rsa")
 end
 
 -- Console bindings
