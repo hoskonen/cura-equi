@@ -23,64 +23,64 @@
 		<!-- ========================= -->
 
 		<!-- Cura Equi / Horse Debuff: Sated 100s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="c5b2d9f6-12f1-44d4-b04c-46f6b3e5c711" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="100" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="c5b2d9f6-12f1-44d4-b04c-46f6b3e5c711" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="100" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 200s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="f9ad23a8-7d3d-4e43-96f2-1d5cc84f2d40" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="200" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="f9ad23a8-7d3d-4e43-96f2-1d5cc84f2d40" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="200" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 300s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="7a0a5c5c-5c9c-44ed-9b46-9184b75e3c3c" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="300" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="7a0a5c5c-5c9c-44ed-9b46-9184b75e3c3c" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="300" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 400s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="6eecf4fa-9b5e-48bb-9b02-3875f9f609b7" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="400" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="6eecf4fa-9b5e-48bb-9b02-3875f9f609b7" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="400" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 500s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="7b3e1a6a-23f4-41af-b892-205d8340d6ee" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="500" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="7b3e1a6a-23f4-41af-b892-205d8340d6ee" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="500" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 600s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="8f6d7a21-3c5e-4b2a-8a6f-2f19b7e3c4d1" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="600" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="8f6d7a21-3c5e-4b2a-8a6f-2f19b7e3c4d1" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="600" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 700s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="1a9c3e5b-7d2f-4e10-9b8a-3c1d5e7f0a2b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="700" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="1a9c3e5b-7d2f-4e10-9b8a-3c1d5e7f0a2b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="700" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 800s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="2c7e5a91-6b3d-4f22-8c9d-5e1a3b7c0d2f" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="800" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="2c7e5a91-6b3d-4f22-8c9d-5e1a3b7c0d2f" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="800" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 900s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="3e5a7c19-5d2b-4a33-a8b9-6f1e2d3c4b5a" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="900" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="3e5a7c19-5d2b-4a33-a8b9-6f1e2d3c4b5a" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="900" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1000s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="4f1a2b3c-8d7e-4c44-9a8b-7c0d1e2f3a4b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1000" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="4f1a2b3c-8d7e-4c44-9a8b-7c0d1e2f3a4b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1000" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1100s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="5a3c1e7d-2b8f-4d55-8b9a-0c1d2e3f4a5b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1100" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="5a3c1e7d-2b8f-4d55-8b9a-0c1d2e3f4a5b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1100" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1200s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="6b1d3f5a-9c2e-4e66-9a8c-1d2e3f4a5b6c" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1200" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="6b1d3f5a-9c2e-4e66-9a8c-1d2e3f4a5b6c" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1200" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1300s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="7c2e4a6b-1d3f-4f77-8b9c-2e3f4a5b6c7d" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1300" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="7c2e4a6b-1d3f-4f77-8b9c-2e3f4a5b6c7d" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1300" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1400s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="9d3f5b7c-2e4a-4a88-b8a9-3f4a5b6c7d8e" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1400" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="9d3f5b7c-2e4a-4a88-b8a9-3f4a5b6c7d8e" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1400" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1500s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="a0b1c2d3-4e5f-4b99-8c9b-4a5b6c7d8e9f" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1500" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="a0b1c2d3-4e5f-4b99-8c9b-4a5b6c7d8e9f" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1500" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1600s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="b1c2d3e4-5f6a-4da0-9a8c-5b6c7d8e9f0a" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1600" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="b1c2d3e4-5f6a-4da0-9a8c-5b6c7d8e9f0a" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1600" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1700s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="c2d3e4f5-6a7b-4eb1-8b9c-6c7d8e9f0a1b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1700" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="c2d3e4f5-6a7b-4eb1-8b9c-6c7d8e9f0a1b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1700" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1800s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="d3e4f5a6-7b8c-4fc2-9a8b-7d8e9f0a1b2c" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1800" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="d3e4f5a6-7b8c-4fc2-9a8b-7d8e9f0a1b2c" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1800" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 1900s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="e4f5a6b7-8c9d-4ad3-8b9a-8e9f0a1b2c3d" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="1900" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="e4f5a6b7-8c9d-4ad3-8b9a-8e9f0a1b2c3d" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="1900" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- Cura Equi / Horse Debuff: Sated 2000s -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="f5a6b7c8-9d0e-4be4-9a8b-9f0a1b2c3d4e" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*0.7" buff_ui_type_id="1" duration="2000" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="f5a6b7c8-9d0e-4be4-9a8b-9f0a1b2c3d4e" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1" buff_ui_type_id="1" duration="2000" icon_id="buff_ce_sated" implementation="Cpp:BasicTimed" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
 
 		<!-- ========================= -->
 		<!-- Horse Hunger Debuffs -->
@@ -100,22 +100,27 @@
 
 		rms+0.01,rsb+0.01 these seem to be used together!
 
+		Add these:
+		nrs = DerivStat_NormalizedRunSpeed
+		nsb = DerivStat_NormalizedRunSpeedBase
+		rsa = DerivStat_RelativeMovementSpeedAddition
+
 		-->
 
 		<!-- Cura Equi / Horse Debuff: Minor Hunger -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="c4b7f9d2-1e35-4a07-8b3a-1b6e9b2a0c18" buff_lifetime_id="1" buff_name="buff_ce_horse_minor" buff_params="mst-20" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_horse_minor" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_minor" buff_desc="buff_ce_horse_minor_desc" buff_ui_visibility_id="0" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="c4b7f9d2-1e35-4a07-8b3a-1b6e9b2a0c18" buff_lifetime_id="1" buff_name="buff_ce_horse_minor" buff_params="mst-20,rms-0.01,rsb-0.01" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_horse_minor" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_minor" buff_desc="buff_ce_horse_minor_desc" buff_ui_visibility_id="0" />
 
         <!-- Cura Equi / Horse Debuff: Moderate Hunger -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="e1a5c0f7-2d4c-41f9-8d45-7a9f0c3e1b72" buff_lifetime_id="1" buff_name="buff_ce_horse_moderate" buff_params="courage*0.8,rtm*1.2,mst-50" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_horse_moderate" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_moderate" buff_ui_visibility_id="0" buff_desc="buff_ce_horse_moderate_desc" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="e1a5c0f7-2d4c-41f9-8d45-7a9f0c3e1b72" buff_lifetime_id="1" buff_name="buff_ce_horse_moderate" buff_params="courage*0.8,rtm*1.2,mst-50,rms-0.04,rsb-0.04" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_horse_moderate" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_moderate" buff_ui_visibility_id="0" buff_desc="buff_ce_horse_moderate_desc" />
 
         <!-- Cura Equi / Horse Debuff: Critical Hunger -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="9f2e6b84-3a10-4719-b6d9-5d0c8f2a4c63" buff_lifetime_id="1" buff_name="buff_ce_horse_crital" buff_params="courage*0.5,rtm*1.5,mst-100" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_horse_crital" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_crital" buff_ui_visibility_id="0" buff_desc="buff_ce_horse_crital_desc" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="9f2e6b84-3a10-4719-b6d9-5d0c8f2a4c63" buff_lifetime_id="1" buff_name="buff_ce_horse_crital" buff_params="courage*0.5,rtm*1.5,mst-100,rms-0.20,rsb-0.20" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_horse_crital" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_crital" buff_ui_visibility_id="0" buff_desc="buff_ce_horse_crital_desc" />
 
 		<!-- ========================= -->
-		<!-- Killable -->
+		<!-- Killable / DISABLED FOR NOW -->
 		<!-- ========================= -->
 
 		<!-- Vanilla overrides: make horse companion killable -->
-		<buff buff_class_id="1" buff_exclusivity_id="1" buff_id="ab1503b5-1494-456a-baa1-0c2f4efbf3e5" buff_lifetime_id="1" buff_name="perk_immortal_companion" buff_params="imm=0" duration="-1" icon_id="0" implementation="Cpp:Constant" is_persistent="true" />
+		<!-- <buff buff_class_id="1" buff_exclusivity_id="1" buff_id="ab1503b5-1494-456a-baa1-0c2f4efbf3e5" buff_lifetime_id="1" buff_name="perk_immortal_companion" buff_params="imm=0" duration="-1" icon_id="0" implementation="Cpp:Constant" is_persistent="true" /> -->
 	</buffs>
 </database>
