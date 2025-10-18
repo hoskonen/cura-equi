@@ -311,8 +311,9 @@ function CuraEqui.Initialize(fullInit)
     end
     -- Do not start the periodic watcher here; OnGameplayStarted’s resolver owns it.
     -- If there is no horse yet, keep a light probe running so try() will pick it up.
-    if (not h) and CuraEqui.StartProbing then
-        CuraEqui.StartProbing()
+    if not h then
+        System.LogAlways("[CuraEqui][Horse] No horse detected — hunger/buffs are idle until a horse is acquired.")
+        if CuraEqui.StartProbing then CuraEqui.StartProbing() end
     end
 end
 

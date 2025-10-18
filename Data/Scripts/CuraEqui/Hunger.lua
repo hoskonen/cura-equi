@@ -216,7 +216,7 @@ function CuraEqui.StartProbing()
         CuraEqui.state.probeTimer = Script.SetTimerForFunction(periodMs, "CuraEqui_HorseProbeTick")
     end
     CuraEqui.state.probeTimer = Script.SetTimerForFunction(500, "CuraEqui_HorseProbeTick") -- first probe in 0.5s
-    CuraEqui.Log("poll", "Probe started.")
+    CuraEqui.Log("poll", "Probe started (waiting for horse…).")
 end
 
 function CuraEqui.StopProbing()
@@ -339,10 +339,18 @@ end
 
 -- ---------- TICK BODY (MAY THROW) ----------
 function CuraEqui._HungerTickBody()
-    local h = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    CuraEqui.state = CuraEqui.state or {}
+    local st       = CuraEqui.state
+    local now      = (Calendar and Calendar.GetGameTime and Calendar.GetGameTime()) or 0
+
+    local h        = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
 
     if not h then
-        System.LogAlways("[CuraEqui][Tick] no player horse yet")
+        -- log at most once every 5s while horseless
+        if not st._noHorseLogAt or (now - st._noHorseLogAt) > 5.0 then
+            System.LogAlways("[CuraEqui][Horse] Player does not have a horse — skipping hunger tick.")
+            st._noHorseLogAt = now
+        end
         return
     end
 
