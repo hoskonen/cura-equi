@@ -28,10 +28,10 @@ CuraEqui.Config = {
         mountTrace = true,
         feedTrace = true,
         feedTraceVerbose = false,
-        persistTrace = true,      -- log saving
+        persistTrace = true,     -- log saving
         tickTrace = true,
-        buffTraceVerbose = false, -- false = log only when buff changes
-        staminaSnapshot = true,   -- capture a reference staminaMax (debug only)
+        buffTraceVerbose = true, -- false = log only when buff changes
+        staminaSnapshot = true,  -- capture a reference staminaMax (debug only)
         horseDerived = true,
     },
     Hunger = {
@@ -65,7 +65,10 @@ CuraEqui.Config = {
 
         },
         waitCatchup              = { enabled = true, maxCatchupSec = 6 * 3600 },
-        EnableFallbackCatchUp    = false
+        EnableFallbackCatchUp    = false,
+        -- Gift Sated to a newly detected horse (acquisition or mid-session swap)
+        newHorseSatedSec         = 1200, -- 20 min; set 0 to disable
+
     },
     Presets = {
         Hunger = {

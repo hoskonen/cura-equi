@@ -205,23 +205,48 @@ local function _H()
 end
 
 function CuraEqui.StartProbing()
-    if CuraEqui.state.probeTimer then Script.KillTimer(CuraEqui.state.probeTimer) end
-    local periodMs = 10000 -- every 10s; make configurable later if you want
+    local ST = CuraEqui.state
+    if ST.probeTimer then Script.KillTimer(ST.probeTimer) end
+
+    local periodMs = 10000 -- every 10 s
     _G["CuraEqui_HorseProbeTick"] = function()
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         if h then
-            CuraEqui.StopProbing()
-            return CuraEqui.StartWatching()
+            local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
+            local fp                      = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+
+            CuraEqui.state.hasHorse       = true
+            CuraEqui.state.lastHorseEnt   = h
+            CuraEqui.state.lastHorseFpExt = fp
+            CuraEqui.state.lastHorseId    = gid
+            CuraEqui.state.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
+            CuraEqui.state.lastHorseFp    = fp -- seed fingerprint
+
+            -- Gift once for this *fingerprint* in this session
+            if CuraEqui._GiftOncePerHorse then
+                pcall(CuraEqui._GiftOncePerHorse, h, fp, "horse_gain")
+                -- (fix the undefined var)
+                System.LogAlways(("[CuraEqui][HorseSwap] %s → %s"):format(tostring(CuraEqui.state.lastHorseFp or "∅"), fp))
+            end
+
+            return CuraEqui.StartWatching and CuraEqui.StartWatching()
         end
-        CuraEqui.state.probeTimer = Script.SetTimerForFunction(periodMs, "CuraEqui_HorseProbeTick")
+
+        -- keep probing
+        ST.probeTimer = Script.SetTimerForFunction(periodMs, "CuraEqui_HorseProbeTick")
     end
-    CuraEqui.state.probeTimer = Script.SetTimerForFunction(500, "CuraEqui_HorseProbeTick") -- first probe in 0.5s
+
+    -- kick-off first probe
+    ST.probeTimer = Script.SetTimerForFunction(500, "CuraEqui_HorseProbeTick")
     CuraEqui.Log("poll", "Probe started (waiting for horse…).")
 end
 
 function CuraEqui.StopProbing()
-    if CuraEqui.state.probeTimer then Script.KillTimer(CuraEqui.state.probeTimer) end
-    CuraEqui.state.probeTimer = nil
+    local ST = CuraEqui.state
+    if ST.probeTimer then
+        Script.KillTimer(ST.probeTimer)
+        ST.probeTimer = nil
+    end
     CuraEqui.Log("poll", "Probe stopped.")
 end
 
@@ -712,6 +737,13 @@ end
 -- ---------- TIMER WRAPPER (ALWAYS REARMS) ----------
 function CuraEqui_HungerTick()
     do
+        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        if CuraEqui.RevalidateHorseIdentity then
+            pcall(CuraEqui.RevalidateHorseIdentity, now)
+        end
+    end
+
+    do
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
         local U = CuraEqui.Utils
         if D.tickTrace and U and U.throttle("tick-fired", U.ms_to_s(D.hungerTraceEvery or 10000)) then
@@ -750,6 +782,17 @@ function CuraEqui.StartWatching()
     do
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+
+        if S and tonumber(S.satedUntil or 0) > ((CuraEqui.Now and CuraEqui.Now()) or os.clock()) then
+            -- sated already running → just SyncAll (no force)
+            if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+        else
+            if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+                pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = false })
+                if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+            end
+        end
+
         if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
             pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = false })
             if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end

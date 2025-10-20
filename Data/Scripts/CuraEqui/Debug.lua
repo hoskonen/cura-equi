@@ -499,13 +499,31 @@ end
 
 -- Set sated seconds from now (0 to clear)
 function CuraEqui.Debug.SetSated(sec)
-    local h, S = _horse_and_state(); if not (h and S) then
-        _toast("No horse."); return
+    local h   = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    local S   = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local s   = tonumber(sec) or 0
+
+    if not (h and S) then
+        System.LogAlways("[CuraEqui][Cheat] set_sated: no horse"); return
     end
-    local s = math.max(0, tonumber(sec) or 0)
-    S.satedUntil = (s > 0) and (_now() + s) or 0
-    _sync(h, S)
-    _toast((s > 0) and ("Sated for %.0fs"):format(s) or "Sated cleared")
+
+    -- set internal
+    S.satedUntil = (s > 0) and (now + s) or now
+
+    -- hard clear then force re-apply the correct tier
+    if CuraEqui.Buffs and CuraEqui.Buffs.ClearSated then pcall(CuraEqui.Buffs.ClearSated, h) end
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+        pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "cheat", force = true })
+    end
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+
+    -- optional persist
+    if CuraEqui.Persist and CuraEqui.Persist.Save then
+        pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil, "cheat")
+    end
+
+    System.LogAlways(("[CuraEqui][Cheat] sated set to %ds"):format(s))
 end
 
 -- Clear sated quickly

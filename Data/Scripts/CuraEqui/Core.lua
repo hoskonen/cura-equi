@@ -1,28 +1,31 @@
 -- Scripts/CuraEqui/Core.lua
 CuraEqui                        = CuraEqui or {}
 CuraEqui.VERSION                = "0.2.0"
-CuraEqui.state                  = CuraEqui.state or { hungerTimer = nil, pausedForSleep = false, started = false }
+CuraEqui.state                  = CuraEqui.state or {
+    hungerTimer      = nil,
+    pausedForSleep   = false,
+    started          = false,
+
+    -- (horse identity + probing/watch glue)
+    hasHorse         = false, -- single source of truth
+    lastHorseId      = nil,   -- GUID we think we’re riding
+    lastHorseEnt     = nil,
+    _probeTimer      = nil,   -- lazy probe timer id (horseless only)
+    _noHorseLogAt    = 0,     -- rate-limit for “no horse” logs
+    _revalNextAt     = 0,     -- next time we may revalidate identity
+    _lastHorseSwapAt = nil,   -- debounce for swaps
+}
 -- debounce + session flags
 CuraEqui.state._skipLastInitAt  = 0
 CuraEqui.state._skipSessionOpen = false
 
--- Safe config (defaults if Config.lua not loaded yet)
-local C                         = CuraEqui.Config or {
-    Debug  = { enabled = true, distanceTrace = true, distanceTraceStepM = 100.0, hud = { enabled = false, refresh = 1200 } },
-    Hunger = {
-        hungerMax         = 100,
-        hungerStart       = 30,
-        tickSec           = 10,
-        -- NEW dials (no legacy names here):
-        ratePerMinIdle    = 0.5,  -- idle (unmounted or mounted-but-standing)
-        ratePerMinMounted = 1.0,  -- mounted & moving: time drift
-        ratePerKmMounted  = 4.0,  -- mounted & moving: per-km
-        speedIdleMps      = 0.2,  -- movement threshold
-        satedDrainMul     = 0.75, -- Sated multiplier
-        debuffAt          = 70,
-    },
-    Diet   = { strict = "guid+token", allowKeywords = { "ui_nm_", "apple", "bread", "carrot" }, keywordNutrition = 10 },
-}
+-- Use live config; fill only absolutely critical holes if mod loader races
+local C                         = CuraEqui.Config or {}
+C.Debug                         = C.Debug or
+    { enabled = true, distanceTrace = false, hud = { enabled = false, refresh = 1200 } }
+C.Hunger                        = C.Hunger or { hungerMax = 100, hungerStart = 30, tickSec = 10, debuffAt = 70 }
+C.Diet                          = C.Diet or
+    { strict = "guid+token", allowKeywordFallback = false, keywordNutrition = 10 }
 
 -- Wire flags/tunables
 CuraEqui.DEBUG                  = C.Debug.enabled
@@ -37,10 +40,79 @@ CuraEqui.HorseCfg               = {
     debuffAt    = C.Hunger.debuffAt,
 }
 
+function CuraEqui.HasHorse()
+    return CuraEqui.state.hasHorse == true
+end
+
+function CuraEqui.ResolveHorse()
+    return (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+end
+
+function CuraEqui._HorseGuid(ent)
+    if not ent then return nil end
+
+    -- Prefer engine GUID if present
+    local guid = nil
+    local ok, v = pcall(function() return ent.GetGUID and ent:GetGUID() end)
+    if ok and v ~= nil then
+        -- SmartScriptTable? numbers? tables? -> flatten to a stable string
+        local t = type(v)
+        if t == "string" or t == "number" then
+            guid = tostring(v)
+        elseif t == "table" or t == "userdata" then
+            -- try common fields; fall back to tostring()
+            local s = rawget(v, "value") or rawget(v, "id") or rawget(v, "guid")
+            guid = tostring(s or v)
+        else
+            guid = tostring(v)
+        end
+    end
+
+    -- Fallback to entity id (string) — also stable
+    if not guid or guid == "" then guid = tostring(ent.id) end
+    return guid
+end
+
+function CuraEqui._HorseName(ent)
+    if not ent then return "" end
+    local ok, v = pcall(function() return ent.GetName and ent:GetName() end)
+    local name = (ok and v and v ~= "" and v) or ent.name or ""
+    return tostring(name or "")
+end
+
+function CuraEqui._HorseClass(ent)
+    if not ent then return "" end
+    local cls = ent.class or ent.className or ""
+    if (not cls or cls == "") and ent.GetClassName then
+        local ok, v = pcall(function() return ent:GetClassName() end)
+        if ok and v then cls = v end
+    end
+    return tostring(cls or "")
+end
+
+function CuraEqui._HorseFpExt(ent)
+    if not ent then return "" end
+    local nm   = CuraEqui._HorseName(ent)
+    local cls  = CuraEqui._HorseClass(ent)
+    local guid = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(ent)) or ""
+    local id   = tostring(ent.id or "")
+    -- Prefer GUID; include id + name/class to make logs human-readable, but GUID drives uniqueness
+    return table.concat({ guid, id, nm, cls }, "|")
+end
+
+function CuraEqui._HorseFingerprint(ent)
+    -- Stable identity string independent of pointer/SmartScriptTable GUIDs.
+    -- Use unique name primarily; add class + numeric id as extra spice.
+    local name  = CuraEqui._HorseName(ent)
+    local class = CuraEqui._HorseClass(ent)
+    local id    = tostring(ent and ent.id or "")
+    return table.concat({ name, class, id }, "|")
+end
+
 -- Call this after a save is loaded / gameplay starts.
 function CuraEqui.EnsureBuffsResynced()
     local B = CuraEqui.Buffs
-    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    local h = CuraEqui.ResolveHorse()
     local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
     if not (h and S and B and B.SyncAll) then return end
 
@@ -223,7 +295,7 @@ function CuraEqui.Bootstrap(reason)
 
     -- re-apply buffs once (don’t rely on last-known)
     if CuraEqui.Buffs then CuraEqui.Buffs._lastPlayerUuid = nil end
-    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    local h = CuraEqui.ResolveHorse()
     local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
     if S then S._lastHorseDebuffUuid = nil end
 
@@ -238,6 +310,15 @@ end
 
 -- Idempotent init that (re)starts polling
 function CuraEqui.Initialize(fullInit)
+    -- In Initialize(fullInit)
+    do
+        CuraEqui.state                    = CuraEqui.state or {}
+        CuraEqui.state._giftedThisSession = nil
+        CuraEqui.state.lastHorseId        = nil
+        CuraEqui.state.lastHorseEnt       = nil
+        CuraEqui.state.hasHorse           = false
+    end
+
     -- Mute persistence for a short window during boot/load
     do
         CuraEqui.state = CuraEqui.state or {}
@@ -266,7 +347,21 @@ function CuraEqui.Initialize(fullInit)
         CuraEqui.state._prevHour = CuraEqui._get_player_hour()
     end
 
-    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    -- seed the state and start probing if horseless
+    local ST       = CuraEqui.state
+    local h        = CuraEqui.ResolveHorse()
+
+    ST.hasHorse    = (h ~= nil)
+    ST.lastHorseId = (h and CuraEqui._HorseGuid(h)) or ST.lastHorseId
+
+    if not h then
+        local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        if (now - (ST._noHorseLogAt or 0)) > 3.0 then
+            System.LogAlways("[CuraEqui][Horse] No horse detected — hunger/buffs are idle until a horse is acquired.")
+            ST._noHorseLogAt = now
+        end
+        if CuraEqui.StartProbing then CuraEqui.StartProbing() end
+    end
 
     -- 1) If we have a horse, hydrate hunger/sated from DB first
     do
@@ -380,7 +475,7 @@ function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
                 if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
 
                 -- refresh HUD/buffs
-                local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                local h = CuraEqui.ResolveHorse()
                 local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
                 if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
                     S._lastBuffTier = nil
@@ -477,7 +572,7 @@ function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
                 if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
 
                 -- refresh HUD/buffs
-                local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                local h = CuraEqui.ResolveHorse()
                 local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
                 if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
                     S._lastBuffTier = nil
@@ -503,10 +598,16 @@ function CuraEqui.OnGameplayStarted()
     -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
     local tries = { 0, 300, 1200 }
     local function try(i)
-        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        local h = CuraEqui.ResolveHorse()
         if h then
             System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
                 :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
+
+            CuraEqui.state.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
+
+
+            -- Seed the fingerprint so the first tick doesn't look like a swap
+            CuraEqui.state.lastHorseFp = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
             if CuraEqui.StopProbing then CuraEqui.StopProbing() end
             if CuraEqui.StartWatching then CuraEqui.StartWatching() end
         else
@@ -528,5 +629,92 @@ function CuraEqui.OnGameplayStarted()
         UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
         CuraEqui.__skipBound = true
         System.LogAlways("[CuraEqui] Bound SkipTime element listener")
+    end
+end
+
+function CuraEqui.RevalidateHorseIdentity(now)
+    local ST = CuraEqui.state or {}
+    local h  = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+    if not h then
+        ST.hasHorse = false; return
+    end
+
+    if now < (ST._revalNextAt or 0) then return end
+    ST._revalNextAt = now + 2.0
+
+    local curFp     = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+    local curFpExt  = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
+
+    if ST.lastHorseFp == curFp then
+        ST.hasHorse     = true
+        ST.lastHorseEnt = h
+        local D         = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D.buffTraceVerbose and (not ST._fpTraceNext or now >= ST._fpTraceNext) then
+            System.LogAlways(("[CuraEqui][HorseId] same fp=%s"):format(curFp))
+            ST._fpTraceNext = now + 3.0
+        end
+        return
+    end
+
+    -- NEW horse detected
+    ST.hasHorse       = true
+    ST.lastHorseEnt   = h
+    ST.lastHorseFp    = curFp
+    ST.lastHorseFpExt = curFpExt
+
+    local D           = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if D.buffTraceVerbose then
+        System.LogAlways(("[CuraEqui][HorseId] swap %s → %s"):format(tostring(ST.lastHorseFpExt or "∅"), curFp))
+    end
+end
+
+-- Gift a welcome sated once per horse GUID in this session.
+function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
+    if not (h and horseKey) then return end
+    local ST = CuraEqui.state or {}; ST._giftedFor = ST._giftedFor or {}
+    if ST._giftedFor[horseKey] then return end
+    ST._giftedFor[horseKey] = true
+
+    local giftSec =
+        (CuraEqui.Config and CuraEqui.Config.Hunger and
+            (CuraEqui.Config.Hunger.newHorseSatedSec or CuraEqui.Config.Hunger.welcomeSatedSec))
+        or 1200
+    giftSec = math.max(0, tonumber(giftSec) or 0)
+    if giftSec <= 0 then return end
+
+    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    if not S then return end
+
+    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    S.satedUntil = now + giftSec
+
+    -- Ceil to next visible tier so UI = timer
+    local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
+    if T and #T > 0 then
+        local target = giftSec
+        for i = #T, 1, -1 do
+            local s = tonumber(T[i].sec) or 0
+            if s >= giftSec then
+                target = s; break
+            end
+        end
+        S.satedUntil = now + (target or giftSec)
+    end
+
+    -- Apply cleanly
+    if CuraEqui.Buffs and CuraEqui.Buffs.ClearSated then pcall(CuraEqui.Buffs.ClearSated, h) end
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+        pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = cause or "horse_gain", force = true })
+    end
+    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+    if CuraEqui.Persist and CuraEqui.Persist.Save then
+        pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil,
+            cause or "gift")
+    end
+
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if D and D.buffTraceVerbose then
+        System.LogAlways(("[CuraEqui][Gift] welcome sated %ds for key=%s (%s)")
+            :format(giftSec, horseKey, tostring(cause or "?")))
     end
 end
