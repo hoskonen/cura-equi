@@ -771,31 +771,35 @@ end
 
 -- ---------- START/STOP ----------
 function CuraEqui.StartWatching()
+    -- Guard instead of kill+recreate (avoids duplicate logs/timers)
     if CuraEqui.state.hungerTimer then
-        Script.KillTimer(CuraEqui.state.hungerTimer)
+        return
     end
+
     CuraEqui.state.hungerTimer =
         Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
     CuraEqui.Log("poll", "Hunger watcher started (timerId=%s)", tostring(CuraEqui.state.hungerTimer))
 
-    -- apply the sated timed buff immediately on start
-    do
-        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
-        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    -- Apply/refresh the visible sated timer once on start
+    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    if not (h and S) then return end
 
-        if S and tonumber(S.satedUntil or 0) > ((CuraEqui.Now and CuraEqui.Now()) or os.clock()) then
-            -- sated already running → just SyncAll (no force)
-            if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
-        else
-            if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-                pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = false })
-                if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
-            end
+    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local hasSated = tonumber(S.satedUntil or 0) > now
+
+    if hasSated then
+        -- Sated already running → just refresh UI/state (no force)
+        if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+            pcall(CuraEqui.Buffs.SyncAll, h, S)
         end
-
-        if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+    else
+        -- No active sated → ensure timers/UI consistent but don’t forcibly add one
+        if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
             pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = false })
-            if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+        end
+        if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+            pcall(CuraEqui.Buffs.SyncAll, h, S)
         end
     end
 end
