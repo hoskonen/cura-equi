@@ -289,11 +289,11 @@ end
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
 
-    -- Ensure state table exists
+    -- Ensure state
     CuraEqui.state = CuraEqui.state or {}
     local ST = CuraEqui.state
 
-    -- 1) TEARDOWN: kill any previous timers cleanly
+    -- 1) TEARDOWN: kill any previous timers/watchers/probes
     if ST.hungerTimer then
         Script.KillTimer(ST.hungerTimer); ST.hungerTimer = nil
     end
@@ -301,10 +301,9 @@ function CuraEqui.Bootstrap(reason)
         Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
     end
     if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
-    -- (StopWatching may also kill hungerTimer; the nil checks above are harmless.)
 
     -- 2) RESET: session-scoped caches and mirrors
-    ST._giftedFor       = {}    -- welcome-sated ledger (per runtime session)
+    ST._giftedFor       = {}    -- “welcome sated” ledger (per runtime)
     ST._giftedSessionId = (ST._giftedSessionId or 0) + 1
     ST.noHorseStrikes   = 0
     ST.hasHorse         = false
@@ -313,23 +312,31 @@ function CuraEqui.Bootstrap(reason)
     ST.lastHorseName    = nil
     ST.lastHorseFp      = nil
     ST.lastHorseFpExt   = nil
+    ST.justLoaded       = true    -- first tick can use this if needed
 
-    -- Buff bookkeeping (forces clean re-sync of icons)
     if CuraEqui.Buffs then
-        CuraEqui.Buffs._lastPlayerUuid = nil
+        CuraEqui.Buffs._lastPlayerUuid      = nil -- force icon re-eval
         CuraEqui.Buffs._lastHorseDebuffUuid = nil
     end
 
-    -- 3) FULL INIT: hydrate/persist, clear tiers, start probe or watcher
-    -- Use 'true' to force the full initialize path after a load/OGS
+    -- 3) FULL INIT: hydrate from DB; clear tiers; start probe (no horse) or watcher (has horse)
     if CuraEqui.Initialize then pcall(CuraEqui.Initialize, true) end
 
-    -- 4) ONE-SHOT SETTLE: tick once shortly after so HUD/souls are guaranteed up
+    -- 4) TWO-PHASE RESYNC: re-assert sated/debuffs after HUD/souls are up
     if Script and Script.SetTimerForFunction then
-        _G["CuraEqui_HungerTick_Once"] = function()
-            if CuraEqui_HungerTick then pcall(CuraEqui_HungerTick) end
+        _G["CuraEqui_Resync0"] = function()
+            local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+            local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+            if h and S and CuraEqui.Buffs then
+                if CuraEqui.Buffs.SyncSatedTimer then pcall(CuraEqui.Buffs.SyncSatedTimer, h, S,
+                        { cause = "bootstrap", force = false }) end
+                if CuraEqui.Buffs.SyncHorseDebuff then pcall(CuraEqui.Buffs.SyncHorseDebuff, h, S,
+                        { cause = "bootstrap" }) end
+                if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+            end
         end
-        Script.SetTimerForFunction(200, "CuraEqui_HungerTick_Once")
+        Script.SetTimerForFunction(1, "CuraEqui_Resync0")   -- asap
+        Script.SetTimerForFunction(150, "CuraEqui_Resync0") -- after HUD settles
     end
 end
 
@@ -615,7 +622,7 @@ function CuraEqui.OnGameplayStarted()
     -- Always treat OGS as a fresh runtime session
     CuraEqui.Bootstrap("ogs")
     CuraEqui.ValidateBuffGuids()
-    CuraEqui.Initialize(true)
+    --CuraEqui.Initialize(true)
 
     -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
     local tries = { 0, 300, 1200 }
