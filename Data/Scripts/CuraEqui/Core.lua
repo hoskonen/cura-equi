@@ -289,17 +289,42 @@ end
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
 
-    -- kill any stale timers, then (re)start
-    if CuraEqui.StopWatching then CuraEqui.StopWatching() end
-    if CuraEqui.Initialize then CuraEqui.Initialize(false) end
+    -- Ensure state table exists
+    CuraEqui.state = CuraEqui.state or {}
+    local ST = CuraEqui.state
 
-    -- re-apply buffs once (don’t rely on last-known)
-    if CuraEqui.Buffs then CuraEqui.Buffs._lastPlayerUuid = nil end
-    local h = CuraEqui.ResolveHorse()
-    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-    if S then S._lastHorseDebuffUuid = nil end
+    -- 1) TEARDOWN: kill any previous timers cleanly
+    if ST.hungerTimer then
+        Script.KillTimer(ST.hungerTimer); ST.hungerTimer = nil
+    end
+    if ST.probeTimer then
+        Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
+    end
+    if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
+    -- (StopWatching may also kill hungerTimer; the nil checks above are harmless.)
 
-    -- kick an immediate tick a hair later so souls/HUD are definitely up
+    -- 2) RESET: session-scoped caches and mirrors
+    ST._giftedFor       = {}    -- welcome-sated ledger (per runtime session)
+    ST._giftedSessionId = (ST._giftedSessionId or 0) + 1
+    ST.noHorseStrikes   = 0
+    ST.hasHorse         = false
+    ST.lastHorseEnt     = nil
+    ST.lastHorseId      = nil
+    ST.lastHorseName    = nil
+    ST.lastHorseFp      = nil
+    ST.lastHorseFpExt   = nil
+
+    -- Buff bookkeeping (forces clean re-sync of icons)
+    if CuraEqui.Buffs then
+        CuraEqui.Buffs._lastPlayerUuid = nil
+        CuraEqui.Buffs._lastHorseDebuffUuid = nil
+    end
+
+    -- 3) FULL INIT: hydrate/persist, clear tiers, start probe or watcher
+    -- Use 'true' to force the full initialize path after a load/OGS
+    if CuraEqui.Initialize then pcall(CuraEqui.Initialize, true) end
+
+    -- 4) ONE-SHOT SETTLE: tick once shortly after so HUD/souls are guaranteed up
     if Script and Script.SetTimerForFunction then
         _G["CuraEqui_HungerTick_Once"] = function()
             if CuraEqui_HungerTick then pcall(CuraEqui_HungerTick) end
@@ -403,12 +428,6 @@ function CuraEqui.Initialize(fullInit)
                 end
             end
         end
-    end
-    -- Do not start the periodic watcher here; OnGameplayStarted’s resolver owns it.
-    -- If there is no horse yet, keep a light probe running so try() will pick it up.
-    if not h then
-        System.LogAlways("[CuraEqui][Horse] No horse detected — hunger/buffs are idle until a horse is acquired.")
-        if CuraEqui.StartProbing then CuraEqui.StartProbing() end
     end
 end
 
@@ -592,6 +611,9 @@ end
 
 -- Gameplay start entry
 function CuraEqui.OnGameplayStarted()
+    System.LogAlways("[CuraEqui] OnGameplayStarted")
+    -- Always treat OGS as a fresh runtime session
+    CuraEqui.Bootstrap("ogs")
     CuraEqui.ValidateBuffGuids()
     CuraEqui.Initialize(true)
 
@@ -684,6 +706,12 @@ function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
 
     local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
     if not S then return end
+
+    -- Skip welcome gift if the horse is already sated (prevents double stacking)
+    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    if tonumber(S.satedUntil or 0) > now then
+        return
+    end
 
     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
     S.satedUntil = now + giftSec

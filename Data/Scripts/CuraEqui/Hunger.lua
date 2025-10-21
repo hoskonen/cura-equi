@@ -212,6 +212,9 @@ function CuraEqui.StartProbing()
     _G["CuraEqui_HorseProbeTick"] = function()
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         if h then
+            if ST.probeTimer then
+                Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
+            end
             local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
             local fp                      = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
 
