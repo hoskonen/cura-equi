@@ -302,8 +302,11 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
     local remS = math.max(0, (tonumber(S and S.satedUntil or 0) or 0) - now)
 
     if D and D.buffTraceVerbose then
-        System.LogAlways(("[CuraEqui][SatedSync] cause=%s force=%s rem=%.0fs")
-            :format(tostring(opts and opts.cause or "tick"), tostring(opts and opts.force or false), remS))
+        local cause = tostring(opts and opts.cause or "tick")
+        if (cause ~= "tick") or D.buffTraceTick then
+            System.LogAlways(("[CuraEqui][SatedSync] cause=%s force=%s rem=%.0fs")
+                :format(cause, tostring(opts and opts.force or false), remS))
+        end
     end
 
     -- nothing tracked → make sure no timed tier lingers
