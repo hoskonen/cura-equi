@@ -31,7 +31,9 @@ CuraEqui.Config = {
         persistTrace = true,     -- log saving
         tickTrace = true,
         buffTraceVerbose = true, -- false = log only when buff changes
-        staminaSnapshot = true,  -- capture a reference staminaMax (debug only)
+        skipTrace = true,
+        skipTraceVerbose = false,
+        staminaSnapshot = true, -- capture a reference staminaMax (debug only)
         horseDerived = true,
     },
     Hunger = {

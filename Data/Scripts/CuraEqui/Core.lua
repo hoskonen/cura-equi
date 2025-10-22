@@ -303,7 +303,7 @@ function CuraEqui.Bootstrap(reason)
     if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
 
     -- 2) RESET: session-scoped caches and mirrors
-    ST._giftedFor       = {}    -- “welcome sated” ledger (per runtime)
+    ST._giftedFor       = {} -- “welcome sated” ledger (per runtime)
     ST._giftedSessionId = (ST._giftedSessionId or 0) + 1
     ST.noHorseStrikes   = 0
     ST.hasHorse         = false
@@ -312,7 +312,7 @@ function CuraEqui.Bootstrap(reason)
     ST.lastHorseName    = nil
     ST.lastHorseFp      = nil
     ST.lastHorseFpExt   = nil
-    ST.justLoaded       = true    -- first tick can use this if needed
+    ST.justLoaded       = true -- first tick can use this if needed
 
     if CuraEqui.Buffs then
         CuraEqui.Buffs._lastPlayerUuid      = nil -- force icon re-eval
@@ -328,10 +328,14 @@ function CuraEqui.Bootstrap(reason)
             local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
             local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
             if h and S and CuraEqui.Buffs then
-                if CuraEqui.Buffs.SyncSatedTimer then pcall(CuraEqui.Buffs.SyncSatedTimer, h, S,
-                        { cause = "bootstrap", force = false }) end
-                if CuraEqui.Buffs.SyncHorseDebuff then pcall(CuraEqui.Buffs.SyncHorseDebuff, h, S,
-                        { cause = "bootstrap" }) end
+                if CuraEqui.Buffs.SyncSatedTimer then
+                    pcall(CuraEqui.Buffs.SyncSatedTimer, h, S,
+                        { cause = "bootstrap", force = false })
+                end
+                if CuraEqui.Buffs.SyncHorseDebuff then
+                    pcall(CuraEqui.Buffs.SyncHorseDebuff, h, S,
+                        { cause = "bootstrap" })
+                end
                 if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
             end
         end
@@ -444,11 +448,13 @@ end
 --   UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
 -- ===========================================================================
 function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
-    System.LogAlways(("[CuraEqui][Fader] %s %s a1=%s a2=%s")
-        :format(tostring(elementName), tostring(eventName),
-            tostring(argTable and argTable[1] or "nil"),
-            tostring(argTable and argTable[2] or "nil")))
-
+    local Dbg = (CuraEqui.Config and CuraEqui.Config.Debug) or {}
+    if Dbg.skipTraceVerbose then
+        System.LogAlways(("[CuraEqui][Fader] %s %s a1=%s a2=%s")
+            :format(tostring(elementName), tostring(eventName),
+                tostring(argTable and argTable[1] or "nil"),
+                tostring(argTable and argTable[2] or "nil")))
+    end
 
     local a1        = argTable and tostring(argTable[1]) or "nil"
     local a2        = argTable and tostring(argTable[2]) or "nil"
@@ -481,11 +487,17 @@ function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
         local hourNow          = CuraEqui._get_player_hour() or st._prevHour
         if hourNow then
             st._sleepStartHour = hourNow
-            System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%.2f"):format(hourNow))
+
+            if Dbg.skipTrace then
+                System.LogAlways(("[CuraEqui][SkipTime] OPEN hour=%.2f"):format(hourNow))
+            end
         else
             st._sleepStartHour = nil
             st._sleepNeedSeed  = true
-            System.LogAlways("[CuraEqui][SkipTime] OPEN → mark hour=deferred")
+
+            if Dbg.skipTrace then
+                System.LogAlways("[CuraEqui][SkipTime] OPEN hour=deferred")
+            end
         end
 
         if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
@@ -497,7 +509,18 @@ function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
             local st = CuraEqui.state or {}
             if st._skipSessionOpen and not st._skipHandled then
                 st._skipHandled = true
-                System.LogAlways("[CuraEqui][SkipTime] CLOSE → calling catch-up")
+
+                if Dbg.skipTrace then
+                    local startHour = st._sleepStartHour
+                    local endHour   = CuraEqui._get_player_hour() or st._prevHour
+                    local planned   = tonumber(st._skipMinutesPlanned or 0) or 0
+                    local mins      = planned > 0 and planned
+                        or (startHour and endHour and CuraEqui._minutes_between_hours(startHour, endHour))
+                        or 0
+                    System.LogAlways(("[CuraEqui][SkipTime] CLOSE minutes=%d (planned=%d, start=%.2f, end=%.2f) → catch-up")
+                        :format(math.floor(mins or 0), math.floor(planned or 0), tonumber(startHour or -1),
+                            tonumber(endHour or -1)))
+                end
                 if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
 
                 -- refresh HUD/buffs
@@ -525,12 +548,15 @@ end
 --   UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
 -- ===========================================================================
 function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
-    System.LogAlways(("[CuraEqui][Fader] %s %s a1=%s a2=%s")
-        :format(tostring(elementName), tostring(eventName),
-            tostring(argTable and argTable[1] or "nil"),
-            tostring(argTable and argTable[2] or "nil")))
+    local Dbg = (CuraEqui.Config and CuraEqui.Config.Debug) or {}
+    if Dbg.skipTraceVerbose then
+        System.LogAlways(("[CuraEqui][Fader] %s %s a1=%s a2=%s")
+            :format(tostring(elementName), tostring(eventName),
+                tostring(argTable and argTable[1] or "nil"),
+                tostring(argTable and argTable[2] or "nil")))
+    end
 
-    -- --- noisy trace so we see what this build emits
+    -- noisy trace so we see what this build emits
     local a1 = argTable and tostring(argTable[1]) or "nil"
     local a2 = argTable and tostring(argTable[2]) or "nil"
 
@@ -538,18 +564,16 @@ function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
     local plannedHours = tonumber(argTable and argTable[1]) or nil
     if eventName == "OnConfirm" and plannedHours and plannedHours > 0 then
         CuraEqui.state._skipMinutesPlanned = math.floor(plannedHours * 60 + 0.5)
-        System.LogAlways(("[CuraEqui][SkipTime] planned wait = %d min"):format(CuraEqui.state._skipMinutesPlanned))
+
+        if Dbg.skipTrace then
+            System.LogAlways(("[CuraEqui][SkipTime] PLAN minutes=%d"):format(CuraEqui.state._skipMinutesPlanned))
+        end
     end
 
     -- normalize phase words some skins send via args
     local phaseWord = (a1 == "sleep" or a1 == "wait") and a1
         or (a2 == "sleep" or a2 == "wait") and a2
         or ""
-
-    -- entry signals we accept on this bus
-    local isEntry =
-        (eventName == "OnShow") or
-        (eventName == "OnSetFaderState" and phaseWord ~= "")
 
     -- exit signals we accept on this bus
     local isExit =
@@ -576,11 +600,17 @@ function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
         local hourNow          = CuraEqui._get_player_hour() or st._prevHour
         if hourNow then
             st._sleepStartHour = hourNow
-            System.LogAlways(("[CuraEqui][SkipTime] OPEN → mark hour=%.2f"):format(hourNow))
+
+            if Dbg.skipTrace then
+                System.LogAlways(("[CuraEqui][SkipTime] OPEN hour=%.2f"):format(hourNow))
+            end
         else
             st._sleepStartHour = nil
             st._sleepNeedSeed  = true
-            System.LogAlways("[CuraEqui][SkipTime] OPEN → mark hour=deferred")
+
+            if Dbg.skipTrace then
+                System.LogAlways("[CuraEqui][SkipTime] OPEN hour=deferred")
+            end
         end
 
         if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
@@ -594,7 +624,18 @@ function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
             local st = CuraEqui.state or {}
             if st._skipSessionOpen and not st._skipHandled then
                 st._skipHandled = true
-                System.LogAlways("[CuraEqui][SkipTime] CLOSE → calling catch-up")
+
+                if Dbg.skipTrace then
+                    local startHour = st._sleepStartHour
+                    local endHour   = CuraEqui._get_player_hour() or st._prevHour
+                    local planned   = tonumber(st._skipMinutesPlanned or 0) or 0
+                    local mins      = planned > 0 and planned
+                        or (startHour and endHour and CuraEqui._minutes_between_hours(startHour, endHour))
+                        or 0
+                    System.LogAlways(("[CuraEqui][SkipTime] CLOSE minutes=%d (planned=%d, start=%.2f, end=%.2f) → catch-up")
+                        :format(math.floor(mins or 0), math.floor(planned or 0), tonumber(startHour or -1),
+                            tonumber(endHour or -1)))
+                end
                 if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
 
                 -- refresh HUD/buffs

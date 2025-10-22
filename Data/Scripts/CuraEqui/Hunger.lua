@@ -340,7 +340,7 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
 
     -- No force: only switches bucket or clears if needed. Won’t reset countdown.
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-        pcall(CuraEqui.Buffs.SyncSatedTimer, h, S) -- no force
+        pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "catchup" }) -- no force
     end
 
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then

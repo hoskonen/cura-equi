@@ -302,7 +302,7 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
     local remS = math.max(0, (tonumber(S and S.satedUntil or 0) or 0) - now)
 
     if D and D.buffTraceVerbose then
-        System.LogAlways(("[CE][SatedSync] cause=%s force=%s rem=%.0fs")
+        System.LogAlways(("[CuraEqui][SatedSync] cause=%s force=%s rem=%.0fs")
             :format(tostring(opts and opts.cause or "tick"), tostring(opts and opts.force or false), remS))
     end
 
@@ -316,7 +316,7 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
 
     -- block re-entrant force bursts (startup races)
     if M._satedFence and now < M._satedFence then
-        if D and D.buffTraceVerbose then System.LogAlways("[CE][SatedSync] fenced (drop reentry)") end
+        if D and D.buffTraceVerbose then System.LogAlways("[CuraEqui][SatedSync] fenced (drop reentry)") end
         return
     end
 
