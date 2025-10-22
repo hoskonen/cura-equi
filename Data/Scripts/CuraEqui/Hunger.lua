@@ -813,18 +813,24 @@ function CuraEqui.StopWatching()
         CuraEqui.state.hungerTimer = nil
     end
 
-    -- Safety save when watcher stops (eg, horse vanished, scene change)
-    do
+    -- skip safety-save if we’re inside the boot/load mute window
+    local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local muted = CuraEqui.state and CuraEqui.state.persistMuteUntil and (now < CuraEqui.state.persistMuteUntil)
+
+    if (not muted) then
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         if S and CuraEqui.Persist and CuraEqui.Persist.Save then
             CuraEqui.Persist.Save(S.hunger, S.satedUntil)
             if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-                local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                local h   = math.floor(tonumber(S.hunger or 0) or 0)
                 local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                System.LogAlways(("[CuraEqui][Persist] Saved (stop) hunger=%d satedRemain=%.0f"):format(h, rem))
+                System.LogAlways(("[CuraEqui][Persist] Saved (stop) hunger=%d satedRemain=%.0f")
+                    :format(math.floor(tonumber(S.hunger or 0) or 0), rem))
             end
+        end
+    else
+        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
+            System.LogAlways("[CuraEqui][Persist] (stop) skipped — muted on boot/load")
         end
     end
 

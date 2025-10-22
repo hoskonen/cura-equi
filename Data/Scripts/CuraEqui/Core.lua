@@ -289,6 +289,11 @@ end
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
 
+    -- create a short 'don’t-save' window immediately
+    CuraEqui.state = CuraEqui.state or {}
+    local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    CuraEqui.state.persistMuteUntil = now + 5.0
+
     -- Ensure state
     CuraEqui.state = CuraEqui.state or {}
     local ST = CuraEqui.state
@@ -300,6 +305,8 @@ function CuraEqui.Bootstrap(reason)
     if ST.probeTimer then
         Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
     end
+
+    -- kill timers
     if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
 
     -- 2) RESET: session-scoped caches and mirrors
