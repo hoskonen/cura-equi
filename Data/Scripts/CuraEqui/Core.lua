@@ -289,28 +289,25 @@ end
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
 
-    -- create a short 'don’t-save' window immediately
+    -- 0) Create a short 'don’t-save' window immediately
     CuraEqui.state = CuraEqui.state or {}
-    local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
-    CuraEqui.state.persistMuteUntil = now + 5.0
+    do
+        local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        CuraEqui.state.persistMuteUntil = now + 5.0
+    end
 
-    -- Ensure state
-    CuraEqui.state = CuraEqui.state or {}
+    -- 1) TEARDOWN once: stop timers / watcher / probe
     local ST = CuraEqui.state
-
-    -- 1) TEARDOWN: kill any previous timers/watchers/probes
     if ST.hungerTimer then
         Script.KillTimer(ST.hungerTimer); ST.hungerTimer = nil
     end
     if ST.probeTimer then
         Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
     end
-
-    -- kill timers
     if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
 
-    -- 2) RESET: session-scoped caches and mirrors
-    ST._giftedFor       = {} -- “welcome sated” ledger (per runtime)
+    -- 2) RESET per-session mirrors/flags (single source of truth)
+    ST._giftedFor       = {}
     ST._giftedSessionId = (ST._giftedSessionId or 0) + 1
     ST.noHorseStrikes   = 0
     ST.hasHorse         = false
@@ -319,35 +316,34 @@ function CuraEqui.Bootstrap(reason)
     ST.lastHorseName    = nil
     ST.lastHorseFp      = nil
     ST.lastHorseFpExt   = nil
-    ST.justLoaded       = true -- first tick can use this if needed
+    ST.justLoaded       = true
 
+    -- 3) Force a clean buff recompute (icons/state) next time we sync
     if CuraEqui.Buffs then
-        CuraEqui.Buffs._lastPlayerUuid      = nil -- force icon re-eval
+        CuraEqui.Buffs._lastPlayerUuid      = nil
         CuraEqui.Buffs._lastHorseDebuffUuid = nil
+        CuraEqui.Buffs._syncBusy            = false
     end
 
-    -- 3) FULL INIT: hydrate from DB; clear tiers; start probe (no horse) or watcher (has horse)
+    -- 4) FULL INIT (hydrates from DB, clears tiers, and starts probe/watcher)
     if CuraEqui.Initialize then pcall(CuraEqui.Initialize, true) end
 
-    -- 4) TWO-PHASE RESYNC: re-assert sated/debuffs after HUD/souls are up
+    -- 5) Two-phase “settle” resync (HUD/souls race-proof)
     if Script and Script.SetTimerForFunction then
         _G["CuraEqui_Resync0"] = function()
-            local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
-            local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-            if h and S and CuraEqui.Buffs then
-                if CuraEqui.Buffs.SyncSatedTimer then
-                    pcall(CuraEqui.Buffs.SyncSatedTimer, h, S,
-                        { cause = "bootstrap", force = false })
+            xpcall(function()
+                local h = CuraEqui.ResolveHorse()
+                local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+                local B = CuraEqui.Buffs
+                if h and S and B then
+                    if B.SyncSatedTimer then B.SyncSatedTimer(h, S, { cause = "bootstrap", force = false }) end
+                    if B.SyncHorseDebuff then B.SyncHorseDebuff(h, S, { cause = "bootstrap" }) end
+                    if B.SyncAll then B.SyncAll(h, S) end
                 end
-                if CuraEqui.Buffs.SyncHorseDebuff then
-                    pcall(CuraEqui.Buffs.SyncHorseDebuff, h, S,
-                        { cause = "bootstrap" })
-                end
-                if CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
-            end
+            end, function(err) System.LogAlways("[CuraEqui][Resync0][ERROR] " .. tostring(err)) end)
         end
-        Script.SetTimerForFunction(1, "CuraEqui_Resync0")   -- asap
-        Script.SetTimerForFunction(150, "CuraEqui_Resync0") -- after HUD settles
+        Script.SetTimerForFunction(1, "CuraEqui_Resync0")
+        Script.SetTimerForFunction(150, "CuraEqui_Resync0")
     end
 end
 
@@ -414,7 +410,11 @@ function CuraEqui.Initialize(fullInit)
             if ph or ps then
                 if ph then S.hunger = math.max(0, math.min(100, ph)) end
                 if ps then S.satedUntil = tonumber(ps) or 0 end
-                if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+
+                -- 1) Hard wipe ALL player sated tiers (belts & suspenders against engine residue)
+                if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
+                    pcall(CuraEqui.Effects.ClearSatedTimers) -- this must remove every known sated UUID
+                end
 
                 S._lastBuffTier = nil
 
@@ -435,9 +435,20 @@ function CuraEqui.Initialize(fullInit)
                     System.LogAlways(("[CE][LOAD] apply: sated player (rem≈%ds)"):format(rem))
                 end
 
-                pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { force = true }) -- ← applies one correct tier
+                -- 2) Apply exactly one sated bucket based on persisted remain
+                if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+                    -- 'force=true' prevents "mid-run skip" and bypasses the reentry fence
+                    pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load-apply", force = true })
+                end
+
+                -- 3) Mark that we seeded sated on load so StartWatching won't re-touch it
                 CuraEqui.state.didInitialSatedApply = true
-                pcall(CuraEqui.Buffs.SyncAll, h, S)                          -- ← refresh OK/min/mod/crit
+
+                -- 4) Defer status (horse hunger) icon to the first tick for stability
+                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                CuraEqui.state.deferStatusUntilTick = now + 0.2 -- ~1 tick; cosmetic
+
+                CuraEqui.state.suppressStatusUntil = ((CuraEqui.Now and CuraEqui.Now()) or os.clock()) + 0.5
 
                 do
                     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()

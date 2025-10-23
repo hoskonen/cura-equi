@@ -783,6 +783,11 @@ function CuraEqui.StartWatching()
         Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
     CuraEqui.Log("poll", "Hunger watcher started (timerId=%s)", tostring(CuraEqui.state.hungerTimer))
 
+    -- if we just did the initial sated apply during load, do not re-sync here.
+    if CuraEqui.state and CuraEqui.state.didInitialSatedApply then
+        return
+    end
+
     -- Apply/refresh the visible sated timer once on start
     local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
     local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
@@ -791,15 +796,17 @@ function CuraEqui.StartWatching()
     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
     local hasSated = tonumber(S.satedUntil or 0) > now
 
+    -- ensure status tier is recomputed on this start
+    S._lastBuffTier = nil
+
     if hasSated then
-        -- Sated already running → just refresh UI/state (no force)
+        -- sated already running → refresh (no force)
         if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
             pcall(CuraEqui.Buffs.SyncAll, h, S)
         end
     else
-        -- No active sated → ensure timers/UI consistent but don’t forcibly add one
         if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load", force = false })
+            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "start", force = false })
         end
         if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
             pcall(CuraEqui.Buffs.SyncAll, h, S)
