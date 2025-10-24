@@ -326,10 +326,10 @@ function M.ClearSatedTimers()
 end
 
 -- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
--- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
 function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
     local M = CuraEqui.Buffs
     opts = opts or {}
+    local QUIET = (opts.quiet == true)
 
     -- Reentry fence (quiet unless verbose)
     if M._syncBusy and not opts.force then
@@ -382,12 +382,24 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
 
         local forcing = opts.force == true
 
+        -- memo for throttling identical skip logs
+        M._lastSkipLog = M._lastSkipLog or { uuid = nil, rem = -1 }
+
         -- Mid-run, already on desired bucket → no-op
         if (not forcing) and M._lastSatedUuid == bucket.uuid then
-            if D.buffTraceVerbose then
-                System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%.0fs, last=%s)")
-                    :format(remS, tostring(M._lastSatedUuid)))
+            -- round remain so we only print when the UI-visible seconds change
+            local remRounded = math.floor(remS + 0.5)
+
+            if D.buffTraceVerbose and not opts.quiet then
+                -- only log if (uuid changed) OR (rounded remain changed)
+                if M._lastSkipLog.uuid ~= bucket.uuid or M._lastSkipLog.rem ~= remRounded then
+                    System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%ss, last=%s)")
+                        :format(tostring(remRounded), tostring(M._lastSatedUuid)))
+                    M._lastSkipLog.uuid = bucket.uuid
+                    M._lastSkipLog.rem  = remRounded
+                end
             end
+
             return
         end
 
