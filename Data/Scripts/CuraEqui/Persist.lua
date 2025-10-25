@@ -128,6 +128,15 @@ function P.Save(hunger, satedUntil)
     return true
 end
 
+function P.Reopen()
+    _db = nil
+    local ok, inst = pcall(function()
+        if DB and DB.Create then return DB:Create("CuraEqui") end
+        return nil
+    end)
+    if ok and inst then _db = inst end
+end
+
 -- Throttled saver: writes only on >=1% delta or every N seconds
 do
     local _lastPct, _nextAt, _lastRem = nil, 0, nil

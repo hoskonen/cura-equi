@@ -289,14 +289,22 @@ end
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
 
-    -- 0) Create a short 'don’t-save' window immediately
+    -- 0) Always reopen DB for the new playline/save
+    if CuraEqui.Persist and CuraEqui.Persist.Reopen then
+        pcall(CuraEqui.Persist.Reopen)
+    end
+
+    -- 1) Hard teardown first
+    CuraEqui.TeardownAll("bootstrap")
+
+    -- 2) Create a short 'don’t-save' window immediately
     CuraEqui.state = CuraEqui.state or {}
     do
         local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
         CuraEqui.state.persistMuteUntil = now + 5.0
     end
 
-    -- 1) TEARDOWN once: stop timers / watcher / probe
+    -- 3) TEARDOWN once: stop timers / watcher / probe
     local ST = CuraEqui.state
     if ST.hungerTimer then
         Script.KillTimer(ST.hungerTimer); ST.hungerTimer = nil
@@ -306,7 +314,7 @@ function CuraEqui.Bootstrap(reason)
     end
     if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
 
-    -- 2) RESET per-session mirrors/flags (single source of truth)
+    -- 4) RESET per-session mirrors/flags (single source of truth)
     ST._giftedFor       = {}
     ST._giftedSessionId = (ST._giftedSessionId or 0) + 1
     ST.noHorseStrikes   = 0
@@ -318,17 +326,17 @@ function CuraEqui.Bootstrap(reason)
     ST.lastHorseFpExt   = nil
     ST.justLoaded       = true
 
-    -- 3) Force a clean buff recompute (icons/state) next time we sync
+    -- 5) Force a clean buff recompute (icons/state) next time we sync
     if CuraEqui.Buffs then
         CuraEqui.Buffs._lastPlayerUuid      = nil
         CuraEqui.Buffs._lastHorseDebuffUuid = nil
         CuraEqui.Buffs._syncBusy            = false
     end
 
-    -- 4) FULL INIT (hydrates from DB, clears tiers, and starts probe/watcher)
+    -- 6) FULL INIT (hydrates from DB, clears tiers, and starts probe/watcher)
     if CuraEqui.Initialize then pcall(CuraEqui.Initialize, true) end
 
-    -- 5) Two-phase “settle” resync (HUD/souls race-proof)
+    -- 7) Two-phase “settle” resync (HUD/souls race-proof)
     if Script and Script.SetTimerForFunction then
         _G["CuraEqui_Resync0"] = function()
             xpcall(function()
@@ -810,5 +818,40 @@ function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
     if D and D.buffTraceVerbose then
         System.LogAlways(("[CuraEqui][Gift] welcome sated %ds for key=%s (%s)")
             :format(giftSec, horseKey, tostring(cause or "?")))
+    end
+end
+
+function CuraEqui.TeardownAll(reason)
+    local ST = CuraEqui.state or {}
+    -- Kill timers
+    if ST.hungerTimer then
+        Script.KillTimer(ST.hungerTimer); ST.hungerTimer = nil
+    end
+    if ST.probeTimer then
+        Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
+    end
+
+    -- Unregister any UI listeners you installed (map, fader, item selection…)
+    -- (Only if you registered them via UIAction.RegisterElementListener earlier)
+    if UIAction and CuraEqui._uiRegs then
+        for _, reg in ipairs(CuraEqui._uiRegs) do
+            pcall(UIAction.UnregisterElementListener, table.unpack(reg))
+        end
+        CuraEqui._uiRegs = nil
+    end
+
+    -- Nuke all our tier buffs defensively (player sated tiers + horse debuffs)
+    if CuraEqui.Buffs and CuraEqui.Buffs.ClearSatedTimers then
+        pcall(CuraEqui.Buffs.ClearSatedTimers)
+    end
+    if CuraEqui.Buffs and CuraEqui.Buffs.ClearHorseDebuffs then
+        local h = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        pcall(CuraEqui.Buffs.ClearHorseDebuffs, h)
+    end
+
+    -- Reset “last applied” sentinels so Sync won’t skip
+    if CuraEqui.Buffs then
+        CuraEqui.Buffs._lastPlayerUuid      = nil
+        CuraEqui.Buffs._lastHorseDebuffUuid = nil
     end
 end

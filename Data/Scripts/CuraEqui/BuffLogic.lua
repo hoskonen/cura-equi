@@ -29,7 +29,7 @@ M.SATED_TIERS         = {
     { sec = 600,  uuid = "8f6d7a21-3c5e-4b2a-8a6f-2f19b7e3c4d1" },
     { sec = 500,  uuid = "7b3e1a6a-23f4-41af-b892-205d8340d6ee" },
     { sec = 400,  uuid = "6eecf4fa-9b5e-48bb-9b02-3875f9f609b7" },
-    { sec = 300,  uuid = "eb4cfdf9-42e3-4f6b-b615-af19c7f8e448" },
+    { sec = 300,  uuid = "330cc111-58fc-4523-bc87-20bee7a3fb34" },
     { sec = 200,  uuid = "f9ad23a8-7d3d-4e43-96f2-1d5cc84f2d40" },
     { sec = 100,  uuid = "c5b2d9f6-12f1-44d4-b04c-46f6b3e5c711" },
 }
