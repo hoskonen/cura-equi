@@ -38,7 +38,7 @@ CuraEqui.Config = {
         horseDerived = true,
     },
     Hunger = {
-        preset                   = "dev", -- "hardcore" | "real_life" | "moderate" | "laidback"
+        preset                   = "moderate", -- "hardcore" | "moderate" | "laidback" "moderate" | "laidback"
         tickSec                  = 10,
         hungerStart              = 50,
         hungerMax                = 100,
@@ -82,16 +82,8 @@ CuraEqui.Config = {
                 grazePerMinIdleUnmtd = -0.08, -- -4.8/h (still helps, but weaker)
                 night                = { disableGrazing = true, timeDrainMul = 1.2, maxDeltaPerNight = 30 },
             },
-            real_life = {
-                -- Slow passive build, forage is meaningful. Night still accumulates some hunger but capped.
-                ratePerMinIdle       = 0.12,  -- +7.2/h
-                ratePerMinMounted    = 0.35,  -- +21/h
-                ratePerKmMounted     = 0.6,   -- +0.6/km
-                grazePerMinIdleUnmtd = -0.10, -- -6/h (day grazing offsets most idle)
-                night                = { disableGrazing = false, timeDrainMul = 1.0, maxDeltaPerNight = 18 },
-            },
             moderate = {
-                ratePerMinIdle       = 0.05,
+                ratePerMinIdle       = 0.02,
                 ratePerMinMounted    = 0.10,
                 ratePerKmMounted     = 0.12,
                 grazePerMinIdleUnmtd = -0.06,
@@ -102,14 +94,7 @@ CuraEqui.Config = {
                 ratePerMinMounted    = 0.25,  -- +15/h
                 ratePerKmMounted     = 0.4,   -- +0.4/km
                 grazePerMinIdleUnmtd = -0.12, -- -7.2/h (day idle nearly nets to zero)
-                night                = { disableGrazing = true, timeDrainMul = 0.9, maxDeltaPerNight = 12 },
-            },
-            dev = {
-                ratePerMinIdle       = 0.02,
-                ratePerMinMounted    = 0.10,
-                ratePerKmMounted     = 0.12,
-                grazePerMinIdleUnmtd = -0.06,
-                night                = { disableGrazing = true, timeDrainMul = 1.0, maxDeltaPerNight = 35 },
+                night                = { disableGrazing = false, timeDrainMul = 0.9, maxDeltaPerNight = 12 },
             },
         },
     },

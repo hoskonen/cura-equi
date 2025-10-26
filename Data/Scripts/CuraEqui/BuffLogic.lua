@@ -12,26 +12,33 @@ M._syncBusy           = false -- ensure exists
 
 -- Timed "Sated" tiers (descending). UUIDs must match buff__curaequi.xml
 M.SATED_TIERS         = {
-    { sec = 2000, uuid = "f5a6b7c8-9d0e-4be4-9a8b-9f0a1b2c3d4e" },
-    { sec = 1900, uuid = "e4f5a6b7-8c9d-4ad3-8b9a-8e9f0a1b2c3d" },
-    { sec = 1800, uuid = "d3e4f5a6-7b8c-4fc2-9a8b-7d8e9f0a1b2c" },
-    { sec = 1700, uuid = "c2d3e4f5-6a7b-4eb1-8b9c-6c7d8e9f0a1b" },
-    { sec = 1600, uuid = "b1c2d3e4-5f6a-4da0-9a8c-5b6c7d8e9f0a" },
-    { sec = 1500, uuid = "a0b1c2d3-4e5f-4b99-8c9b-4a5b6c7d8e9f" },
-    { sec = 1400, uuid = "9d3f5b7c-2e4a-4a88-b8a9-3f4a5b6c7d8e" },
-    { sec = 1300, uuid = "7c2e4a6b-1d3f-4f77-8b9c-2e3f4a5b6c7d" },
-    { sec = 1200, uuid = "6b1d3f5a-9c2e-4e66-9a8c-1d2e3f4a5b6c" },
-    { sec = 1100, uuid = "5a3c1e7d-2b8f-4d55-8b9a-0c1d2e3f4a5b" },
-    { sec = 1000, uuid = "4f1a2b3c-8d7e-4c44-9a8b-7c0d1e2f3a4b" },
-    { sec = 900,  uuid = "3e5a7c19-5d2b-4a33-a8b9-6f1e2d3c4b5a" },
-    { sec = 800,  uuid = "2c7e5a91-6b3d-4f22-8c9d-5e1a3b7c0d2f" },
-    { sec = 700,  uuid = "1a9c3e5b-7d2f-4e10-9b8a-3c1d5e7f0a2b" },
-    { sec = 600,  uuid = "8f6d7a21-3c5e-4b2a-8a6f-2f19b7e3c4d1" },
-    { sec = 500,  uuid = "7b3e1a6a-23f4-41af-b892-205d8340d6ee" },
-    { sec = 400,  uuid = "6eecf4fa-9b5e-48bb-9b02-3875f9f609b7" },
-    { sec = 300,  uuid = "330cc111-58fc-4523-bc87-20bee7a3fb34" },
-    { sec = 200,  uuid = "f9ad23a8-7d3d-4e43-96f2-1d5cc84f2d40" },
-    { sec = 100,  uuid = "c5b2d9f6-12f1-44d4-b04c-46f6b3e5c711" },
+    { sec = 2000, uuid = "e1800331-3a2f-4cc5-a8c9-841b6951a82e" },
+    { sec = 1900, uuid = "aa532dd1-403e-4625-9e87-e9a6899e4f1a" },
+    { sec = 1800, uuid = "0ed41cfb-f810-4b41-a5c4-cce1dd4c74f0" },
+    { sec = 1700, uuid = "46e6dfcc-6a64-453b-8dae-d8a1f89734c6" },
+    { sec = 1600, uuid = "d8e2b38b-e91f-4d23-8571-d79b9e5f6353" },
+    { sec = 1500, uuid = "f3db020a-9959-4d50-b185-85d40aef2ae0" },
+    { sec = 1400, uuid = "53ddadd1-1f84-42d9-b05e-8f16101267cc" },
+    { sec = 1300, uuid = "c4056d88-ab66-4c6c-bd18-b476b112c298" },
+    { sec = 1200, uuid = "98c04f72-da28-4075-8d85-a7069c73ff9e" },
+    { sec = 1100, uuid = "2b3b7af9-bcd9-4cb0-a0ee-ad983667ac47" },
+    { sec = 1000, uuid = "62eb98ef-51f5-408e-bcad-aefd2a670560" },
+    { sec = 900,  uuid = "32b562de-5229-49d7-82ae-62412dd019ce" },
+    { sec = 800,  uuid = "ea9d92a0-01d6-41a5-9640-287e154db37f" },
+    { sec = 700,  uuid = "cf6a7c47-e122-4de8-9a57-92a47aceaa7a" },
+    { sec = 600,  uuid = "d513eaca-20c2-45aa-bbf3-ea4d5094e40b" },
+    { sec = 500,  uuid = "5232c9a1-e46b-4d18-9cae-d41e585cb22f" },
+    { sec = 400,  uuid = "f4438e13-03c5-49d7-88d6-cdd81839da79" },
+    { sec = 300,  uuid = "29371153-9ff7-42b9-8cfb-b1f8391f0119" },
+    { sec = 200,  uuid = "6da20913-8537-4ab9-963d-e310e9afd313" },
+    { sec = 100,  uuid = "29264074-7154-4831-92c4-f132bf96f60b" },
+}
+
+M.SATED_TOMBSTONES    = {
+    -- old 300s that got stuck earlier:
+    "2d8939b7-8af5-40b7-a1fb-1f937a3a6afc",
+    -- old 500s you just replaced:
+    "7a0a5c5c-5c9c-44ed-9b46-9184b75e3c3c",
 }
 
 -- pick tier name from hunger/sated (HUD thresholds)
@@ -294,19 +301,6 @@ function CuraEqui.Buffs.PredictBucketSecAfterAdd(S, addSec)
     return (b and b.sec) or 0
 end
 
--- remove all sated timed-buffs (player channel), using the tier table
--- function CuraEqui.Buffs.ClearSatedTimers()
---     local M = CuraEqui.Buffs
---     if not (M and M.SATED_TIERS) then return end
---     for _, t in ipairs(M.SATED_TIERS) do
---         local uid = t.uid or t.uuid or t.uidd
---         if uid and CuraEqui.Effects and CuraEqui.Effects.RemovePlayer then
---             pcall(CuraEqui.Effects.RemovePlayer, uid)
---         end
---     end
---     M._lastSatedUuid = nil
--- end
-
 function M.ClearSatedTimers()
     local L = CuraEqui and CuraEqui.Config and CuraEqui.Config.Sated and CuraEqui.Config.Sated.TIERS
     -- Fallback to module's tier list if you host it here:
@@ -329,7 +323,14 @@ end
 function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
     local M = CuraEqui.Buffs
     opts = opts or {}
-    local QUIET = (opts.quiet == true)
+
+    local ST = CuraEqui.state or {}
+    if ST._preloadFence and not (opts and opts.force) then
+        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
+            System.LogAlways("[CuraEqui][SatedSync] fenced (preload)")
+        end
+        return
+    end
 
     -- Reentry fence (quiet unless verbose)
     if M._syncBusy and not opts.force then
@@ -404,10 +405,11 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
         end
 
         -- Mid-run, different bucket wanted, but we don't force switches while running
-        if (not forcing) and M._lastSatedUuid and M._lastSatedUuid ~= bucket.uuid then
-            if D.buffTraceVerbose then
-                System.LogAlways(("[CuraEqui][Buff] Sated: hold bucket mid-run (rem=%.0fs, last=%s, want=%s)")
-                    :format(remS, tostring(M._lastSatedUuid), tostring(bucket.uuid)))
+        if (not forcing) and M._lastSatedUuid == bucket.uuid then
+            if D.buffTraceVerbose and (not M._nextSkipLogAt or now >= M._nextSkipLogAt) then
+                System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%.0fs, last=%s)"):format(remS,
+                    tostring(M._lastSatedUuid)))
+                M._nextSkipLogAt = now + 2.0
             end
             return
         end
@@ -459,6 +461,17 @@ function CuraEqui.Buffs.RemoveAllOurs(horse)
     -- all sated timed tiers (player)
     for _, t in ipairs(CuraEqui.Buffs.SATED_TIERS or {}) do
         if t.uuid then pcall(CuraEqui.Effects.RemovePlayer, t.uuid) end
+    end
+    CuraEqui.Buffs._lastSatedUuid = nil
+end
+
+-- Nukes every known sated-tier effect from the player, defensively.
+function CuraEqui.Buffs.SweepPlayerSatedEffects(tag)
+    local T = CuraEqui.Buffs.SATED_TIERS or {}
+    local dead = CuraEqui.Buffs.SATED_TOMBSTONES or {}
+    if CuraEqui.Effects and CuraEqui.Effects.PlayerRemove then
+        for i = 1, #T do pcall(CuraEqui.Effects.PlayerRemove, T[i].uuid) end
+        for i = 1, #dead do pcall(CuraEqui.Effects.PlayerRemove, dead[i]) end
     end
     CuraEqui.Buffs._lastSatedUuid = nil
 end

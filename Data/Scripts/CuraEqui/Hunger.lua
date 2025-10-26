@@ -775,16 +775,17 @@ end
 -- ---------- START/STOP ----------
 function CuraEqui.StartWatching()
     -- Guard instead of kill+recreate (avoids duplicate logs/timers)
-    if CuraEqui.state.hungerTimer then
-        return
-    end
+    -- if CuraEqui.state.hungerTimer then
+    --     return
+    -- end
 
     CuraEqui.state.hungerTimer =
         Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
     CuraEqui.Log("poll", "Hunger watcher started (timerId=%s)", tostring(CuraEqui.state.hungerTimer))
 
-    -- if we just did the initial sated apply during load, do not re-sync here.
-    if CuraEqui.state and CuraEqui.state.didInitialSatedApply then
+    -- Do NOT re-apply sated if load already seeded it
+    if CuraEqui.state.didInitialSatedApply then
+        CuraEqui.state.didInitialSatedApply = nil
         return
     end
 

@@ -973,6 +973,16 @@ function CuraEqui.Debug.DumpHorseDerived()
     L("relative movement speed addition", "rsa")
 end
 
+function CuraEqui.Debug.NukeSated()
+    if CuraEqui.Buffs and CuraEqui.Buffs.ClearSatedTimers then
+        pcall(CuraEqui.Buffs.ClearSatedTimers)
+    end
+    if CuraEqui.Buffs then
+        CuraEqui.Buffs._lastPlayerUuid = nil
+    end
+    System.LogAlways("[CuraEqui][Debug] NUKED all sated timers (player).")
+end
+
 -- Console bindings
 if System and System.AddCCommand then
     -- Register (or rebind) all existing commands here:
@@ -998,6 +1008,7 @@ if System and System.AddCCommand then
     _add_cmd("curaequi_horse_stats", "CuraEqui.Debug.DumpHorseStats()", "Dump current horse stats")
     _add_cmd("curaequi_stats_tutorial", "CuraEqui.Debug.ShowHorseStatsTutorial()", "Show horse stats card")
     _add_cmd("curaequi_horse_derived", "CuraEqui.Debug.DumpHorseDerived()", "Dump horse-related derived stats")
+    _add_cmd("curaequi_nuke_sated", "CuraEqui.Debug.NukeSated()", "Nuked Sated Status Buffs")
 
     _add_cmd("curaequi_spawn_food_strict",
         "CuraEqui.Debug.SpawnFoodStrict(%1,%2,%3)",

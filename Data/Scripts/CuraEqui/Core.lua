@@ -10,7 +10,7 @@ CuraEqui.state                  = CuraEqui.state or {
     hasHorse         = false, -- single source of truth
     lastHorseId      = nil,   -- GUID we think we’re riding
     lastHorseEnt     = nil,
-    _probeTimer      = nil,   -- lazy probe timer id (horseless only)
+    probeTimer       = nil,   -- lazy probe timer id (horseless only)
     _noHorseLogAt    = 0,     -- rate-limit for “no horse” logs
     _revalNextAt     = 0,     -- next time we may revalidate identity
     _lastHorseSwapAt = nil,   -- debounce for swaps
@@ -281,7 +281,7 @@ end
 -- Event glue (register once)
 if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBound then
     UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnGameplayStarted", "OnGameplayStarted")
-    -- UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
+    UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnQuickLoadingStart", "OnQuickLoadingStart")
     CuraEqui.__eventsBound = true
 end
 
@@ -293,6 +293,12 @@ function CuraEqui.Bootstrap(reason)
     if CuraEqui.Persist and CuraEqui.Persist.Reopen then
         pcall(CuraEqui.Persist.Reopen)
     end
+
+    pcall(function()
+        if CuraEqui and CuraEqui.Buffs and CuraEqui.Buffs.SweepPlayerSatedEffects then
+            CuraEqui.Buffs.SweepPlayerSatedEffects("bootstrap")
+        end
+    end)
 
     -- 1) Hard teardown first
     CuraEqui.TeardownAll("bootstrap")
@@ -336,22 +342,38 @@ function CuraEqui.Bootstrap(reason)
     -- 6) FULL INIT (hydrates from DB, clears tiers, and starts probe/watcher)
     if CuraEqui.Initialize then pcall(CuraEqui.Initialize, true) end
 
-    -- 7) Two-phase “settle” resync (HUD/souls race-proof)
+    -- 7) Two-phase settle (each pass: clear → apply)
     if Script and Script.SetTimerForFunction then
-        _G["CuraEqui_Resync0"] = function()
+        _G["CuraEqui_ResyncPass"] = function()
             xpcall(function()
                 local h = CuraEqui.ResolveHorse()
                 local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
                 local B = CuraEqui.Buffs
-                if h and S and B then
-                    if B.SyncSatedTimer then B.SyncSatedTimer(h, S, { cause = "bootstrap", force = false }) end
-                    if B.SyncHorseDebuff then B.SyncHorseDebuff(h, S, { cause = "bootstrap" }) end
-                    if B.SyncAll then B.SyncAll(h, S) end
+                if not (h and S and B) then return end
+
+                -- 🔒 Extra-safe: sweep again right before we apply a tier.
+                -- (Cheap, idempotent, and prevents any late HUD resurrection from surviving.)
+                do
+                    if B and B.ClearSatedTimers then
+                        pcall(B.ClearSatedTimers) -- remove all current sated tiers
+                    end
+                    if B and B.SweepPlayerSatedEffects then
+                        pcall(B.SweepPlayerSatedEffects, "resync") -- also nuke tombstoned/legacy UUIDs
+                    end
                 end
-            end, function(err) System.LogAlways("[CuraEqui][Resync0][ERROR] " .. tostring(err)) end)
+
+                -- Only apply if we’re not in the preload fence
+                if not (CuraEqui.state and CuraEqui.state._preloadFence) then
+                    if B.SyncSatedTimer then pcall(B.SyncSatedTimer, h, S, { cause = "bootstrap", force = true }) end
+                    if B.SyncHorseDebuff then pcall(B.SyncHorseDebuff, h, S, { cause = "bootstrap" }) end
+                    if B.SyncAll then pcall(B.SyncAll, h, S) end
+                end
+            end, function(err) System.LogAlways("[CuraEqui][Resync][ERROR] " .. tostring(err)) end)
         end
-        Script.SetTimerForFunction(1, "CuraEqui_Resync0")
-        Script.SetTimerForFunction(150, "CuraEqui_Resync0")
+
+
+        Script.SetTimerForFunction(1, "CuraEqui_ResyncPass")   -- first pass: right away
+        Script.SetTimerForFunction(150, "CuraEqui_ResyncPass") -- second pass: catch slow HUD init
     end
 end
 
@@ -687,9 +709,9 @@ end
 function CuraEqui.OnGameplayStarted()
     System.LogAlways("[CuraEqui] OnGameplayStarted")
     -- Always treat OGS as a fresh runtime session
+    if CuraEqui.state then CuraEqui.state._preloadFence = nil end
     CuraEqui.Bootstrap("ogs")
     CuraEqui.ValidateBuffGuids()
-    --CuraEqui.Initialize(true)
 
     -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
     local tries = { 0, 300, 1200 }
@@ -716,6 +738,19 @@ function CuraEqui.OnGameplayStarted()
     end
     try(1)
 
+    -- Post-OGS settle: drop fence and force a single apply ~400ms later
+    Script.SetTimer(400, function()
+        local ST = CuraEqui.state or {}
+        ST._preloadFence = nil
+        local h = CuraEqui.ResolveHorse()
+        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        local B = CuraEqui.Buffs
+        if h and S and B and B.SyncSatedTimer then
+            pcall(B.SyncSatedTimer, h, S, { cause = "ogs-settle", force = true })
+            if B.SyncAll then pcall(B.SyncAll, h, S) end
+        end
+    end)
+
     if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBound then
         UIAction.RegisterEventSystemListener(CuraEqui, "System", "OnSetFaderState", "OnSetFaderState")
         CuraEqui.__eventsBound = true
@@ -725,6 +760,21 @@ function CuraEqui.OnGameplayStarted()
         UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
         CuraEqui.__skipBound = true
         System.LogAlways("[CuraEqui] Bound SkipTime element listener")
+    end
+end
+
+function CuraEqui.OnQuickLoadingStart()
+    System.LogAlways("[CuraEqui] OnQuickLoadingStart")
+    CuraEqui.state = CuraEqui.state or {}
+    CuraEqui.state._preloadFence = true
+
+    -- Tear down immediately; we’ll rebuild on OGS
+    if CuraEqui.TeardownAll then pcall(CuraEqui.TeardownAll, "quickload") end
+
+    -- Extra defensive clears while HUD is being rebuilt
+    if CuraEqui.Buffs and CuraEqui.Buffs.ClearSatedTimers then
+        Script.SetTimer(0, function() pcall(CuraEqui.Buffs.ClearSatedTimers) end)
+        Script.SetTimer(250, function() pcall(CuraEqui.Buffs.ClearSatedTimers) end)
     end
 end
 
