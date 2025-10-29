@@ -1,0 +1,19 @@
+Cura Equi — Temporary License
+Copyright (c) 2025 Petri Hoskonen
+
+All rights reserved.
+
+This repository is published for transparency and collaboration.
+The content, including source code and assets, may not be copied,
+modified, distributed, or publicly released in compiled or uncompiled
+form before the official public release of the mod by the author.
+
+After official release, the author may choose to relicense the project
+under a more permissive license.
+
+Until then:
+- You may view and fork this repository on GitHub for learning or private testing.
+- You may not publish builds or redistributions of the mod, in whole or in part.
+- You may not claim ownership or authorship of the mod or its contents.
+
+Questions or collaboration requests: route.electrique@gmail.com
