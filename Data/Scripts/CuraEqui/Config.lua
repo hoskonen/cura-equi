@@ -33,7 +33,7 @@ CuraEqui.Config = {
         buffTraceVerbose = true, -- false = log only when buff changes
         buffTraceTick = false,
         skipTrace = true,
-        skipTraceVerbose = false,
+        skipTraceVerbose = true,
         staminaSnapshot = true, -- capture a reference staminaMax (debug only)
         horseDerived = true,
     },
@@ -76,25 +76,25 @@ CuraEqui.Config = {
     Presets = {
         Hunger = {
             hardcore = {
-                ratePerMinIdle       = 0.35,  -- +21/h
-                ratePerMinMounted    = 0.7,   -- +42/h
-                ratePerKmMounted     = 1.0,   -- +1.0/km
-                grazePerMinIdleUnmtd = -0.08, -- -4.8/h (still helps, but weaker)
-                night                = { disableGrazing = true, timeDrainMul = 1.2, maxDeltaPerNight = 30 },
+                ratePerMinIdle       = 0.35,
+                ratePerMinMounted    = 0.7,
+                ratePerKmMounted     = 1.0,
+                grazePerMinIdleUnmtd = -0.08,
+                night                = { disableGrazing = true, timeDrainMul = 1.2, maxDeltaPerNight = 40 },
             },
             moderate = {
-                ratePerMinIdle       = 0.02,
-                ratePerMinMounted    = 0.10,
-                ratePerKmMounted     = 0.12,
+                ratePerMinIdle       = 0.015,
+                ratePerMinMounted    = 0.07,
+                ratePerKmMounted     = 0.10,
                 grazePerMinIdleUnmtd = -0.06,
-                night                = { disableGrazing = true, timeDrainMul = 1.0, maxDeltaPerNight = 35 },
+                night                = { disableGrazing = true, timeDrainMul = 0.75, maxDeltaPerNight = 35 },
             },
             laidback = {
-                ratePerMinIdle       = 0.1,   -- +6/h
-                ratePerMinMounted    = 0.25,  -- +15/h
-                ratePerKmMounted     = 0.4,   -- +0.4/km
-                grazePerMinIdleUnmtd = -0.12, -- -7.2/h (day idle nearly nets to zero)
-                night                = { disableGrazing = false, timeDrainMul = 0.9, maxDeltaPerNight = 12 },
+                ratePerMinIdle       = 0.001,
+                ratePerMinMounted    = 0.04,
+                ratePerKmMounted     = 0.05,
+                grazePerMinIdleUnmtd = -0.04,
+                night                = { disableGrazing = false, timeDrainMul = 0.5, maxDeltaPerNight = 12 },
             },
         },
     },

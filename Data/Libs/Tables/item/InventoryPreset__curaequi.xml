@@ -63,11 +63,11 @@
 	<!-- ========================= -->
 
 	<InventoryPreset Name="curaequi_horsefood_merchant_dyn" Mode="AmountCount" ModeValue="1" ModeValueVariation="0" Health="0.60" HealthVariation="0.25">
-		<PresetItem Name="curaequi_carrot_bundle" Amount="2" Weight="6"/>
-		<PresetItem Name="curaequi_apple_sack" Amount="1" Weight="5"/>
-		<PresetItem Name="curaequi_pear_sack" Amount="1" Weight="2"/>
-		<PresetItem Name="curaequi_hay_bundle_sm" Amount="1" Weight="1"/>
-		<PresetItem Name="curaequi_oat_sack" Amount="1" Weight="1"/>
+		<PresetItem Name="curaequi_carrot_bundle" Amount="3" Weight="6"/>
+		<PresetItem Name="curaequi_apple_sack" Amount="3" Weight="5"/>
+		<PresetItem Name="curaequi_pear_sack" Amount="3" Weight="2"/>
+		<PresetItem Name="curaequi_hay_bundle_sm" Amount="5" Weight="1"/>
+		<PresetItem Name="curaequi_oat_sack" Amount="1" Weight="3"/>
 	</InventoryPreset>
 
 	<!-- ========================= -->
@@ -103,11 +103,11 @@
 	<!-- ========================= -->
 
 	<InventoryPreset Name="curaequi_horsefood_inn_dyn" Mode="AmountCount" ModeValue="2" ModeValueVariation="0" Health="0.65" HealthVariation="0.20">
-		<PresetItem Name="curaequi_carrot_bundle" Amount="2" Weight="5"/>
-		<PresetItem Name="curaequi_apple_sack"    Amount="1" Weight="4"/>
-		<PresetItem Name="curaequi_pear_sack"     Amount="1" Weight="3"/>
-		<PresetItem Name="curaequi_hay_bundle_sm" Amount="1" Weight="1"/>
-		<PresetItem Name="curaequi_oat_sack"     Amount="1" Weight="1"/>
+		<PresetItem Name="curaequi_carrot_bundle" Amount="4" Weight="5"/>
+		<PresetItem Name="curaequi_apple_sack"    Amount="2" Weight="4"/>
+		<PresetItem Name="curaequi_pear_sack"     Amount="2" Weight="3"/>
+		<PresetItem Name="curaequi_hay_bundle_sm" Amount="3" Weight="1"/>
+		<PresetItem Name="curaequi_oat_sack"     Amount="3" Weight="1"/>
 	</InventoryPreset>
 
 	<!-- define once globally -->
