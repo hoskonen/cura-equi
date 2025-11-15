@@ -44,10 +44,10 @@ CuraEqui.Config = {
         hungerMax                = 100,
         debuffAt                 = 70,
         -- Rates
-        ratePerMinIdle           = 0.15, -- horse idle (includes mounted-but-standing)
-        ratePerMinMounted        = 0.35, -- horse mounted & moving: time drift while ridden
-        ratePerKmMounted         = 0.5,  -- extra drain per ridden kilometer
-        speedIdleMps             = 0.2,  -- below this → idle
+        ratePerMinIdle           = 0.015, -- horse idle (includes mounted-but-standing)
+        ratePerMinMounted        = 0.35,  -- horse mounted & moving: time drift while ridden
+        ratePerKmMounted         = 0.5,   -- extra drain per ridden kilometer
+        speedIdleMps             = 0.2,   -- below this → idle
         -- Sated
         satedDrainMul            = 0.75,
         satedSecPerNutrition     = 12, -- x per nutrition
@@ -67,7 +67,7 @@ CuraEqui.Config = {
             maxDeltaPerNight = 35,  -- absolute cap on hunger gained from sunset→sunrise
 
         },
-        waitCatchup              = { enabled = true, maxCatchupSec = 6 * 3600 },
+        waitCatchup              = { enabled = true, maxCatchupSec = 0 }, -- catch up
         EnableFallbackCatchUp    = false,
         -- Gift Sated to a newly detected horse (acquisition or mid-session swap)
         newHorseSatedSec         = 1200, -- 20 min; set 0 to disable
@@ -83,16 +83,16 @@ CuraEqui.Config = {
                 night                = { disableGrazing = true, timeDrainMul = 1.2, maxDeltaPerNight = 40 },
             },
             moderate = {
-                ratePerMinIdle       = 0.015,
-                ratePerMinMounted    = 0.07,
-                ratePerKmMounted     = 0.10,
-                grazePerMinIdleUnmtd = -0.06,
+                ratePerMinIdle       = 0.025,
+                ratePerMinMounted    = 0.10,
+                ratePerKmMounted     = 0.15,
+                grazePerMinIdleUnmtd = -0.015,
                 night                = { disableGrazing = true, timeDrainMul = 0.75, maxDeltaPerNight = 35 },
             },
             laidback = {
-                ratePerMinIdle       = 0.001,
-                ratePerMinMounted    = 0.04,
-                ratePerKmMounted     = 0.05,
+                ratePerMinIdle       = 0.01,
+                ratePerMinMounted    = 0.05,
+                ratePerKmMounted     = 0.10,
                 grazePerMinIdleUnmtd = -0.04,
                 night                = { disableGrazing = false, timeDrainMul = 0.5, maxDeltaPerNight = 12 },
             },

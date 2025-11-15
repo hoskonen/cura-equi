@@ -574,20 +574,22 @@ function CuraEqui._HungerTickBody()
         end
 
         -- Time drain (idle/mounted) + per-km drain
-        local timeBase  = ((idle and C.rateIdle) or C.rateMounted) * (dt / 60.0)
-        local distDrain = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
+        local timeBase    = ((idle and C.rateIdle) or C.rateMounted) * (dt / 60.0)
+        local distDrain   = (mounted and not idle) and (C.rateKmMounted * (distM / 1000.0)) or 0
 
         -- Night time mul
-        local timeMul   = night and (tonumber((HcfgAll.night or {}).timeDrainMul) or 1.0) or 1.0
-        local timeDrain = timeBase * timeMul
+        local timeMul     = night and (tonumber((HcfgAll.night or {}).timeDrainMul) or 1.0) or 1.0
+        local timeDrain   = timeBase * timeMul
 
         -- Grazing (may ramp & cap)
-        local graze     = graze_compute(S, mounted, idle, dt, HcfgAll)
+        local NC          = (HcfgAll.night or {})
+        local canGrazeNow = (not night) or (NC.disableGrazing == false)
 
-        -- Night: optionally disable grazing
-        if night and ((HcfgAll.night or {}).disableGrazing ~= false) then
-            graze = 0
+        local graze       = 0
+        if canGrazeNow then
+            graze = graze_compute(S, mounted, idle, dt, HcfgAll)
         end
+        -- if night and disableGrazing ~= false, we skip graze_compute entirely
 
         -- Sated multiplier (by design, only drains)
         local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
