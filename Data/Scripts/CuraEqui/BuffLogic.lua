@@ -41,6 +41,10 @@ M.SATED_TOMBSTONES    = {
     "7a0a5c5c-5c9c-44ed-9b46-9184b75e3c3c",
 }
 
+-- Single static Sated buff (to be wired later from Effects.lua)
+-- For now this is just a placeholder; we won't call PlayerAdd/Remove with it yet.
+M.SATED_STATIC_DEFID  = M.SATED_STATIC_DEFID or nil
+
 -- pick tier name from hunger/sated (HUD thresholds)
 local function _now() return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock() end
 local function _pickTierName(hunger, satedUntil)
@@ -262,6 +266,26 @@ end
 function M.SyncAll(horseEnt, S)
     M.SyncHorseDebuff(horseEnt, S)
     M.SyncPlayerStatus(horseEnt, S)
+end
+
+-- Static Sated synchronisation (WIP stub for static-branch).
+-- For now this only logs; no behaviour changes until we wire callsites.
+function M.SyncSatedStatic(horseEnt, S, opts)
+    opts         = opts or {}
+    local D      = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    local cause  = opts.cause or "static"
+    local remSec = math.max(0, tonumber(S and S.satedRemainSec or 0) or 0)
+
+    if not (D.buffTraceVerbose or D.buffTraceTick) then
+        -- No debug: do nothing for now (we'll implement later steps)
+        return
+    end
+
+    if remSec <= 0 then
+        System.LogAlways(("[CuraEqui][SatedStatic] cause=%s rem=0s (stub)"):format(cause))
+    else
+        System.LogAlways(("[CuraEqui][SatedStatic] cause=%s rem=%.0fs (stub)"):format(cause, remSec))
+    end
 end
 
 local function _pick_bucket_floor(remS)
