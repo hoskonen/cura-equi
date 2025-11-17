@@ -369,11 +369,10 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
             return
         end
 
-        -- Expired → clear once and leave
+        -- Expired → ALWAYS clear all sated tiers and leave
         if remS <= 0 then
-            if M._lastSatedUuid then
-                M.ClearSatedTimers(); M._lastSatedUuid = nil
-            end
+            M.ClearSatedTimers()
+            M._lastSatedUuid = nil
             return
         end
 
