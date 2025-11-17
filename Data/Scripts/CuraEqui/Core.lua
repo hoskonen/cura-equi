@@ -436,10 +436,16 @@ function CuraEqui.Initialize(fullInit)
     do
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         if S and CuraEqui.Persist and CuraEqui.Persist.Load then
-            local ph, ps = CuraEqui.Persist.Load()
-            if ph or ps then
+            local ph, remSec = CuraEqui.Persist.Load()
+            if ph or remSec then
                 if ph then S.hunger = math.max(0, math.min(100, ph)) end
-                if ps then S.satedUntil = tonumber(ps) or 0 end
+
+                -- NEW: keep remaining seconds in state and rebuild absolute until
+                local rem = math.max(0, tonumber(remSec or 0) or 0)
+                S.satedRemainSec = rem
+
+                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                S.satedUntil = (rem > 0) and (now + rem) or 0
 
                 -- 1) Hard wipe ALL player sated tiers (belts & suspenders against engine residue)
                 if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
@@ -448,7 +454,8 @@ function CuraEqui.Initialize(fullInit)
 
                 S._lastBuffTier = nil
 
-                System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s"):format(tostring(ph), tostring(ps)))
+                System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s satedRemainSec=%s")
+                    :format(tostring(ph), tostring(remSec)))
 
                 local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
                 if D and D.buffTraceVerbose then
@@ -460,9 +467,9 @@ function CuraEqui.Initialize(fullInit)
                 pcall(CuraEqui.Buffs.ClearSatedTimers)       -- ← removes all sated timers (player)
 
                 if D and D.buffTraceVerbose then
-                    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                    local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                    System.LogAlways(("[CE][LOAD] apply: sated player (rem≈%ds)"):format(rem))
+                    local now2 = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                    local rem2 = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now2)
+                    System.LogAlways(("[CE][LOAD] apply: sated player (rem≈%ds)"):format(rem2))
                 end
 
                 -- 2) Apply exactly one sated bucket based on persisted remain
@@ -475,15 +482,16 @@ function CuraEqui.Initialize(fullInit)
                 CuraEqui.state.didInitialSatedApply = true
 
                 -- 4) Defer status (horse hunger) icon to the first tick for stability
-                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                CuraEqui.state.deferStatusUntilTick = now + 0.2 -- ~1 tick; cosmetic
+                local now3 = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                CuraEqui.state.deferStatusUntilTick = now3 + 0.2 -- ~1 tick; cosmetic
 
-                CuraEqui.state.suppressStatusUntil = ((CuraEqui.Now and CuraEqui.Now()) or os.clock()) + 0.5
+                CuraEqui.state.suppressStatusUntil =
+                    ((CuraEqui.Now and CuraEqui.Now()) or os.clock()) + 0.5
 
                 do
-                    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                    local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                    System.LogAlways(("[CuraEqui][LoadApply] post-apply satedRemain=%.0fs"):format(rem))
+                    local now4 = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                    local rem4 = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now4)
+                    System.LogAlways(("[CuraEqui][LoadApply] post-apply satedRemain=%.0fs"):format(rem4))
                 end
             end
         end

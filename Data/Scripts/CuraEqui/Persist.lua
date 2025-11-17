@@ -26,6 +26,7 @@ end
 -- Load returns (hunger:number|nil, satedUntil:number|nil)
 function P.Load()
     if not _db then return nil, nil end
+
     local t
     local ok, v = pcall(function()
         return (_db.Get and _db:Get(P._localKey)) or (_db.Get and _db.Get(P._localKey)) or nil
@@ -36,65 +37,30 @@ function P.Load()
     local hunger = tonumber(t.hunger or 0)
     if hunger then hunger = math.max(0, math.min(100, hunger)) end
 
-    local now = _now()
-    local satedUntil = 0
+    local now     = _now()
+    local remSec  = 0
+    local version = tonumber(t.version or 1) or 1
 
-    if tonumber(t.version or 1) >= 2 then
-        -- New schema: we stored remaining seconds
-        local rem = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
+    if version >= 2 then
+        -- New schema: remaining seconds persisted directly
+        remSec = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
         -- sanity clamp: >24h remaining is likely corrupt/old → clamp to 0
-        if rem > 24 * 3600 then rem = 0 end
-
-        satedUntil = (rem > 0) and (now + rem) or 0
+        if remSec > 24 * 3600 then remSec = 0 end
     else
-        -- V1 migration path: we stored absolute using a process clock.
+        -- V1 migration path: absolute timestamp using a process clock.
         -- Use savedAt to recover intended "remaining at save time".
         local abs   = tonumber(t.satedUntil or 0) or 0
         local saved = tonumber(t.savedAt or 0) or 0
-        local rem   = math.max(0, abs - saved)      -- intended remaining at save
-        if rem > 24 * 3600 then rem = 0 end         -- guard nonsense
-
-        satedUntil = (rem > 0) and (now + rem) or 0 -- rebase to current clock
+        local rem   = math.max(0, abs - saved) -- intended remaining at save
+        if rem > 24 * 3600 then rem = 0 end    -- guard nonsense
+        remSec = rem
     end
 
     if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-        CuraEqui._dbg_rawLoadedUntil = satedUntil
-    else
-        CuraEqui._dbg_rawLoadedUntil = nil
+        System.LogAlways(("[CuraEqui][Persist] Load-round: rem=%.0fs"):format(remSec))
     end
 
-    -- Round-to-nearest-full-tier (ties go up), then set internal to that tier.
-    do
-        local rem = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
-        local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
-        if rem > 0 and T and #T > 0 then
-            local nearest  = 0
-            local bestDiff = math.huge
-            for i = 1, #T do
-                local sec = tonumber(T[i].sec) or 0
-                local d   = math.abs(rem - sec)
-                if (d < bestDiff) or (d == bestDiff and sec > nearest) then
-                    -- tie-break upward
-                    bestDiff, nearest = d, sec
-                end
-            end
-            satedUntil = (nearest > 0) and (now + nearest) or 0
-        else
-            -- nearest to 0 -> drop
-            satedUntil = 0
-        end
-    end
-
-    -- (optional but nice) show what happened
-    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-        local remOld = math.max(0, (tonumber((CuraEqui._dbg_rawLoadedUntil or satedUntil) or 0) - now))
-        local remNew = math.max(0, (tonumber(satedUntil or 0) - now))
-        System.LogAlways(("[CuraEqui][Persist] Load-round: rem=%.0fs → tier=%.0fs"):format(remOld, remNew))
-    end
-
-    CuraEqui._dbg_rawLoadedUntil = nil
-
-    return hunger, satedUntil
+    return hunger, remSec
 end
 
 -- Save current values; returns true on success
