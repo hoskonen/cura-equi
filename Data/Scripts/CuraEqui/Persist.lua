@@ -19,14 +19,17 @@ do
 end
 
 local function _now()
-    return (CuraEqui and CuraEqui.Now and CuraEqui.Now())
-        or ((Script and Script.GetTime and Script.GetTime()) or os.clock())
+    -- Hard requirement: use the same clock as Hunger / BuffLogic.
+    if CuraEqui and CuraEqui.Now then
+        return CuraEqui.Now()
+    end
+
+    -- Absolute last-ditch fallback (mod is half-broken anyway at this point).
+    return os.clock()
 end
 
--- Load returns (hunger:number|nil, satedUntil:number|nil)
 function P.Load()
     if not _db then return nil, nil end
-
     local t
     local ok, v = pcall(function()
         return (_db.Get and _db:Get(P._localKey)) or (_db.Get and _db.Get(P._localKey)) or nil
@@ -37,61 +40,76 @@ function P.Load()
     local hunger = tonumber(t.hunger or 0)
     if hunger then hunger = math.max(0, math.min(100, hunger)) end
 
-    local now     = _now()
-    local remSec  = 0
-    local version = tonumber(t.version or 1) or 1
+    local now        = _now()
+    local satedUntil = 0
+    local rem        = 0
+    local ver        = tonumber(t.version or 1) or 1
 
-    if version >= 2 then
-        -- New schema: remaining seconds persisted directly
-        remSec = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
-        -- sanity clamp: >24h remaining is likely corrupt/old → clamp to 0
-        if remSec > 24 * 3600 then remSec = 0 end
+    if ver >= 2 then
+        -- New schema: we stored remaining seconds directly
+        rem = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
+        -- clamp insane values (>24h) → treat as no sated
+        if rem > 24 * 3600 then
+            rem = 0
+        end
+        satedUntil = (rem > 0) and (now + rem) or 0
     else
-        -- V1 migration path: absolute timestamp using a process clock.
-        -- Use savedAt to recover intended "remaining at save time".
+        -- V1 migration path: old absolute clock
         local abs   = tonumber(t.satedUntil or 0) or 0
         local saved = tonumber(t.savedAt or 0) or 0
-        local rem   = math.max(0, abs - saved) -- intended remaining at save
-        if rem > 24 * 3600 then rem = 0 end    -- guard nonsense
-        remSec = rem
+        rem         = math.max(0, abs - saved)
+        if rem > 24 * 3600 then
+            rem = 0
+        end
+        satedUntil = (rem > 0) and (now + rem) or 0
     end
 
     if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-        System.LogAlways(("[CuraEqui][Persist] Load-round: rem=%.0fs"):format(remSec))
+        System.LogAlways(("[CuraEqui][Persist] Load: hunger=%s rem=%.0fs")
+            :format(tostring(hunger), rem))
     end
 
-    return hunger, remSec
+    return hunger, satedUntil
 end
 
 -- Save current values; returns true on success
-function P.Save(hunger, satedUntil)
+function P.Save(hunger, satedRemainSec)
     if not _db then return false end
+
     local now = _now()
-    local rem = 0
-    if satedUntil and tonumber(satedUntil) then
-        rem = math.max(0, tonumber(satedUntil) - now)
-    end
-    local rec = {
-        version        = P._ver,
-        hunger         = math.max(0, math.min(100, tonumber(hunger or 0) or 0)),
-        satedRemainSec = rem,
+
+    local h = tonumber(hunger or 0) or 0
+    if h < 0 then h = 0 end
+    if h > 100 then h = 100 end
+
+    local rem = tonumber(satedRemainSec or 0) or 0
+    if rem < 0 then rem = 0 end
+    -- clamp nonsense: > 24h means “something went wrong”, treat as 0
+    if rem > 24 * 3600 then rem = 0 end
+
+    local payload = {
+        version        = 2,
         savedAt        = now,
+        hunger         = h,
+        satedRemainSec = rem,
     }
-    local ok, wrote = pcall(function()
+
+    local ok = false
+    local ok2, err = pcall(function()
         if _db.Set then
-            _db:Set(P._localKey, rec); return true
+            _db:Set(P._localKey, payload)
+        elseif _db.SetValue then
+            _db:SetValue(P._localKey, payload)
         end
-        return false
+        ok = true
     end)
-    if not ok or not wrote then
-        System.LogAlways("[CuraEqui][Persist] Save failed (DB.Set missing?)")
-        return false
-    end
+
     if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-        System.LogAlways(("[CuraEqui][Persist] Saved hunger=%d satedRemain=%.2f")
-            :format(math.floor(hunger or -1), rem))
+        System.LogAlways(("[CuraEqui][Persist] Saved hunger=%.4f satedRemain=%.2f")
+            :format(h, rem))
     end
-    return true
+
+    return ok and ok2
 end
 
 function P.Reopen()
@@ -101,38 +119,6 @@ function P.Reopen()
         return nil
     end)
     if ok and inst then _db = inst end
-end
-
--- Throttled saver: writes only on >=1% delta or every N seconds
-do
-    local _lastPct, _nextAt, _lastRem = nil, 0, nil
-    function P.MaybeSave(hunger, satedUntil, minDeltaPct, minEverySec)
-        local now = _now()
-        if not _db then return false end
-        minDeltaPct = tonumber(minDeltaPct or 1) or 1
-        minEverySec = tonumber(minEverySec or 20) or 20
-
-        local pct = math.floor(tonumber(hunger or 0) + 0.5)
-        local due = now >= (_nextAt or 0)
-        local movedPct = (not _lastPct) or (math.abs(pct - _lastPct) >= minDeltaPct)
-
-        local rem = 0
-        if satedUntil and tonumber(satedUntil) then
-            rem = math.max(0, tonumber(satedUntil) - now)
-        end
-        local movedRem = (_lastRem == nil) or (math.abs(rem - _lastRem) >= minEverySec)
-
-        if due or movedPct or movedRem then
-            local ok = P.Save(hunger, satedUntil)
-            if ok then
-                _lastPct = pct
-                _lastRem = rem
-                _nextAt  = now + minEverySec
-            end
-            return ok
-        end
-        return false
-    end
 end
 
 -- Optional: expose low-level for debug

@@ -34,6 +34,7 @@ CuraEqui.Config = {
         buffTraceTick = false,
         skipTrace = true,
         skipTraceVerbose = true,
+        satedTrace = true,
         staminaSnapshot = true, -- capture a reference staminaMax (debug only)
         horseDerived = true,
     },

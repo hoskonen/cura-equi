@@ -50,15 +50,23 @@ do
     end
 end
 
--- Pause-aware gameplay clock (fallback if Utils.lua didn’t define it yet)
-if not CuraEqui.Now then
-    function CuraEqui.Now()
-        if GetCurrTime then return GetCurrTime() end
-        if System and System.GetCurrTime then return System.GetCurrTime() end
-        if Calendar and Calendar.GetGameTime then return Calendar.GetGameTime() end
-        return (Script and Script.GetTime and Script.GetTime()) or os.clock()
+local DebugSet = CuraEqui.Debug and CuraEqui.Debug.SetSatedUntil
+
+local function _logSated(label, S)
+    if not (S and CuraEqui and CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace) then
+        return
     end
+
+    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local su  = tonumber(S.satedUntil or 0) or 0
+    local rem = math.max(0, su - now)
+    local rs  = tonumber(S.satedRemainSec or 0) or 0
+
+    System.LogAlways((
+        "[CuraEqui][SatedTrace][%s] now=%.2f satedUntil=%.2f rem=%.2f satedRemainSec=%.2f"
+    ):format(label, now, su, rem, rs))
 end
+
 
 -- ---------- ONE-TIME PROBE ----------
 local _probeDone = false
@@ -291,6 +299,8 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     local beforeH   = tonumber(S.hunger or 0) or 0
     local remBefore = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
+    _logSated("catchup-before", S)
+
     -- 3) Reduce sated by the skipped time
     do
         local skippedS = minutes * 60.0
@@ -338,6 +348,20 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     local afterH = math.max(0, math.min(100, beforeH + delta))
     S.hunger     = afterH
 
+    -- Static Sated catch-up: subtract minutes from satedRemainSec
+    do
+        local beforeS    = math.max(0, tonumber(S.satedRemainSec or 0) or 0)
+        local decSec     = math.max(0, minutes) * 60.0
+        local afterS     = math.max(0, beforeS - decSec)
+
+        S.satedRemainSec = afterS
+
+        local nowCU      = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        S.satedUntil     = (afterS > 0) and (nowCU + afterS) or 0
+    end
+
+    _logSated("catchup-after", S)
+
     -- No force: only switches bucket or clears if needed. Won’t reset countdown.
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
         pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "catchup" }) -- no force
@@ -349,16 +373,25 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
 
     -- 7) Persist (safe)
     if CuraEqui.Persist and CuraEqui.Persist.Save then
-        pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil)
+        local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+
+        -- Always store absolute timestamp
+        local satedUntilAbs = tonumber(S.satedUntil or 0) or 0
+
+        -- Save(hunger, satedUntilAbs)
+        pcall(CuraEqui.Persist.Save, S.hunger, satedUntilAbs)
+
         if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
             local h   = math.floor(tonumber(S.hunger or 0) or 0)
-            local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-            System.LogAlways(("[CuraEqui][Persist] Saved (sleep) hunger=%d satedRemain=%.0f"):format(h, rem))
+            local rem = math.max(0, satedUntilAbs - now)
+
+            System.LogAlways(("[CuraEqui][Persist] Saved (sleep) hunger=%d satedRemain=%.0f")
+                :format(h, rem))
         end
     end
 
     -- 8) Clear log
-    local remAfter = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+    local remAfter = math.max(0, tonumber(S.satedRemainSec or 0) or 0)
     System.LogAlways(("[CuraEqui][CatchUp] minutes=%.1f sated=%d→%d hunger=%d→%d (Δ=%.2f)")
         :format(minutes, remBefore, remAfter, math.floor(beforeH), math.floor(afterH), delta))
 
@@ -369,8 +402,7 @@ end
 function CuraEqui._HungerTickBody()
     CuraEqui.state = CuraEqui.state or {}
     local st       = CuraEqui.state
-    local now      = (Calendar and Calendar.GetGameTime and Calendar.GetGameTime()) or 0
-
+    local now      = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
     local h        = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
 
     if not h then
@@ -653,22 +685,113 @@ function CuraEqui._HungerTickBody()
             end
         end
 
-        -- dev console trace (compact)
+        ----------------------------------------------------------------
+        -- Static Sated countdown (per tick) -- for the horse buff
+        ----------------------------------------------------------------
+        do
+            _logSated("tick-after", S)
+            local nowTick = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+
+            -- Canonical: satedUntil → remaining seconds
+            local rem = 0
+            if S.satedUntil and S.satedUntil > 0 then
+                rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - nowTick)
+            else
+                -- fallback for older saves / weird state
+                rem = math.max(0, tonumber(S.satedRemainSec or 0) or 0)
+            end
+
+            -- Clamp dt so we never “overshoot” wildly
+            local dtClamp = math.max(0, math.min(dt, 10.0))
+
+            if rem > 0 then
+                rem = math.max(0, rem - dtClamp)
+            else
+                rem = 0
+            end
+
+            -- Write back both views
+            S.satedRemainSec = rem
+            S.satedUntil     = (rem > 0) and (nowTick + rem) or 0
+
+            _logSated("tick-after", S)
+        end
+
+        -- dev console trace (compact / safe)
         do
             local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
             local U = CuraEqui.Utils
+
             if D.hungerTrace and U and U.throttle("hunger-trace", U.ms_to_s(D.hungerTraceEvery or 5000)) then
                 local state = idle and "idle" or "mounted"
-                local remS  = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+                -- compute a safe remaining sated time
+                local nowClock = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                local remS = 0
+                if S.satedUntil and tonumber(S.satedUntil) and S.satedUntil > 0 then
+                    remS = math.max(0, (tonumber(S.satedUntil) or 0) - nowClock)
+                elseif S.satedRemainSec and tonumber(S.satedRemainSec) then
+                    remS = math.max(0, tonumber(S.satedRemainSec) or 0)
+                end
+
+                -- nil-safe numeric copies
+                local speedOut      = tonumber(speed) or 0
+                local dtOut         = tonumber(dt) or 0
+                local distOut       = tonumber(distM) or 0
+                local timeDrainOut  = tonumber(timeDrain) or 0
+                local distDrainOut  = tonumber(distDrain) or 0
+                local grazeOut      = tonumber(graze) or 0
+                local mulOut        = tonumber(mul) or 0
+                local totalDrainOut = tonumber(totalDrain) or 0
+                local beforeOut     = math.floor(tonumber(before) or 0)
+                local afterOut      = math.floor(tonumber(after) or 0)
+                local ginfoOut      = ginfo or ""
 
                 System.LogAlways(("[CuraEqui][Hunger] %s m=%s spd=%.2f m/s dt=%.1fs dist=%.1fm time=+%.2f dist=+%.2f graze=%.3f%s mul=%.2f total=+%.2f → %d→%d (sated %.0fs)")
-                    :format(state, mounted and "1" or "0", speed, dt, distM, timeDrain, distDrain, graze, ginfo, mul,
-                        totalDrain, math.floor(before), math.floor(after), remS))
+                    :format(
+                        state,
+                        mounted and "1" or "0",
+                        speedOut,
+                        dtOut,
+                        distOut,
+                        timeDrainOut,
+                        distDrainOut,
+                        grazeOut,
+                        ginfoOut,
+                        mulOut,
+                        totalDrainOut,
+                        beforeOut,
+                        afterOut,
+                        remS
+                    ))
             end
         end
 
-        if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S) -- no force
+
+        -- if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+        --     pcall(CuraEqui.Buffs.SyncSatedTimer, h, S) -- no force
+        -- end
+
+        -- Lightweight, explicit persistence: every 30s at most
+        do
+            if CuraEqui.Persist and CuraEqui.Persist.Save then
+                S._nextPersistAt = S._nextPersistAt or 0
+                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+
+                if now >= S._nextPersistAt then
+                    local rem = 0
+                    if S.satedUntil and tonumber(S.satedUntil) then
+                        rem = math.max(0, tonumber(S.satedUntil) - now)
+                    end
+
+                    -- Store remaining seconds, not an absolute timestamp
+                    _logSated("persist-before", S)
+                    CuraEqui.Persist.Save(S.hunger, rem)
+                    _logSated("persist-after", S)
+
+                    S._nextPersistAt = now + 30.0 -- only once per 30 seconds
+                end
+            end
         end
 
         -- consume this tick's distance so next tick doesn't double-count
@@ -708,6 +831,14 @@ function CuraEqui._HungerTickBody()
             local h      = math.floor(tonumber(S.hunger or 0) or 0)
             local now    = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
             local rem    = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+            local D      = CuraEqui.Config and CuraEqui.Config.Debug or {}
+            if D and D.persistTrace then
+                System.LogAlways(("[CuraEqui][TimeTrace] now=%.2f satedUntil=%.2f rem=%.2f")
+                    :format(now, tonumber(S.satedUntil or 0) or 0, rem))
+            end
+
+
             local pretty = (U and U.hunger_label) and select(1, U.hunger_label(h, S.satedUntil))
                 or ((rem > 0) and "Sated" or "OK")
             local line   = string.format("Hunger %s (%d%%) · Sated %.0fs · %s", pretty, h, rem, preset)
@@ -727,15 +858,6 @@ function CuraEqui._HungerTickBody()
 
     if CuraEqui.UpdateHorseDebuff then
         CuraEqui.UpdateHorseDebuff(h, S.hunger or 0)
-    end
-
-    -- Persist (throttled) after applying this tick
-    do
-        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
-        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-        if S and CuraEqui.Persist and CuraEqui.Persist.MaybeSave then
-            CuraEqui.Persist.MaybeSave(S.hunger, S.satedUntil, 1, 20) -- ≥1% or every 20s
-        end
     end
 end
 
@@ -799,6 +921,8 @@ function CuraEqui.StartWatching()
     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
     local hasSated = tonumber(S.satedUntil or 0) > now
 
+    _logSated("start-before-sync", S)
+
     -- ensure status tier is recomputed on this start
     S._lastBuffTier = nil
 
@@ -831,7 +955,15 @@ function CuraEqui.StopWatching()
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         if S and CuraEqui.Persist and CuraEqui.Persist.Save then
-            CuraEqui.Persist.Save(S.hunger, S.satedUntil)
+            local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+            local rem = 0
+            if S.satedUntil and tonumber(S.satedUntil) then
+                rem = math.max(0, tonumber(S.satedUntil) - now)
+            end
+
+            _logSated("stop-before-save", S)
+            pcall(CuraEqui.Persist.Save, S.hunger, rem)
+            _logSated("stop-after-save", S)
             if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
                 local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
                 System.LogAlways(("[CuraEqui][Persist] Saved (stop) hunger=%d satedRemain=%.0f")
@@ -870,6 +1002,9 @@ function CuraEqui._ApplyNutrition(diet, label)
     local capSec = tonumber(H.satedCapSec or 600)        -- dial
     local addSec = n * perSec
     local base   = math.max(now, tonumber(S.satedUntil or 0) or 0)
+
+    _logSated("diet-before", S)
+
     S.satedUntil = math.min(base + addSec, now + capSec)
 
     -- Ceil to the next visible bucket so internal == buff duration
@@ -897,7 +1032,9 @@ function CuraEqui._ApplyNutrition(diet, label)
     end
 
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+        _logSated("diet-before-sync", S)
         pcall(CuraEqui.Buffs.SyncAll, horse, S)
+        _logSated("diet-after-sync", S)
     end
 
     -- 4) log (nil-safe)

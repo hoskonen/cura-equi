@@ -121,3 +121,22 @@ function E.ClearPlayerSatedTimers(uuids)
     if not uuids then return end
     for _, u in ipairs(uuids) do pcall(E.RemovePlayer, u) end
 end
+
+-- Static Sated buff entrypoint.
+-- For now this is a stub: we just log when toggled.
+-- Later we can wire this to actual BuffDefinitionId if needed.
+E.SetSatedStatic = E.SetSatedStatic or function(active, opts)
+    opts = opts or {}
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+
+    if not (D.buffTraceVerbose or D.buffTraceTick) then
+        return
+    end
+
+    local cause = opts.cause or "static"
+    local rem   = tonumber(opts.rem or 0) or 0
+
+    System.LogAlways((
+        "[CuraEqui][Effects][SatedStatic] active=%s cause=%s rem=%.0fs (stub)"
+    ):format(tostring(active), cause, rem))
+end

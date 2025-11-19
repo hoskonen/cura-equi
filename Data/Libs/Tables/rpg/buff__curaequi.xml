@@ -23,7 +23,7 @@
 		<!-- ========================= -->
 
 		<!-- Cura Equi / Horse Sated -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="29264074-7154-4831-92c4-f132bf96f60b" buff_lifetime_id="0" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1, mst+30" buff_ui_type_id="1" icon_id="buff_ce_sated" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="29264074-7154-4831-92c4-f132bf96f60b" buff_lifetime_id="1" buff_name="buff_ce_horse_sated" buff_params="rtm*1.1, mst+30" buff_ui_type_id="2" icon_id="buff_ce_sated" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_horse_sated" buff_desc="buff_ce_horse_sated_desc" duration="-1" buff_ui_visibility_id="3" />
 
 		<!-- ========================= -->
 		<!-- Horse Hunger Debuffs -->

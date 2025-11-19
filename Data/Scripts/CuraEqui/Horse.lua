@@ -687,6 +687,7 @@ function Horse:OnInventoryClosed()
     end
 
     -- Now apply sated seconds using the composition-aware addSec we computed
+    local DebugSet = CuraEqui.Debug and CuraEqui.Debug.SetSatedUntil
     do
         local C     = _sated_cfg()
         local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
@@ -695,45 +696,46 @@ function Horse:OnInventoryClosed()
         local next  = math.min(base + (addSec or 0), capA)
         local floor = now + (C.minSec or 0)
         if next < floor then next = math.min(floor, capA) end
-        S.satedUntil = next
+        if DebugSet then
+            DebugSet(S, next, "Horse:_apply_feed")
+        else
+            S.satedUntil = next
+        end
     end
 
-
-    -- Round 'rem' up to the next visible bucket (from Buffs.SATED_TIERS) and clamp internal sated
-    -- Why? Because we are using fixed durations from the buff.xml so we clamp to the nearest buff
+    -- Static Sated: derive remainSec from current satedUntil and snap to whole seconds.
     do
-        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
-        local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-        local BL  = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
+        local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        -- rem = new unsnapped remaining time after feed logic has updated satedUntil
+        local rem        = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+        local dur        = math.floor(rem + 0.5) -- simple rounding to nearest second
 
-        if BL and #BL > 0 then
-            -- tiers are defined as {sec=500},{400},{300},{200},{100} (desc)
-            local target = nil
-            for i = #BL, 1, -1 do
-                -- iterate ascending so we can "ceil" to the first >= rem
-                local sec = tonumber(BL[i].sec) or 0
-                if sec >= rem then
-                    target = sec
-                    break
-                end
+        -- Static source of truth
+        S.satedRemainSec = dur
+
+        if dur > 0 then
+            local abs = math.floor(now + dur + 0.5)
+            if DebugSet then
+                DebugSet(S, abs, "Horse:OnInventoryClosed(static)")
+            else
+                S.satedUntil = abs
             end
-            -- if rem above max bucket, snap to largest
-            if not target then
-                target = tonumber(BL[1].sec) or math.max(0, rem)
+        else
+            if DebugSet then
+                DebugSet(S, 0, "Horse:OnInventoryClosed(static-zero)")
+            else
+                S.satedUntil = 0
             end
+        end
 
-            if target and target > 0 then
-                local buffDur = math.floor(target + 0.5)
-                S.satedUntil  = math.floor(now + buffDur + 0.5)
+        -- Keep the nice summary log (rem before rounding → dur)
+        if _log_sated_summary then
+            _log_sated_summary(used, rem, dur, dur)
+        end
 
-                -- optional neat one-liner in logs
-                if _log_sated_summary then
-                    _log_sated_summary(used, rem, buffDur, buffDur)
-                end
-
-                -- refresh visible timer to this exact bucket
-                pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
-            end
+        -- Refresh visible timer using updated satedUntil (still using timed sync for now)
+        if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+            pcall(CuraEqui.Buffs.SyncSatedTimer, self, S, { cause = "feed", force = true })
         end
     end
 
@@ -762,13 +764,23 @@ function Horse:OnInventoryClosed()
 
     -- Persist immediately on successful feed so players never lose the effect
     do
-        if CuraEqui.Persist and CuraEqui.Persist.Save then
-            CuraEqui.Persist.Save(S.hunger, S.satedUntil)
-            if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-                local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local P = CuraEqui.Persist
+        local C = CuraEqui.Config
+
+        if P and P.Save then
+            -- S.satedUntil is an absolute timestamp (game seconds),
+            -- Persist.Save expects that directly.
+            local satedUntilAbs = tonumber(S.satedUntil or 0) or 0
+
+            P.Save(S.hunger, satedUntilAbs)
+
+            if C and C.Debug and C.Debug.persistTrace then
+                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
                 local h   = math.floor(tonumber(S.hunger or 0) or 0)
-                local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                System.LogAlways(("[CuraEqui][Persist] Saved (feed) hunger=%d satedRemain=%.0f"):format(h, rem))
+                local rem = math.max(0, satedUntilAbs - now)
+
+                System.LogAlways(("[CuraEqui][Persist] Saved (feed) hunger=%d satedRemain=%.0f")
+                    :format(h, rem))
             end
         end
     end

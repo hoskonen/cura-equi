@@ -13,13 +13,22 @@ local M = CuraEqui.Utils -- local alias for this file only
 
 -- One gameplay clock for everyone
 CuraEqui = CuraEqui or {}
-CuraEqui.Now = CuraEqui.Now or function()
-    if GetCurrTime then return GetCurrTime() end
-    if System and System.GetCurrTime then return System.GetCurrTime() end
-    if Calendar and Calendar.GetGameTime then return Calendar.GetGameTime() end
-    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
-end
+-- Single, stable game time source for all timing logic.
+-- We NEVER fall back to other APIs to avoid mixing time domains.
+-- Utils.lua
+do
+    local _hasSystemCurr = System and System.GetCurrTime
 
+    function CuraEqui.Now()
+        if _hasSystemCurr then
+            -- Engine time in seconds since game start
+            return System.GetCurrTime()
+        end
+
+        -- Fallback ONLY if System.GetCurrTime truly isn't available.
+        return os.clock()
+    end
+end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Player/entity helpers
@@ -109,8 +118,14 @@ end
 function M.hunger_label(hungerPct, satedUntil)
     local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
     local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
-    local names = HUD.hungerNames or { ok = "OK", minor = "Mild", moderate = "Hungry", critical = "Starving", sated =
-    "Sated" }
+    local names = HUD.hungerNames or {
+        ok = "OK",
+        minor = "Mild",
+        moderate = "Hungry",
+        critical = "Starving",
+        sated =
+        "Sated"
+    }
 
     local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
     local rem   = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
@@ -195,5 +210,50 @@ do
     function M.Drinking_IsNear(pos, radius)
         local t = M.Drinking_FindAt(pos, radius)
         return t and #t > 0
+    end
+end
+
+-- Utils.lua
+
+function CuraEqui.DebugLogSated(where, S, extra)
+    local C = CuraEqui
+    local D = C and C.Config and C.Config.Debug
+    if not (D and D.satedTrace) then
+        return
+    end
+
+    local now = (C.Now and C.Now()) or os.clock()
+    local hunger = tonumber(S and S.hunger or 0) or 0
+    local untilTs = tonumber(S and S.satedUntil or 0) or 0
+    local rem = math.max(0, untilTs - now)
+    local remPersist = tonumber(S and S.satedRemainSec or 0) or 0
+
+    System.LogAlways((
+        "[CuraEqui][SatedTrace] %s hunger=%.2f satedUntil=%.2f rem=%.2fs satedRemainSec=%.2fs extra=%s"
+    ):format(
+        tostring(where),
+        hunger,
+        untilTs,
+        rem,
+        remPersist,
+        extra or "-"
+    ))
+end
+
+-- Centralised write for S.satedUntil so we can see *who* kills it.
+function CuraEqui.Debug.SetSatedUntil(S, newVal, src)
+    if not S then return end
+
+    local old    = tonumber(S.satedUntil or 0) or 0
+    local v      = tonumber(newVal or 0) or 0
+    S.satedUntil = v
+
+    local D      = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if D and D.satedTrace then
+        local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local rem = math.max(0, v - now)
+
+        System.LogAlways(("[CuraEqui][SATEDTRACE] %s: %0.2f → %0.2f (rem=%.2fs)")
+            :format(tostring(src or "?"), old, v, rem))
     end
 end

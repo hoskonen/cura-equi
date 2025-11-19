@@ -839,43 +839,23 @@ function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
     local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
     if not S then return end
 
-    -- Skip welcome gift if the horse is already sated (prevents double stacking)
     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+
+    -- STATIC SAFETY: do not override existing sated
     if tonumber(S.satedUntil or 0) > now then
         return
     end
 
-    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    -- STATIC VERSION: no tier ceil, no bucket rewrite
     S.satedUntil = now + giftSec
 
-    -- Ceil to next visible tier so UI = timer
-    local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
-    if T and #T > 0 then
-        local target = giftSec
-        for i = #T, 1, -1 do
-            local s = tonumber(T[i].sec) or 0
-            if s >= giftSec then
-                target = s; break
-            end
-        end
-        S.satedUntil = now + (target or giftSec)
-    end
-
-    -- Apply cleanly
     if CuraEqui.Buffs and CuraEqui.Buffs.ClearSated then pcall(CuraEqui.Buffs.ClearSated, h) end
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
         pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = cause or "horse_gain", force = true })
     end
     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
     if CuraEqui.Persist and CuraEqui.Persist.Save then
-        pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil,
-            cause or "gift")
-    end
-
-    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    if D and D.buffTraceVerbose then
-        System.LogAlways(("[CuraEqui][Gift] welcome sated %ds for key=%s (%s)")
-            :format(giftSec, horseKey, tostring(cause or "?")))
+        pcall(CuraEqui.Persist.Save, S.hunger, giftSec, cause or "gift")
     end
 end
 

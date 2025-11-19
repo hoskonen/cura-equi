@@ -10,37 +10,6 @@ M._playerApplyPending = M._playerApplyPending or false
 M._playerGen          = M._playerGen or 0
 M._syncBusy           = false -- ensure exists
 
--- Timed "Sated" tiers (descending). UUIDs must match buff__curaequi.xml
-M.SATED_TIERS         = {
-    { sec = 2000, uuid = "e1800331-3a2f-4cc5-a8c9-841b6951a82e" },
-    { sec = 1900, uuid = "aa532dd1-403e-4625-9e87-e9a6899e4f1a" },
-    { sec = 1800, uuid = "0ed41cfb-f810-4b41-a5c4-cce1dd4c74f0" },
-    { sec = 1700, uuid = "46e6dfcc-6a64-453b-8dae-d8a1f89734c6" },
-    { sec = 1600, uuid = "d8e2b38b-e91f-4d23-8571-d79b9e5f6353" },
-    { sec = 1500, uuid = "f3db020a-9959-4d50-b185-85d40aef2ae0" },
-    { sec = 1400, uuid = "53ddadd1-1f84-42d9-b05e-8f16101267cc" },
-    { sec = 1300, uuid = "c4056d88-ab66-4c6c-bd18-b476b112c298" },
-    { sec = 1200, uuid = "98c04f72-da28-4075-8d85-a7069c73ff9e" },
-    { sec = 1100, uuid = "2b3b7af9-bcd9-4cb0-a0ee-ad983667ac47" },
-    { sec = 1000, uuid = "62eb98ef-51f5-408e-bcad-aefd2a670560" },
-    { sec = 900,  uuid = "32b562de-5229-49d7-82ae-62412dd019ce" },
-    { sec = 800,  uuid = "ea9d92a0-01d6-41a5-9640-287e154db37f" },
-    { sec = 700,  uuid = "cf6a7c47-e122-4de8-9a57-92a47aceaa7a" },
-    { sec = 600,  uuid = "d513eaca-20c2-45aa-bbf3-ea4d5094e40b" },
-    { sec = 500,  uuid = "5232c9a1-e46b-4d18-9cae-d41e585cb22f" },
-    { sec = 400,  uuid = "f4438e13-03c5-49d7-88d6-cdd81839da79" },
-    { sec = 300,  uuid = "29371153-9ff7-42b9-8cfb-b1f8391f0119" },
-    { sec = 200,  uuid = "6da20913-8537-4ab9-963d-e310e9afd313" },
-    { sec = 100,  uuid = "29264074-7154-4831-92c4-f132bf96f60b" },
-}
-
-M.SATED_TOMBSTONES    = {
-    -- old 300s that got stuck earlier:
-    "2d8939b7-8af5-40b7-a1fb-1f937a3a6afc",
-    -- old 500s you just replaced:
-    "7a0a5c5c-5c9c-44ed-9b46-9184b75e3c3c",
-}
-
 -- Single static Sated buff (to be wired later from Effects.lua)
 -- For now this is just a placeholder; we won't call PlayerAdd/Remove with it yet.
 M.SATED_STATIC_DEFID  = M.SATED_STATIC_DEFID or nil
@@ -127,6 +96,9 @@ function M.SyncPlayerStatus(horseEnt, S)
     do
         local now  = _now()
         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+        CuraEqui.DebugLogSated("SyncPlayerStatus", S, ("remS=%.1f"):format(remS))
+
         if remS > 0 then
             -- This clears only status-tier buffs; make sure your ClearPlayerStatus() does NOT remove the sated timer UUIDs
             CuraEqui.Effects.ClearPlayerStatus()
@@ -206,6 +178,9 @@ end
 
 function M.SyncHorseDebuff(horseEnt, S)
     -- if sated is active, keep horse strip empty (no 'sated' in horseDebuffTiers)
+
+    CuraEqui.DebugLogSated("SyncHorseDebuff", S)
+
     if (tonumber(S.satedUntil or 0) or 0) > _now() then
         CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
         S._lastHorseDebuffUuid = nil
@@ -268,198 +243,141 @@ function M.SyncAll(horseEnt, S)
     M.SyncPlayerStatus(horseEnt, S)
 end
 
--- Static Sated synchronisation (WIP stub for static-branch).
--- For now this only logs; no behaviour changes until we wire callsites.
+-- Static Sated synchronisation:
+--  - S.satedRemainSec > 0 → ensure static Sated buff is active
+--  - S.satedRemainSec == 0 → ensure static Sated buff is removed
+-- NOTE: not wired to callsites yet; behaviour still driven by SyncSatedTimer.
 function M.SyncSatedStatic(horseEnt, S, opts)
-    opts         = opts or {}
-    local D      = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    local cause  = opts.cause or "static"
-    local remSec = math.max(0, tonumber(S and S.satedRemainSec or 0) or 0)
+    if not S then return end
 
-    if not (D.buffTraceVerbose or D.buffTraceTick) then
-        -- No debug: do nothing for now (we'll implement later steps)
-        return
-    end
+    opts = opts or {}
 
-    if remSec <= 0 then
-        System.LogAlways(("[CuraEqui][SatedStatic] cause=%s rem=0s (stub)"):format(cause))
+    CuraEqui.DebugLogSated("SyncSatedStatic", S, ("cause=%s"):format(opts.cause or "static"))
+
+    local D          = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    local cause      = opts.cause or "static"
+    local remSec     = math.max(0, tonumber(S.satedRemainSec or 0) or 0)
+
+    local prevActive = not not S._satedStaticActive
+    local active     = (remSec > 0)
+
+    -- Only toggle when something actually changes
+    if active ~= prevActive then
+        S._satedStaticActive = active
+
+        if CuraEqui.Effects and CuraEqui.Effects.SetSatedStatic then
+            pcall(CuraEqui.Effects.SetSatedStatic, active, {
+                cause = cause,
+                rem   = remSec,
+            })
+        end
+
+        if D.buffTraceVerbose then
+            System.LogAlways(("[CuraEqui][SatedStatic] cause=%s rem=%.0fs active=%s (toggle)")
+                :format(cause, remSec, tostring(active)))
+        end
     else
-        System.LogAlways(("[CuraEqui][SatedStatic] cause=%s rem=%.0fs (stub)"):format(cause, remSec))
+        -- Optional: per-tick noise if you want it
+        if D.buffTraceTick then
+            System.LogAlways(("[CuraEqui][SatedStatic] cause=%s rem=%.0fs active=%s (no-change)")
+                :format(cause, remSec, tostring(active)))
+        end
     end
-end
-
-local function _pick_bucket_floor(remS)
-    remS = math.max(0, tonumber(remS or 0) or 0)
-    for _, t in ipairs(M.SATED_TIERS) do
-        if remS >= t.sec then return t end
-    end
-    if remS > 0 then return M.SATED_TIERS[#M.SATED_TIERS] end -- show 100 for tiny remainders
-    return nil
-end
-
-local function _pick_bucket_ceil(remS)
-    remS = math.max(0, tonumber(remS or 0) or 0)
-    local T = M.SATED_TIERS
-    for i = #T, 1, -1 do
-        if remS <= T[i].sec then return T[i] end
-    end
-    return T[1]
 end
 
 -- Public wrapper: choose ceil or floor rounding for sated tier selection
 function CuraEqui.Buffs.PickSatedBucket(remS, opts)
-    if not remS then return nil end
-    if opts and opts.ceil then
-        return _pick_bucket_ceil(remS)
-    else
-        return _pick_bucket_floor(remS)
-    end
+    -- Static-sated variant: no tier buckets anymore.
+    -- Always return nil so callers never snap to a bucket.
+    return nil
 end
 
 -- Predict which tier (seconds) would be displayed if addSec extra were granted now
 function CuraEqui.Buffs.PredictBucketSecAfterAdd(S, addSec)
-    local now  = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-    local rem  = math.max(0, (tonumber(S and S.satedUntil or 0) or 0) - now)
-    local want = rem + math.max(0, tonumber(addSec or 0) or 0)
-    local b    = CuraEqui.Buffs.PickSatedBucket(want, { ceil = true })
-    return (b and b.sec) or 0
+    if not S then return 0 end
+
+    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    addSec    = math.max(0, tonumber(addSec or 0) or 0)
+
+    -- What do we already have left?
+    local rem = 0
+    if S.satedUntil and tonumber(S.satedUntil) and S.satedUntil > now then
+        rem = S.satedUntil - now
+    elseif S.satedRemainSec and tonumber(S.satedRemainSec) and S.satedRemainSec > 0 then
+        rem = S.satedRemainSec
+    end
+
+    local target = rem + addSec
+
+    CuraEqui.DebugLogSated("PredictBucketSecAfterAdd", S, ("addSec=%.1f target=%.1f"):format(addSec, target))
+
+    -- Optional sanity clamp (24h cap to avoid silly values)
+    local MAX = 24 * 3600
+    if target > MAX then
+        target = MAX
+    end
+
+    return target
 end
 
 function M.ClearSatedTimers()
-    local L = CuraEqui and CuraEqui.Config and CuraEqui.Config.Sated and CuraEqui.Config.Sated.TIERS
-    -- Fallback to module's tier list if you host it here:
-    L = L or M.SATED_TIERS
-    if not L then return end
+    local C = CuraEqui
+    if not C then return end
 
-    for i = 1, #L do
-        local uuid = L[i] and L[i].uuid
-        if uuid and CuraEqui.Effects and CuraEqui.Effects.PlayerRemove then
-            local ok = CuraEqui.Effects.PlayerRemove(uuid)
-            if (CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose) then
-                System.LogAlways(("[CuraEqui][Effects] player remove %s ok=%s"):format(tostring(uuid), tostring(ok)))
-            end
-        end
+    local E = C.Effects
+    -- We only have ONE sated buff now: BuffDefinitionId.SATED
+    if not (E and E.PlayerRemove and E.BuffDefinitionId and E.BuffDefinitionId.SATED) then
+        return
     end
+
+    local uuid = E.BuffDefinitionId.SATED
+
+    -- Remove the single sated buff from the player
+    local ok = E.PlayerRemove(uuid)
+
+    local D = C.Config and C.Config.Debug
+    if D and D.buffTraceVerbose then
+        System.LogAlways(("[CuraEqui][Effects] player remove SATED %s ok=%s")
+            :format(tostring(uuid), tostring(ok)))
+    end
+
+    -- Reset our last-applied marker so SyncSatedTimer can re-apply cleanly
     M._lastSatedUuid = nil
 end
 
 -- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
 function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
-    local M = CuraEqui.Buffs
     opts = opts or {}
+    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local untilTs = tonumber(S and S.satedUntil or 0) or 0
+    local rem = math.max(0, untilTs - now)
 
-    local ST = CuraEqui.state or {}
-    if ST._preloadFence and not (opts and opts.force) then
-        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
-            System.LogAlways("[CuraEqui][SatedSync] fenced (preload)")
+    CuraEqui.DebugLogSated("SyncSatedTimer:pre", S, ("cause=%s"):format(opts.cause or "tick"))
+
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if D.buffTraceTick then
+        System.LogAlways(("[CuraEqui][SatedSync] cause=%s force=%s rem=%.0fs")
+            :format(opts.cause or "tick", tostring(opts.force or false), rem))
+    end
+
+    -- Expired → clear buff + clear timer
+    if rem <= 0 then
+        if S then S.satedUntil = 0 end
+        if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
+            pcall(CuraEqui.Effects.ClearSatedTimers)
         end
+
+        CuraEqui.DebugLogSated("SyncSatedTimer:post-expire", S, "after-clear")
+
         return
     end
 
-    -- Reentry fence (quiet unless verbose)
-    if M._syncBusy and not opts.force then
-        local D = CuraEqui.Config and CuraEqui.Config.Debug
-        if D and D.buffTraceVerbose then
-            System.LogAlways("[CuraEqui][SatedSync] fenced (drop reentry)")
-        end
-        return
-    end
+    -- Active → ensure buff is present (no engine → lua sync, ever)
 
-    M._syncBusy = true
-    local ok, err = xpcall(function()
-        local D    = CuraEqui.Config and CuraEqui.Config.Debug or {}
-        local now  = _now()
-        local remS = math.max(0, (tonumber(S and S.satedUntil or 0) or 0) - now)
+    CuraEqui.DebugLogSated("SyncSatedTimer:active", S, ("rem=%.1f"):format(rem))
 
-        if D.buffTraceVerbose then
-            local cause = tostring(opts.cause or "tick")
-            if (cause ~= "tick") or D.buffTraceTick then
-                System.LogAlways(("[CuraEqui][SatedSync] cause=%s force=%s rem=%.0fs")
-                    :format(cause, tostring(opts.force or false), remS))
-            end
-        end
-
-        -- No state? ensure no lingering timer, then bail
-        if not S then
-            if M._lastSatedUuid then
-                M.ClearSatedTimers(); M._lastSatedUuid = nil
-            end
-            return
-        end
-
-        -- Small debounce window to avoid rapid re-entries (startup races)
-        if M._satedFence and now < M._satedFence and not opts.force then
-            if D.buffTraceVerbose then System.LogAlways("[CuraEqui][SatedSync] fenced (debounce)") end
-            return
-        end
-
-        -- Expired → ALWAYS clear all sated tiers and leave
-        if remS <= 0 then
-            M.ClearSatedTimers()
-            M._lastSatedUuid = nil
-            return
-        end
-
-        -- Decide desired bucket (ceil so UI shows full tier)
-        local bucket = _pick_bucket_ceil(remS)
-        if not bucket or not bucket.uuid then return end
-
-        local forcing = opts.force == true
-
-        -- memo for throttling identical skip logs
-        M._lastSkipLog = M._lastSkipLog or { uuid = nil, rem = -1 }
-
-        -- Mid-run, already on desired bucket → no-op
-        if (not forcing) and M._lastSatedUuid == bucket.uuid then
-            -- round remain so we only print when the UI-visible seconds change
-            local remRounded = math.floor(remS + 0.5)
-
-            if D.buffTraceVerbose and not opts.quiet then
-                -- only log if (uuid changed) OR (rounded remain changed)
-                if M._lastSkipLog.uuid ~= bucket.uuid or M._lastSkipLog.rem ~= remRounded then
-                    System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%ss, last=%s)")
-                        :format(tostring(remRounded), tostring(M._lastSatedUuid)))
-                    M._lastSkipLog.uuid = bucket.uuid
-                    M._lastSkipLog.rem  = remRounded
-                end
-            end
-
-            return
-        end
-
-        -- Mid-run, different bucket wanted, but we don't force switches while running
-        if (not forcing) and M._lastSatedUuid == bucket.uuid then
-            if D.buffTraceVerbose and (not M._nextSkipLogAt or now >= M._nextSkipLogAt) then
-                System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%.0fs, last=%s)"):format(remS,
-                    tostring(M._lastSatedUuid)))
-                M._nextSkipLogAt = now + 2.0
-            end
-            return
-        end
-
-        -- (Re)apply: clear all sated tiers, then apply exactly one
-        M.ClearSatedTimers()
-        local applied = false
-        if CuraEqui.Effects and CuraEqui.Effects.ApplyPlayer then
-            applied = pcall(CuraEqui.Effects.ApplyPlayer, bucket.uuid)
-        end
-
-        if applied then
-            M._lastSatedUuid = bucket.uuid
-            M._satedFence    = now + 0.30 -- small debounce
-        else
-            M._lastSatedUuid = nil
-            if D and D.enabled then
-                System.LogAlways("[CuraEqui][SatedSync] apply failed (no effect instance)")
-            end
-        end
-    end, debug.traceback)
-
-    -- ALWAYS release the fence
-    M._syncBusy = false
-
-    if not ok then
-        System.LogAlways("[CuraEqui][SatedSync][ERROR] " .. tostring(err))
+    if CuraEqui.Effects and CuraEqui.Effects.ApplyHorseSated then
+        pcall(CuraEqui.Effects.ApplyHorseSated, h)
     end
 end
 
