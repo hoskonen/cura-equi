@@ -315,19 +315,13 @@ function M.ClearSatedTimers()
     local C = CuraEqui
     if not C then return end
 
-    local E = C.Effects
-    local uuid = C.Buffs and C.Buffs.BUFF_UUID_SATED
+    local uuid = C.Config.HUD.playerStatusTiersByName.sated.uidd
+    if not uuid then return end
 
-    if not (E and E.PlayerRemove and uuid) then
-        return
-    end
+    pcall(CuraEqui.Effects.PlayerRemove, uuid)
 
-    local ok = E.PlayerRemove(uuid)
-
-    local D = C.Config and C.Config.Debug
-    if D and D.buffTraceVerbose then
-        System.LogAlways(("[CuraEqui][Effects] player remove SATED %s ok=%s")
-            :format(tostring(uuid), tostring(ok)))
+    if C.Config.Debug.buffTraceVerbose then
+        System.LogAlways("[CuraEqui][Effects] Removed static SATED buff " .. tostring(uuid))
     end
 
     M._lastSatedUuid = nil
