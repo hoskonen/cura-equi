@@ -31,7 +31,7 @@ CuraEqui.Config = {
         persistTrace = true,     -- log saving
         tickTrace = true,
         buffTraceVerbose = true, -- false = log only when buff changes
-        buffTraceTick = false,
+        buffTraceTick = true,
         skipTrace = true,
         skipTraceVerbose = true,
         satedTrace = true,
@@ -114,7 +114,7 @@ CuraEqui.Config = {
             { name = "minor",    uidd = "3329d630-3aa6-4d65-b7bb-8257fdecb66c" },
             { name = "moderate", uidd = "11a47968-997f-41a4-a9f7-ad5a99b1d737" },
             { name = "critical", uidd = "5b57061a-3425-460e-9848-a26afbd060a4" },
-            { name = "ok",       uidd = "f3d4b5e2-7f8a-4d6b-9a31-8b0d1c9a7c52" },
+            { name = "ok",       uidd = "f3d4b5e2-7f8a-4d6b-9a31-8b0d1c9a7c52" }
         },
         horseDebuffTiers  = {
             { name = "minor",    uidd = "c4b7f9d2-1e35-4a07-8b3a-1b6e9b2a0c18" },
@@ -171,6 +171,8 @@ CuraEqui.Config = {
     },
     Buffs = {
         applyDelaySec = 1.2,
+        -- Static “horse sated” buff
+        satedUuid = "29264074-7154-4831-92c4-f132bf96f60b",
     }
 }
 

@@ -17,15 +17,12 @@ CuraEqui = CuraEqui or {}
 -- We NEVER fall back to other APIs to avoid mixing time domains.
 -- Utils.lua
 do
-    local _hasSystemCurr = System and System.GetCurrTime
-
-    function CuraEqui.Now()
-        if _hasSystemCurr then
-            -- Engine time in seconds since game start
-            return System.GetCurrTime()
+    -- One gameplay clock for everyone: use Script.GetTime only.
+    CuraEqui.Now = CuraEqui.Now or function()
+        if Script and Script.GetTime then
+            return Script.GetTime()
         end
-
-        -- Fallback ONLY if System.GetCurrTime truly isn't available.
+        -- Absolute last-ditch fallback if Script.GetTime is missing
         return os.clock()
     end
 end

@@ -2,7 +2,7 @@
 CuraEqui              = CuraEqui or {}
 CuraEqui.Buffs        = CuraEqui.Buffs or {}
 local M               = CuraEqui and CuraEqui.Buffs or {}
-
+local buffsCfg        = CuraEqui and CuraEqui.Config or {}
 -- module locals
 M._lastPlayerUuid     = M._lastPlayerUuid or nil
 M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
@@ -10,9 +10,7 @@ M._playerApplyPending = M._playerApplyPending or false
 M._playerGen          = M._playerGen or 0
 M._syncBusy           = false -- ensure exists
 
--- Single static Sated buff (to be wired later from Effects.lua)
--- For now this is just a placeholder; we won't call PlayerAdd/Remove with it yet.
-M.SATED_STATIC_DEFID  = M.SATED_STATIC_DEFID or nil
+M.BUFF_UUID_SATED     = buffsCfg.satedUuid or "29264074-7154-4831-92c4-f132bf96f60b"
 
 -- pick tier name from hunger/sated (HUD thresholds)
 local function _now() return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock() end
@@ -285,13 +283,6 @@ function M.SyncSatedStatic(horseEnt, S, opts)
     end
 end
 
--- Public wrapper: choose ceil or floor rounding for sated tier selection
-function CuraEqui.Buffs.PickSatedBucket(remS, opts)
-    -- Static-sated variant: no tier buckets anymore.
-    -- Always return nil so callers never snap to a bucket.
-    return nil
-end
-
 -- Predict which tier (seconds) would be displayed if addSec extra were granted now
 function CuraEqui.Buffs.PredictBucketSecAfterAdd(S, addSec)
     if not S then return 0 end
@@ -325,14 +316,12 @@ function M.ClearSatedTimers()
     if not C then return end
 
     local E = C.Effects
-    -- We only have ONE sated buff now: BuffDefinitionId.SATED
-    if not (E and E.PlayerRemove and E.BuffDefinitionId and E.BuffDefinitionId.SATED) then
+    local uuid = C.Buffs and C.Buffs.BUFF_UUID_SATED
+
+    if not (E and E.PlayerRemove and uuid) then
         return
     end
 
-    local uuid = E.BuffDefinitionId.SATED
-
-    -- Remove the single sated buff from the player
     local ok = E.PlayerRemove(uuid)
 
     local D = C.Config and C.Config.Debug
@@ -341,7 +330,6 @@ function M.ClearSatedTimers()
             :format(tostring(uuid), tostring(ok)))
     end
 
-    -- Reset our last-applied marker so SyncSatedTimer can re-apply cleanly
     M._lastSatedUuid = nil
 end
 
@@ -363,8 +351,11 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
     -- Expired → clear buff + clear timer
     if rem <= 0 then
         if S then S.satedUntil = 0 end
-        if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
-            pcall(CuraEqui.Effects.ClearSatedTimers)
+        if CuraEqui.Effects and CuraEqui.Effects.SetSatedStatic then
+            pcall(CuraEqui.Effects.SetSatedStatic, false, {
+                cause = "expire",
+                rem   = 0,
+            })
         end
 
         CuraEqui.DebugLogSated("SyncSatedTimer:post-expire", S, "after-clear")
@@ -372,12 +363,14 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
         return
     end
 
-    -- Active → ensure buff is present (no engine → lua sync, ever)
-
     CuraEqui.DebugLogSated("SyncSatedTimer:active", S, ("rem=%.1f"):format(rem))
 
-    if CuraEqui.Effects and CuraEqui.Effects.ApplyHorseSated then
-        pcall(CuraEqui.Effects.ApplyHorseSated, h)
+    -- Apply static sated buff to player
+    if CuraEqui.Effects and CuraEqui.Effects.SetSatedStatic then
+        pcall(CuraEqui.Effects.SetSatedStatic, true, {
+            cause = opts.cause or "timer",
+            rem   = rem,
+        })
     end
 end
 
@@ -390,29 +383,35 @@ function CuraEqui.Buffs.Remove(target, guid, horse)
 end
 
 function CuraEqui.Buffs.RemoveAllOurs(horse)
-    -- player status
     local hud = CuraEqui.Config and CuraEqui.Config.HUD or {}
+
+    -- player hunger statuses (ok / minor / moderate / critical)
     for _, r in ipairs(hud.playerStatusTiers or {}) do
-        if r.uidd then pcall(CuraEqui.Effects.RemovePlayer, r.uidd) end
+        if r.uidd and CuraEqui.Effects and CuraEqui.Effects.RemovePlayer then
+            pcall(CuraEqui.Effects.RemovePlayer, r.uidd)
+        end
     end
+
     -- horse debuffs
     for _, r in ipairs(hud.horseDebuffTiers or {}) do
-        if r.uidd and horse then pcall(CuraEqui.Effects.RemoveHorse, horse, r.uidd) end
+        if r.uidd and horse and CuraEqui.Effects and CuraEqui.Effects.RemoveHorse then
+            pcall(CuraEqui.Effects.RemoveHorse, horse, r.uidd)
+        end
     end
-    -- all sated timed tiers (player)
-    for _, t in ipairs(CuraEqui.Buffs.SATED_TIERS or {}) do
-        if t.uuid then pcall(CuraEqui.Effects.RemovePlayer, t.uuid) end
+
+    -- static sated buff
+    local uuid = CuraEqui.Buffs and CuraEqui.Buffs.BUFF_UUID_SATED
+    if uuid and CuraEqui.Effects and CuraEqui.Effects.RemovePlayer then
+        pcall(CuraEqui.Effects.RemovePlayer, uuid)
     end
+
     CuraEqui.Buffs._lastSatedUuid = nil
 end
 
--- Nukes every known sated-tier effect from the player, defensively.
 function CuraEqui.Buffs.SweepPlayerSatedEffects(tag)
-    local T = CuraEqui.Buffs.SATED_TIERS or {}
-    local dead = CuraEqui.Buffs.SATED_TOMBSTONES or {}
-    if CuraEqui.Effects and CuraEqui.Effects.PlayerRemove then
-        for i = 1, #T do pcall(CuraEqui.Effects.PlayerRemove, T[i].uuid) end
-        for i = 1, #dead do pcall(CuraEqui.Effects.PlayerRemove, dead[i]) end
+    local uuid = CuraEqui.Buffs and CuraEqui.Buffs.BUFF_UUID_SATED
+    if uuid and CuraEqui.Effects and CuraEqui.Effects.PlayerRemove then
+        pcall(CuraEqui.Effects.PlayerRemove, uuid)
     end
     CuraEqui.Buffs._lastSatedUuid = nil
 end

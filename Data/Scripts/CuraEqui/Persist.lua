@@ -43,15 +43,18 @@ function P.Load()
     local now        = _now()
     local satedUntil = 0
     local rem        = 0
+
     local ver        = tonumber(t.version or 1) or 1
 
     if ver >= 2 then
         -- New schema: we stored remaining seconds directly
         rem = math.max(0, tonumber(t.satedRemainSec or 0) or 0)
-        -- clamp insane values (>24h) → treat as no sated
-        if rem > 24 * 3600 then
+        -- clamp insane values: anything > 30 minutes treat as "no sated"
+        local MAX_SATED = 30 * 60 -- 1800 seconds
+        if rem > MAX_SATED then
             rem = 0
         end
+
         satedUntil = (rem > 0) and (now + rem) or 0
     else
         -- V1 migration path: old absolute clock

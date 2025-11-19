@@ -12,8 +12,6 @@ local function _playerSoul()
 end
 local function _has(s) return s and s ~= "" end
 
-local function log(fmt, ...) System.LogAlways(("[CuraEqui][Buff] " .. fmt):format(...)) end
-
 -- Verbose/normal logger that respects Config.Debug flags
 local function vlog(level, fmt, ...)
     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
@@ -123,20 +121,37 @@ function E.ClearPlayerSatedTimers(uuids)
 end
 
 -- Static Sated buff entrypoint.
--- For now this is a stub: we just log when toggled.
--- Later we can wire this to actual BuffDefinitionId if needed.
-E.SetSatedStatic = E.SetSatedStatic or function(active, opts)
-    opts = opts or {}
-    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+E.SetSatedStatic = function(active, opts)
+    opts           = opts or {}
+    local C        = CuraEqui
+    local B        = C.Buffs or {}
+    local id       = B.BUFF_UUID_SATED
+    local D        = C.Config and C.Config.Debug or {}
 
-    if not (D.buffTraceVerbose or D.buffTraceTick) then
-        return
+    local cause    = opts.cause or "static"
+    local duration = tonumber(opts.rem or 0) or 0
+
+    if active then
+        -- Apply timed sated buff
+        if duration > 0 and E.ApplyPlayerTimed then
+            pcall(E.ApplyPlayerTimed, id, duration)
+        else
+            pcall(E.ApplyPlayer, id)
+        end
+
+        if D.buffTraceVerbose then
+            System.LogAlways(("[CuraEqui][Effects][SatedStatic] ADD cause=%s duration=%s uuid=%s")
+                :format(cause, duration, id))
+        end
+    else
+        -- Remove
+        if E.PlayerRemove then
+            pcall(E.PlayerRemove, id)
+        end
+
+        if D.buffTraceVerbose then
+            System.LogAlways(("[CuraEqui][Effects][SatedStatic] REMOVE cause=%s uuid=%s")
+                :format(cause, id))
+        end
     end
-
-    local cause = opts.cause or "static"
-    local rem   = tonumber(opts.rem or 0) or 0
-
-    System.LogAlways((
-        "[CuraEqui][Effects][SatedStatic] active=%s cause=%s rem=%.0fs (stub)"
-    ):format(tostring(active), cause, rem))
 end
