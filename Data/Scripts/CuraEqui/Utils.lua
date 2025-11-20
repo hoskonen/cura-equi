@@ -16,14 +16,14 @@ CuraEqui = CuraEqui or {}
 -- Single, stable game time source for all timing logic.
 -- We NEVER fall back to other APIs to avoid mixing time domains.
 -- Utils.lua
+-- Centralized game clock for all timing (sated, hunger, etc.)
 do
-    -- One gameplay clock for everyone: use Script.GetTime only.
-    CuraEqui.Now = CuraEqui.Now or function()
-        if Script and Script.GetTime then
-            return Script.GetTime()
-        end
-        -- Absolute last-ditch fallback if Script.GetTime is missing
-        return os.clock()
+    local fn =
+        (Script and Script.GetTime and Script.GetTime)
+        or os.clock
+
+    function CuraEqui.Now()
+        return fn()
     end
 end
 

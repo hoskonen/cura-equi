@@ -19,13 +19,10 @@ do
 end
 
 local function _now()
-    -- Hard requirement: use the same clock as Hunger / BuffLogic.
     if CuraEqui and CuraEqui.Now then
         return CuraEqui.Now()
     end
-
-    -- Absolute last-ditch fallback (mod is half-broken anyway at this point).
-    return os.clock()
+    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
 end
 
 function P.Load()

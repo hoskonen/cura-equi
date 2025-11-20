@@ -121,6 +121,8 @@ function E.ClearPlayerSatedTimers(uuids)
 end
 
 -- Static Sated buff entrypoint.
+E._satedActive = E._satedActive or false
+
 E.SetSatedStatic = function(active, opts)
     opts           = opts or {}
     local C        = CuraEqui
@@ -131,23 +133,35 @@ E.SetSatedStatic = function(active, opts)
     local cause    = opts.cause or "static"
     local duration = tonumber(opts.rem or 0) or 0
 
+    -- no GUID → nothing to do
+    if not id or id == "" then
+        return
+    end
+
+    -- No change? Don’t spam apply/remove or timers.
+    if active == E._satedActive then
+        return
+    end
+
     if active then
-        -- Apply timed sated buff
+        -- Transition: OFF → ON
         if duration > 0 and E.ApplyPlayerTimed then
             pcall(E.ApplyPlayerTimed, id, duration)
         else
             pcall(E.ApplyPlayer, id)
         end
+        E._satedActive = true
 
         if D.buffTraceVerbose then
-            System.LogAlways(("[CuraEqui][Effects][SatedStatic] ADD cause=%s duration=%s uuid=%s")
+            System.LogAlways(("[CuraEqui][Effects][SatedStatic] ADD cause=%s duration=%.1fs uuid=%s")
                 :format(cause, duration, id))
         end
     else
-        -- Remove
+        -- Transition: ON → OFF
         if E.PlayerRemove then
             pcall(E.PlayerRemove, id)
         end
+        E._satedActive = false
 
         if D.buffTraceVerbose then
             System.LogAlways(("[CuraEqui][Effects][SatedStatic] REMOVE cause=%s uuid=%s")

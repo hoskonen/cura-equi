@@ -118,7 +118,10 @@ end
 CuraEqui.Debug = CuraEqui.Debug or {}
 
 local function _now()
-    return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    if CuraEqui and CuraEqui.Now then
+        return CuraEqui.Now()
+    end
+    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
 end
 
 local function _horse()

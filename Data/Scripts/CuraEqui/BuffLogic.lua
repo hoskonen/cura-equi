@@ -13,7 +13,13 @@ M._syncBusy           = false -- ensure exists
 M.BUFF_UUID_SATED     = buffsCfg.satedUuid or "29264074-7154-4831-92c4-f132bf96f60b"
 
 -- pick tier name from hunger/sated (HUD thresholds)
-local function _now() return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock() end
+local function _now()
+    if CuraEqui and CuraEqui.Now then
+        return CuraEqui.Now()
+    end
+    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
+end
+
 local function _pickTierName(hunger, satedUntil)
     if (satedUntil or 0) > _now() then return "sated" end
     local hud      = CuraEqui.Config and CuraEqui.Config.HUD or {}
@@ -173,6 +179,63 @@ function M.SyncPlayerStatus(horseEnt, S)
         end)
     end
 end
+
+-- function M.SyncPlayerStatus(h, S, opts)
+--     local C = CuraEqui
+--     if not (C and S) then return end
+
+--     opts             = opts or {}
+--     local D          = C.Config and C.Config.Debug or {}
+--     local now        = (C.Now and C.Now()) or os.clock()
+
+--     -- 1) What does our clock say?
+--     local satedUntil = tonumber(S.satedUntil or 0) or 0
+--     local remS       = math.max(0, satedUntil - now)
+
+--     -- 2) Decide if we consider the horse "sated" for UI
+--     local isSated    = remS > 0.5 -- small epsilon so 0.1s doesn’t flicker
+
+--     -- If we’re in sated mode, hide hunger tiers completely
+--     if isSated then
+--         if C.Effects and C.Effects.ClearPlayerStatus then
+--             pcall(C.Effects.ClearPlayerStatus)
+--         end
+--         -- still update the sated buff above; then bail before status tiers
+--         if D.satedTrace then
+--             System.LogAlways("[CuraEqui][SatedTrace] SyncPlayerStatus: hide hunger tiers (sated)")
+--         end
+--         return
+--     end
+
+--     -- 3) Drive the static sated buff **only** from remS
+--     local E = C.Effects
+--     if E and E.SetSatedStatic then
+--         pcall(E.SetSatedStatic, isSated, {
+--             cause = opts.cause or "status",
+--             rem   = remS,
+--         })
+--     end
+
+--     -- 4) Normal hunger status tiers (ok / minor / moderate / critical)
+--     --    This part should ignore any satedRemainSec, only look at S.hunger.
+--     if E and E.SyncStatusTier then
+--         pcall(E.SyncStatusTier, h, S, opts) -- whatever you already had here
+--     end
+
+--     -- 5) Optional logging – here it’s safe to *log* state.satedRemainSec
+--     if D.satedTrace then
+--         local raw = tonumber(C.state and C.state.satedRemainSec or 0) or 0
+--         System.LogAlways((
+--             "[CuraEqui][SatedTrace] SyncPlayerStatus hunger=%.2f satedUntil=%.2f rem=%.2fs satedRemainSec=%.2fs extra=%s"
+--         ):format(
+--             tonumber(S.hunger or 0) or 0,
+--             satedUntil,
+--             remS,
+--             raw,
+--             opts.extra or "-"
+--         ))
+--     end
+-- end
 
 function M.SyncHorseDebuff(horseEnt, S)
     -- if sated is active, keep horse strip empty (no 'sated' in horseDebuffTiers)
