@@ -459,20 +459,41 @@ function CuraEqui.Initialize(fullInit)
                 pcall(CuraEqui.Effects.ClearHorseDebuffs, h) -- one-off horse strip clear
                 pcall(CuraEqui.Buffs.ClearSatedTimers)       -- ← removes all sated timers (player)
 
+                -- if D and D.buffTraceVerbose then
+                --     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                --     local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+                --     System.LogAlways(("[CE][LOAD] apply: sated player (rem≈%ds)"):format(rem))
+                -- end
+
+                -- -- 2) Apply exactly one sated bucket based on persisted remain
+                -- if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+                --     -- 'force=true' prevents "mid-run skip" and bypasses the reentry fence
+                --     pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load-apply", force = true })
+                -- end
+
+                -- -- 3) Mark that we seeded sated on load so StartWatching won't re-touch it
+                -- CuraEqui.state.didInitialSatedApply = true
+
+                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
                 if D and D.buffTraceVerbose then
-                    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                    local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                    System.LogAlways(("[CE][LOAD] apply: sated player (rem≈%ds)"):format(rem))
+                    System.LogAlways(("[CE][LOAD] sated ignored on load (rem≈%ds)"):format(rem))
                 end
 
-                -- 2) Apply exactly one sated bucket based on persisted remain
-                if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-                    -- 'force=true' prevents "mid-run skip" and bypasses the reentry fence
-                    pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load-apply", force = true })
-                end
+                -- Keep the internal timer so hunger/catch-up logic stays consistent,
+                -- but DO NOT re-apply a timed buff here.
+                CuraEqui.state.satedRemainSec       = rem
 
-                -- 3) Mark that we seeded sated on load so StartWatching won't re-touch it
-                CuraEqui.state.didInitialSatedApply = true
+                -- Let the normal tick logic drive any UI decisions.
+                CuraEqui.state.didInitialSatedApply = false
+                CuraEqui.state.deferStatusUntilTick = now + 0.2
+                CuraEqui.state.suppressStatusUntil  = now + 0.5
+
+                System.LogAlways(("[CuraEqui][LoadApply] post-apply satedRemain=%.0fs (no buff reapply)")
+                    :format(rem))
+
 
                 -- 4) Defer status (horse hunger) icon to the first tick for stability
                 local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
