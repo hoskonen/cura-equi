@@ -203,17 +203,30 @@ function CuraEqui.StartProbing()
         local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
 
         if h then
-            local fp  = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
-            local gid = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
+            -- Route identity through owned-horse helper; do NOT start hunger here
+            if CuraEqui.SetOwnedHorse then
+                CuraEqui.SetOwnedHorse(h, { reason = "probe" })
+            else
+                -- legacy fallback, in case helper is missing for some reason
+                local fp                      = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+                local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
 
-            -- Route identity through ownership scaffolding (no behavior change)
-            CuraEqui.SetOwnedHorse(h, { reason = "probe" })
+                CuraEqui.state.hasHorse       = true
+                CuraEqui.state.lastHorseEnt   = h
+                CuraEqui.state.lastHorseFpExt = fp
+                CuraEqui.state.lastHorseId    = gid
+                CuraEqui.state.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
+                CuraEqui.state.lastHorseFp    = fp
+            end
 
             CuraEqui.Log("Horse",
                 "probe→ owned horse id=%s fp=%s name=%s",
-                tostring(gid), tostring(fp), tostring(CuraEqui.state.lastHorseName or "?"))
+                tostring(CuraEqui.state.lastHorseId),
+                tostring(CuraEqui.state.lastHorseFp or "?"),
+                tostring(CuraEqui.state.lastHorseName or "?"))
 
-            return CuraEqui.StartWatching and CuraEqui.StartWatching()
+            -- Do NOT call StartWatching here; hunger waits for first mount
+            return
         end
 
         -- keep probing
@@ -754,6 +767,24 @@ function CuraEqui_HungerTick()
         end
     end
 
+    -------------------------------------------------------------------
+    -- NEW: if we have not yet mounted an owned horse this session,
+    --       this tick is considered a stale/ghost timer → drop it.
+    -------------------------------------------------------------------
+    if not (ST and ST.hasMountedOwnedHorseOnce) then
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D.hungerTrace then
+            System.LogAlways("[CuraEqui][Tick] skipped - owned horse not mounted this session")
+        end
+
+        -- make sure we don't think there's an active watcher
+        if CuraEqui.state then
+            CuraEqui.state.hungerTimer = nil
+        end
+
+        return
+    end
+
     do
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
         local U = CuraEqui.Utils
@@ -763,6 +794,18 @@ function CuraEqui_HungerTick()
     end
 
     local ok, err = xpcall(CuraEqui._HungerTickBody, debug.traceback)
+
+    -- If this fires with no active timer and we haven't mounted the owned horse
+    -- this session, it's almost certainly a leftover timer from the previous save.
+    if (not ST.hungerTimer) and (not ST.hasMountedOwnedHorseOnce) then
+        local D = C.Config and C.Config.Debug or {}
+        if D and D.hungerTrace then
+            System.LogAlways("[CuraEqui][Tick] ignored stray tick (no timer, no mounts this session)")
+        end
+        return
+    end
+
+
     if not ok then System.LogAlways("[CuraEqui][Tick][ERROR] " .. tostring(err)) end
 
     local hasHorse = (CuraEqui.HasHorse and CuraEqui.HasHorse()) or false
@@ -799,6 +842,24 @@ function CuraEqui.StartWatching()
         local D = C.Config and C.Config.Debug
         if D and D.hungerTrace then
             System.LogAlways("[CuraEqui][Hunger] StartWatching aborted - no session horse")
+        end
+        return
+    end
+
+    -- Only if this horse is truly owned
+    if CuraEqui.PlayerOwnsHorse and not CuraEqui.PlayerOwnsHorse(h) then
+        local D = C.Config and C.Config.Debug
+        if D and D.hungerTrace then
+            System.LogAlways("[CuraEqui][Hunger] StartWatching blocked - horse not owned")
+        end
+        return
+    end
+
+    -- Only after mounting the owned horse at least once this session
+    if not ST.hasMountedOwnedHorseOnce then
+        local D = C.Config and C.Config.Debug
+        if D and D.hungerTrace then
+            System.LogAlways("[CuraEqui][Hunger] StartWatching blocked - owned horse not mounted yet this session")
         end
         return
     end

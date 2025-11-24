@@ -2,18 +2,23 @@
 CuraEqui                        = CuraEqui or {}
 CuraEqui.VERSION                = "0.2.0"
 CuraEqui.state                  = CuraEqui.state or {
-    hungerTimer      = nil,
-    pausedForSleep   = false,
-    started          = false,
+    hungerTimer              = nil,
+    pausedForSleep           = false,
+    started                  = false,
 
     -- (horse identity + probing/watch glue)
-    hasHorse         = false, -- single source of truth
-    lastHorseId      = nil,   -- GUID we think we’re riding
-    lastHorseEnt     = nil,
-    probeTimer       = nil,   -- lazy probe timer id (horseless only)
-    _noHorseLogAt    = 0,     -- rate-limit for “no horse” logs
-    _revalNextAt     = 0,     -- next time we may revalidate identity
-    _lastHorseSwapAt = nil,   -- debounce for swaps
+    hasHorse                 = false, -- single source of truth
+    lastHorseId              = nil,   -- GUID we think we’re riding
+    lastHorseEnt             = nil,
+    probeTimer               = nil,   -- lazy probe timer id (horseless only)
+    _noHorseLogAt            = 0,     -- rate-limit for “no horse” logs
+    _revalNextAt             = 0,     -- next time we may revalidate identity
+    _lastHorseSwapAt         = nil,   -- debounce for swaps
+
+    -- (owned-horse tracking – not used yet)
+    currentOwnedHorseId      = nil,   -- entity id / GUID of main owned horse
+    currentOwnedHorseGuid    = nil,   -- strong GUID if available
+    hasMountedOwnedHorseOnce = false, -- true after first mount of owned horse this session
 }
 -- debounce + session flags
 CuraEqui.state._skipLastInitAt  = 0
@@ -75,16 +80,21 @@ function CuraEqui.SetOwnedHorse(h, opts)
     opts           = opts or {}
 
     if h then
-        local gid         = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
-        local fp          = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
-        local fpExt       = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
+        local gid                = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
+        local fp                 = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+        local fpExt              = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
 
-        ST.hasHorse       = true
-        ST.lastHorseEnt   = h
-        ST.lastHorseId    = gid
-        ST.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
-        ST.lastHorseFp    = fp
-        ST.lastHorseFpExt = fpExt
+        ST.hasHorse              = true
+        ST.lastHorseEnt          = h
+        ST.lastHorseId           = gid
+        ST.lastHorseName         = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
+        ST.lastHorseFp           = fp
+        ST.lastHorseFpExt        = fpExt
+
+        -- New owned-horse tracking (Step 6 – still not used by logic)
+        ST.currentOwnedHorseId   = h.id -- raw entity id (fast path)
+        ST.currentOwnedHorseGuid = gid  -- strong GUID / table string
+        -- NOTE: we do NOT touch hasMountedOwnedHorseOnce here yet
 
         CuraEqui.Log("HorseId",
             "SetOwnedHorse[%s]: id=%s fpExt=%s name=%s",
@@ -93,17 +103,27 @@ function CuraEqui.SetOwnedHorse(h, opts)
             tostring(fpExt),
             tostring(ST.lastHorseName or "?"))
     else
-        ST.hasHorse       = false
-        ST.lastHorseEnt   = nil
-        ST.lastHorseId    = nil
-        ST.lastHorseName  = nil
-        ST.lastHorseFp    = nil
-        ST.lastHorseFpExt = nil
+        ST.hasHorse                 = false
+        ST.lastHorseEnt             = nil
+        ST.lastHorseId              = nil
+        ST.lastHorseName            = nil
+        ST.lastHorseFp              = nil
+        ST.lastHorseFpExt           = nil
+
+        -- Clear owned-horse tracking as well
+        ST.currentOwnedHorseId      = nil
+        ST.currentOwnedHorseGuid    = nil
+        ST.hasMountedOwnedHorseOnce = false
 
         CuraEqui.Log("HorseId",
             "SetOwnedHorse[%s]: cleared identity",
             tostring(opts.reason or "?"))
     end
+
+    CuraEqui.Log("HorseId",
+        "Owned snapshot: currentOwnedHorseId=%s guid=%s",
+        tostring(ST.currentOwnedHorseId),
+        tostring(ST.currentOwnedHorseGuid))
 end
 
 function CuraEqui._HorseGuid(ent)
@@ -384,10 +404,15 @@ function CuraEqui.Bootstrap(reason)
     if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
 
     -- 4) RESET per-session mirrors/flags (single source of truth)
-    ST._giftedFor       = {}
-    ST._giftedSessionId = (ST._giftedSessionId or 0) + 1
-    ST.noHorseStrikes   = 0
-    ST.justLoaded       = true
+    ST._giftedFor               = {}
+    ST._giftedSessionId         = (ST._giftedSessionId or 0) + 1
+    ST.noHorseStrikes           = 0
+    ST.justLoaded               = true
+
+    -- Owned-horse tracking (Step 5 – fields only, no behavior yet)
+    ST.currentOwnedHorseId      = nil
+    ST.currentOwnedHorseGuid    = nil
+    ST.hasMountedOwnedHorseOnce = false
 
     CuraEqui.SetOwnedHorse(nil, { reason = "load-reset" })
 
@@ -810,7 +835,7 @@ function CuraEqui.OnGameplayStarted()
         ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
 
         if CuraEqui.StopProbing then CuraEqui.StopProbing() end
-        if CuraEqui.StartWatching then CuraEqui.StartWatching() end
+        --if CuraEqui.StartWatching then CuraEqui.StartWatching() end
     end
 
     try(1)
@@ -848,6 +873,18 @@ function CuraEqui.OnGameplayStarted()
         UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
         CuraEqui.__skipBound = true
         System.LogAlways("[CuraEqui] Bound SkipTime element listener")
+    end
+end
+
+function CuraEqui.OnQuickLoadingStart()
+    System.LogAlways("[CuraEqui] OnQuickLoadingStart")
+    local ST = CuraEqui.state or {}
+
+    -- 🔥 HARD KILL: prevent inherited hunger timers from firing after load
+    if ST.hungerTimer then
+        Script.KillTimer(ST.hungerTimer)
+        ST.hungerTimer = nil
+        System.LogAlways("[CuraEqui][Fix] Killed inherited hunger timer on load start")
     end
 end
 
@@ -1008,6 +1045,8 @@ function CuraEqui.OnPlayerMountedHorse(horse)
 
     -- Route identity through ownership scaffolding (no behavior change)
     CuraEqui.SetOwnedHorse(horse, { reason = "mount" })
+    -- NEW: Mark that we have mounted our owned horse at least once this session
+    ST.hasMountedOwnedHorseOnce = true
 
     local name = (horse and horse.GetName and horse:GetName()) or "?"
     System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → session hasHorse=true")
@@ -1022,4 +1061,72 @@ function CuraEqui.OnPlayerMountedHorse(horse)
     if C.StartWatching then
         C.StartWatching()
     end
+end
+
+-- function CuraEqui.PlayerOwnsHorse(h)
+--     local ST = CuraEqui.state or {}
+
+--     local lastId = ST.lastHorseId
+--     if not (ST.hasHorse and lastId) then
+--         return false
+--     end
+
+--     -- No specific handle → “do we have some active session horse?”
+--     if not h then
+--         return true
+--     end
+
+--     -- Prefer GUID comparison if we have a GUID-based id
+--     if type(lastId) == "string" then
+--         local guid = nil
+--         if CuraEqui._HorseGuid then
+--             local ok, g = pcall(CuraEqui._HorseGuid, h)
+--             if ok then guid = g end
+--         end
+
+--         if guid then
+--             return guid == lastId
+--         end
+
+--         -- fallback: compare to tostring(h.id)
+--         return tostring(h.id) == lastId
+--     end
+
+--     -- Fallback mode: lastId is an engine id / userdata
+--     return h.id == lastId
+-- end
+
+function CuraEqui.PlayerOwnsHorse(h)
+    local ST = CuraEqui.state or {}
+
+    -- Primary identity: the horse id we captured via SetOwnedHorse
+    local ownedId = ST.currentOwnedHorseId
+
+    -- If we never captured any owned horse id this session, we own nothing
+    if not ownedId then
+        return false
+    end
+
+    -- No specific handle → "do we have some active owned horse this session?"
+    if not h then
+        return true
+    end
+
+    -- First, compare raw engine id (most reliable)
+    if h.id == ownedId then
+        return true
+    end
+
+    -- Optional fallback: compare GUID/fingerprint if we have one
+    local guid = nil
+    if CuraEqui._HorseGuid then
+        local ok, g = pcall(CuraEqui._HorseGuid, h)
+        if ok then guid = g end
+    end
+
+    if guid and ST.lastHorseId and guid == ST.lastHorseId then
+        return true
+    end
+
+    return false
 end

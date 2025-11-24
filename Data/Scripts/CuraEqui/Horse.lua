@@ -953,14 +953,28 @@ function Horse:OnFeedHorse(user)
 end
 
 function CuraEqui.OnPlayerMountedHorseInternal(h)
-    local ST          = CuraEqui.state or {}
-    CuraEqui.state    = ST
+    -- Always have a state table
+    CuraEqui.state = CuraEqui.state or {}
+    local ST       = CuraEqui.state
 
-    ST.hasHorse       = true
-    ST.lastHorseEnt   = h
-    ST.lastHorseId    = h and h.id or nil
-    ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ST.lastHorseFp
-    ST.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ST.lastHorseFpExt
+    -- Route identity through central ownership scaffolding
+    if CuraEqui.SetOwnedHorse then
+        CuraEqui.SetOwnedHorse(h, { reason = "mount-internal" })
+    else
+        -- Legacy fallback (should never be used in this branch, but safe)
+        ST.hasHorse       = true
+        ST.lastHorseEnt   = h
+        ST.lastHorseId    =
+            (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h))
+            or (h and h.id)
+            or ST.lastHorseId
+
+        ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ST.lastHorseFp
+        ST.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ST.lastHorseFpExt
+    end
+
+    -- Mark that in THIS session we have mounted our owned horse at least once
+    ST.hasMountedOwnedHorseOnce = true
 
     System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → session hasHorse=true")
         :format(tostring(h and h.id or "nil"),

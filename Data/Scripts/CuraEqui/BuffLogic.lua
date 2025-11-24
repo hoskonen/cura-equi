@@ -493,21 +493,3 @@ function CuraEqui.Buffs.SweepPlayerSatedEffects(tag)
     end
     CuraEqui.Buffs._lastSatedUuid = nil
 end
-
--- Core.lua
-function CuraEqui.PlayerOwnsHorse(h)
-    local ST = CuraEqui.state or {}
-
-    -- If this session never saw a player-mounted horse, we don't own anything
-    if not (ST.hasHorse and ST.lastHorseId) then
-        return false
-    end
-
-    -- No specific handle → just "does player own *some* horse?"
-    if not h then
-        return true
-    end
-
-    -- Compare against the last horse we recorded from OnMount
-    return h.id == ST.lastHorseId
-end
