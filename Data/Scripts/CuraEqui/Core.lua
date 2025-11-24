@@ -41,11 +41,29 @@ CuraEqui.HorseCfg               = {
 }
 
 function CuraEqui.HasHorse()
-    return CuraEqui.state.hasHorse == true
+    return CuraEqui.state and CuraEqui.state.hasHorse == true
 end
 
+-- Replace old ResolveHorse with this
 function CuraEqui.ResolveHorse()
-    return (CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    local H = CuraEqui.Horse
+    if not (H and H.Resolve) then return nil end
+
+    local h = H.Resolve()
+    if not h then return nil end
+
+    -- If we have an ownership helper, enforce it here
+    if CuraEqui.PlayerOwnsHorse then
+        local ok, owns = pcall(CuraEqui.PlayerOwnsHorse, h)
+        if ok and not owns then
+            -- optional debug:
+            -- System.LogAlways(("[CuraEqui][Horse] ResolveHorse→ non-owned id=%s → nil")
+            --     :format(tostring(h.id)))
+            return nil
+        end
+    end
+
+    return h
 end
 
 function CuraEqui._HorseGuid(ent)
@@ -289,6 +307,11 @@ end
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
 
+    CuraEqui.state = CuraEqui.state or {}
+    if reason == "ogs" then
+        CuraEqui.state.loadingSave = true -- mark: this was called from OnGameplayStarted
+    end
+
     -- 0) Always reopen DB for the new playline/save
     if CuraEqui.Persist and CuraEqui.Persist.Reopen then
         pcall(CuraEqui.Persist.Reopen)
@@ -351,29 +374,23 @@ function CuraEqui.Bootstrap(reason)
                 local B = CuraEqui.Buffs
                 if not (h and S and B) then return end
 
-                -- 🔒 Extra-safe: sweep again right before we apply a tier.
-                -- (Cheap, idempotent, and prevents any late HUD resurrection from surviving.)
-                do
-                    if B and B.ClearSatedTimers then
-                        pcall(B.ClearSatedTimers) -- remove all current sated tiers
+                -- 🔒 NEW: do not resync on non-owned horses / cross-save ghosts
+                if CuraEqui.PlayerOwnsHorse and not CuraEqui.PlayerOwnsHorse(h) then
+                    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
+                        System.LogAlways("[CuraEqui][ResyncPass] abort - non-owned horse")
                     end
-                    if B and B.SweepPlayerSatedEffects then
-                        pcall(B.SweepPlayerSatedEffects, "resync") -- also nuke tombstoned/legacy UUIDs
-                    end
+                    return
                 end
 
-                -- Only apply if we’re not in the preload fence
-                if not (CuraEqui.state and CuraEqui.state._preloadFence) then
-                    if B.SyncSatedTimer then pcall(B.SyncSatedTimer, h, S, { cause = "bootstrap", force = true }) end
-                    if B.SyncHorseDebuff then pcall(B.SyncHorseDebuff, h, S, { cause = "bootstrap" }) end
-                    if B.SyncAll then pcall(B.SyncAll, h, S) end
+                -- existing SyncSatedTimer / SyncAll calls stay as they were
+                if B.SyncSatedTimer then
+                    pcall(B.SyncSatedTimer, h, S, { cause = "resync-pass", force = true })
                 end
-            end, function(err) System.LogAlways("[CuraEqui][Resync][ERROR] " .. tostring(err)) end)
+                if B.SyncAll then
+                    pcall(B.SyncAll, h, S)
+                end
+            end, debug.traceback)
         end
-
-
-        Script.SetTimerForFunction(1, "CuraEqui_ResyncPass")   -- first pass: right away
-        Script.SetTimerForFunction(150, "CuraEqui_ResyncPass") -- second pass: catch slow HUD init
     end
 end
 
@@ -391,7 +408,7 @@ function CuraEqui.Initialize(fullInit)
     -- Mute persistence for a short window during boot/load
     do
         CuraEqui.state = CuraEqui.state or {}
-        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now = (CuraEqui.Now and CuraEqui.Now()) or 0
         CuraEqui.state.persistMuteUntil = now + 5.0 -- 5s grace on boot
     end
 
@@ -417,95 +434,92 @@ function CuraEqui.Initialize(fullInit)
     end
 
     -- seed the state and start probing if horseless
-    local ST       = CuraEqui.state
-    local h        = CuraEqui.ResolveHorse()
+    local ST   = CuraEqui.state
+    local h    = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
 
-    ST.hasHorse    = (h ~= nil)
+    -- Ownership: if player doesn't own this horse, treat as "no horse"
+    local owns = h and CuraEqui.PlayerOwnsHorse and CuraEqui.PlayerOwnsHorse(h) or false
+
+    System.LogAlways(("[CuraEqui][Init] ResolveHorse→ id=%s owns=%s hasHorseState=%s")
+        :format(tostring(h and h.id or "nil"), tostring(owns), tostring(ST.hasHorse)))
+    if h and not owns then
+        h = nil
+    end
+
+    -- DO NOT trust h ~= nil; horse entities exist even in horse-less saves
+    -- Default: horse-less until proven otherwise
+    ST.hasHorse = ST.hasHorse or false
     ST.lastHorseId = (h and CuraEqui._HorseGuid(h)) or ST.lastHorseId
 
     if not h then
-        local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now = (CuraEqui.Now and CuraEqui.Now()) or 0
+
+        -- 1) Log the horse-less init clearly
+        System.LogAlways("[CuraEqui][NoHorse] Initialize in horse-less save → flushing sated state")
+
+        -- 2) Reset in-memory sated state
+        ST.satedRemainSec = 0
+        ST.satedUntil     = 0
+
+        -- 🔥 Also reset any stray per-horse sated state
+        local hAny        = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+        if hAny and CuraEqui.HorseStateGet then
+            local S = CuraEqui.HorseStateGet(hAny)
+            if S then
+                S.satedUntil    = 0
+                S._lastBuffTier = nil
+            end
+        end
+
+        -- 3) Hard-clear any Sated buff on the player
+        if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
+            System.LogAlways("[CuraEqui][NoHorse] ClearSatedTimers() (no-horse flush)")
+            pcall(CuraEqui.Effects.ClearSatedTimers)
+        end
+
+        -- 5) Normal logging + probe restart
         if (now - (ST._noHorseLogAt or 0)) > 3.0 then
             System.LogAlways("[CuraEqui][Horse] No horse detected — hunger/buffs are idle until a horse is acquired.")
             ST._noHorseLogAt = now
         end
-        if CuraEqui.StartProbing then CuraEqui.StartProbing() end
+
+        if CuraEqui.StartProbing then
+            CuraEqui.StartProbing()
+        end
+
+        return -- nothing else in Initialize should run in horse-less saves
     end
 
-    -- 1) If we have a horse, hydrate hunger/sated from DB first
+    -- 1) If we have a horse, hydrate ONLY hunger from DB.
+    --    Sated is *never* re-applied from DB to avoid cross-save leakage.
     do
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         if S and CuraEqui.Persist and CuraEqui.Persist.Load then
             local ph, ps = CuraEqui.Persist.Load()
             if ph or ps then
-                if ph then S.hunger = math.max(0, math.min(100, ph)) end
-                if ps then S.satedUntil = tonumber(ps) or 0 end
+                -- Clamp hunger into 0..100 if we got something
+                if ph then
+                    S.hunger = math.max(0, math.min(100, ph))
+                end
 
-                -- 1) Hard wipe ALL player sated tiers (belts & suspenders against engine residue)
+                -- DO NOT use ps to seed S.satedUntil
+                -- DO NOT call SyncSatedTimer here
+
+                System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s (sated ignored on load)")
+                    :format(tostring(ph), tostring(ps)))
+
+                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+                if D and D.buffTraceVerbose then
+                    System.LogAlways("[CE][LOAD] sated ignored on load (no buff reapply)")
+                end
+
+                -- Clear any lingering sated tiers just in case the engine carried them over
                 if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
-                    pcall(CuraEqui.Effects.ClearSatedTimers) -- this must remove every known sated UUID
+                    pcall(CuraEqui.Effects.ClearSatedTimers)
                 end
 
-                S._lastBuffTier = nil
-
-                System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s"):format(tostring(ph), tostring(ps)))
-
-                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-                if D and D.buffTraceVerbose then
-                    System.LogAlways("[CE][LOAD] clear: horse debuffs, player sated tiers")
-                end
-
-                -- clean slate → apply exactly one sated tier for S.satedUntil, then status
-                pcall(CuraEqui.Effects.ClearHorseDebuffs, h) -- one-off horse strip clear
-                pcall(CuraEqui.Buffs.ClearSatedTimers)       -- ← removes all sated timers (player)
-
-                -- if D and D.buffTraceVerbose then
-                --     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                --     local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                --     System.LogAlways(("[CE][LOAD] apply: sated player (rem≈%ds)"):format(rem))
-                -- end
-
-                -- -- 2) Apply exactly one sated bucket based on persisted remain
-                -- if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-                --     -- 'force=true' prevents "mid-run skip" and bypasses the reentry fence
-                --     pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "load-apply", force = true })
-                -- end
-
-                -- -- 3) Mark that we seeded sated on load so StartWatching won't re-touch it
-                -- CuraEqui.state.didInitialSatedApply = true
-
-                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-
-                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-                if D and D.buffTraceVerbose then
-                    System.LogAlways(("[CE][LOAD] sated ignored on load (rem≈%ds)"):format(rem))
-                end
-
-                -- Keep the internal timer so hunger/catch-up logic stays consistent,
-                -- but DO NOT re-apply a timed buff here.
-                CuraEqui.state.satedRemainSec       = rem
-
-                -- Let the normal tick logic drive any UI decisions.
                 CuraEqui.state.didInitialSatedApply = false
-                CuraEqui.state.deferStatusUntilTick = now + 0.2
-                CuraEqui.state.suppressStatusUntil  = now + 0.5
-
-                System.LogAlways(("[CuraEqui][LoadApply] post-apply satedRemain=%.0fs (no buff reapply)")
-                    :format(rem))
-
-
-                -- 4) Defer status (horse hunger) icon to the first tick for stability
-                local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                CuraEqui.state.deferStatusUntilTick = now + 0.2 -- ~1 tick; cosmetic
-
-                CuraEqui.state.suppressStatusUntil = ((CuraEqui.Now and CuraEqui.Now()) or os.clock()) + 0.5
-
-                do
-                    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-                    local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-                    System.LogAlways(("[CuraEqui][LoadApply] post-apply satedRemain=%.0fs"):format(rem))
-                end
+                CuraEqui.state.satedRemainSec       = 0
             end
         end
     end
@@ -729,6 +743,7 @@ end
 -- Gameplay start entry
 function CuraEqui.OnGameplayStarted()
     System.LogAlways("[CuraEqui] OnGameplayStarted")
+
     -- Always treat OGS as a fresh runtime session
     if CuraEqui.state then CuraEqui.state._preloadFence = nil end
     CuraEqui.Bootstrap("ogs")
@@ -736,39 +751,55 @@ function CuraEqui.OnGameplayStarted()
 
     -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
     local tries = { 0, 300, 1200 }
+
     local function try(i)
-        local h = CuraEqui.ResolveHorse()
-        if h then
-            System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
-                :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
-
-            CuraEqui.state.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
-
-
-            -- Seed the fingerprint so the first tick doesn't look like a swap
-            CuraEqui.state.lastHorseFp = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
-            if CuraEqui.StopProbing then CuraEqui.StopProbing() end
-            if CuraEqui.StartWatching then CuraEqui.StartWatching() end
-        else
-            if i < #tries then
-                if Script and Script.SetTimer then Script.SetTimer(tries[i + 1], function() try(i + 1) end) end
-            else
-                if CuraEqui.StartProbing then CuraEqui.StartProbing() end
-            end
+        local ST = CuraEqui.state or {}
+        -- If we don't yet know of a horse, do nothing.
+        if not CuraEqui.HasHorse or not CuraEqui.HasHorse() then
+            return
         end
+
+        local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+        if not h then
+            if i < #tries and Script and Script.SetTimer then
+                Script.SetTimer(tries[i + 1], function() try(i + 1) end)
+            end
+            return
+        end
+
+        System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
+            :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
+
+        ST.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
+        ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+
+        if CuraEqui.StopProbing then CuraEqui.StopProbing() end
+        if CuraEqui.StartWatching then CuraEqui.StartWatching() end
     end
+
     try(1)
 
-    -- Post-OGS settle: drop fence and force a single apply ~400ms later
+    -- Post-OGS settle: drop fence and (optionally) force a single apply ~400ms later
     Script.SetTimer(400, function()
         local ST = CuraEqui.state or {}
         ST._preloadFence = nil
-        local h = CuraEqui.ResolveHorse()
+
+        local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
         local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
         local B = CuraEqui.Buffs
-        if h and S and B and B.SyncSatedTimer then
+
+        -- Only sync sated if horse is owned and fingerprint is seeded
+        if h
+            and CuraEqui.PlayerOwnsHorse
+            and CuraEqui.PlayerOwnsHorse(h)
+            and ST.lastHorseFp
+            and B
+            and B.SyncSatedTimer
+        then
             pcall(B.SyncSatedTimer, h, S, { cause = "ogs-settle", force = true })
-            if B.SyncAll then pcall(B.SyncAll, h, S) end
+            if B.SyncAll then
+                pcall(B.SyncAll, h, S)
+            end
         end
     end)
 
@@ -781,21 +812,6 @@ function CuraEqui.OnGameplayStarted()
         UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
         CuraEqui.__skipBound = true
         System.LogAlways("[CuraEqui] Bound SkipTime element listener")
-    end
-end
-
-function CuraEqui.OnQuickLoadingStart()
-    System.LogAlways("[CuraEqui] OnQuickLoadingStart")
-    CuraEqui.state = CuraEqui.state or {}
-    CuraEqui.state._preloadFence = true
-
-    -- Tear down immediately; we’ll rebuild on OGS
-    if CuraEqui.TeardownAll then pcall(CuraEqui.TeardownAll, "quickload") end
-
-    -- Extra defensive clears while HUD is being rebuilt
-    if CuraEqui.Buffs and CuraEqui.Buffs.ClearSatedTimers then
-        Script.SetTimer(0, function() pcall(CuraEqui.Buffs.ClearSatedTimers) end)
-        Script.SetTimer(250, function() pcall(CuraEqui.Buffs.ClearSatedTimers) end)
     end
 end
 
@@ -835,62 +851,83 @@ function CuraEqui.RevalidateHorseIdentity(now)
     end
 end
 
--- Gift a welcome sated once per horse GUID in this session.
 function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
-    if not (h and horseKey) then return end
-    local ST = CuraEqui.state or {}; ST._giftedFor = ST._giftedFor or {}
-    if ST._giftedFor[horseKey] then return end
-    ST._giftedFor[horseKey] = true
-
-    local giftSec =
-        (CuraEqui.Config and CuraEqui.Config.Hunger and
-            (CuraEqui.Config.Hunger.newHorseSatedSec or CuraEqui.Config.Hunger.welcomeSatedSec))
-        or 1200
-    giftSec = math.max(0, tonumber(giftSec) or 0)
-    if giftSec <= 0 then return end
-
-    local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-    if not S then return end
-
-    -- Skip welcome gift if the horse is already sated (prevents double stacking)
-    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-    if tonumber(S.satedUntil or 0) > now then
-        return
-    end
-
-    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-    S.satedUntil = now + giftSec
-
-    -- Ceil to next visible tier so UI = timer
-    local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
-    if T and #T > 0 then
-        local target = giftSec
-        for i = #T, 1, -1 do
-            local s = tonumber(T[i].sec) or 0
-            if s >= giftSec then
-                target = s; break
-            end
-        end
-        S.satedUntil = now + (target or giftSec)
-    end
-
-    -- Apply cleanly
-    if CuraEqui.Buffs and CuraEqui.Buffs.ClearSated then pcall(CuraEqui.Buffs.ClearSated, h) end
-    if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-        pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = cause or "horse_gain", force = true })
-    end
-    if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
-    if CuraEqui.Persist and CuraEqui.Persist.Save then
-        pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil,
-            cause or "gift")
-    end
-
+    -- TEMPORARILY DISABLED: welcome sated gift
     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    if D and D.buffTraceVerbose then
-        System.LogAlways(("[CuraEqui][Gift] welcome sated %ds for key=%s (%s)")
-            :format(giftSec, horseKey, tostring(cause or "?")))
+    if D and D.giftTrace then
+        System.LogAlways("[CuraEqui][Gift] disabled in this build")
     end
+    return
 end
+
+-- Gift a welcome sated once per horse GUID in this session.
+-- function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
+--     -- Prevent gifts on game load or probing
+--     if CuraEqui.state and CuraEqui.state.loadingSave then
+--         if CuraEqui.Config.Debug.giftTrace then
+--             System.LogAlways("[CuraEqui][Gift] skipped (loading save)")
+--         end
+--         return
+--     end
+
+--     if not (h and horseKey) then return end
+--     local ST = CuraEqui.state or {}; ST._giftedFor = ST._giftedFor or {}
+--     if ST._giftedFor[horseKey] then return end
+--     ST._giftedFor[horseKey] = true
+
+--     local giftSec =
+--         (CuraEqui.Config and CuraEqui.Config.Hunger and
+--             (CuraEqui.Config.Hunger.newHorseSatedSec or CuraEqui.Config.Hunger.welcomeSatedSec))
+--         or 1200
+--     giftSec = math.max(0, tonumber(giftSec) or 0)
+--     if giftSec <= 0 then return end
+
+--     local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+--     if not S then return end
+
+--     -- Mark: this save now really has a horse
+--     local ST = CuraEqui.state or {}
+--     ST.hasHorse = true
+
+--     -- Skip welcome gift if the horse is already sated (prevents double stacking)
+--     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+--     if tonumber(S.satedUntil or 0) > now then
+--         return
+--     end
+
+--     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
+--     S.satedUntil = now + giftSec
+
+--     -- Ceil to next visible tier so UI = timer
+--     local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
+--     if T and #T > 0 then
+--         local target = giftSec
+--         for i = #T, 1, -1 do
+--             local s = tonumber(T[i].sec) or 0
+--             if s >= giftSec then
+--                 target = s; break
+--             end
+--         end
+--         S.satedUntil = now + (target or giftSec)
+--     end
+
+--     -- Apply cleanly
+--     if CuraEqui.Buffs and CuraEqui.Buffs.ClearSated then pcall(CuraEqui.Buffs.ClearSated, h) end
+--     if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
+--         pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = cause or "horse_gain", force = true })
+--     end
+--     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
+--     if CuraEqui.Persist and CuraEqui.Persist.Save then
+--         pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil,
+--             cause or "gift")
+--     end
+
+--     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+--     if D and D.buffTraceVerbose then
+--         System.LogAlways(("[CuraEqui][Gift] welcome sated %ds for key=%s (%s)")
+--             :format(giftSec, horseKey, tostring(cause or "?")))
+--     end
+-- end
 
 function CuraEqui.TeardownAll(reason)
     local ST = CuraEqui.state or {}
@@ -913,7 +950,7 @@ function CuraEqui.TeardownAll(reason)
 
     -- Nuke all our tier buffs defensively (player sated tiers + horse debuffs)
     if CuraEqui.Buffs and CuraEqui.Buffs.ClearSatedTimers then
-        pcall(CuraEqui.Buffs.ClearSatedTimers)
+        pcall(CuraEqui.Buffs.ClearSatedTimers, "TeardownAll")
     end
     if CuraEqui.Buffs and CuraEqui.Buffs.ClearHorseDebuffs then
         local h = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
@@ -924,5 +961,31 @@ function CuraEqui.TeardownAll(reason)
     if CuraEqui.Buffs then
         CuraEqui.Buffs._lastPlayerUuid      = nil
         CuraEqui.Buffs._lastHorseDebuffUuid = nil
+    end
+end
+
+-- Called when the player mounts any horse (hooked from Horse.OnMount)
+function CuraEqui.OnPlayerMountedHorse(horse)
+    local C         = CuraEqui
+    C.state         = C.state or {}
+    local ST        = C.state
+
+    -- Mark session as having a horse
+    ST.hasHorse     = true
+    ST.lastHorseId  = (C._HorseGuid and C._HorseGuid(horse)) or ST.lastHorseId
+    ST.lastHorseEnt = horse
+
+    local name      = (horse and horse.GetName and horse:GetName()) or "?"
+    System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → session hasHorse=true")
+        :format(tostring(horse and horse.id or "nil"), tostring(name)))
+
+    -- Stop probing, if it was running
+    if C.StopProbing then
+        C.StopProbing()
+    end
+
+    -- Start hunger watcher if not already running
+    if C.StartWatching then
+        C.StartWatching()
     end
 end

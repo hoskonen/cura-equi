@@ -13,7 +13,7 @@ do
 
     local _next = {}
     U.throttle = U.throttle or function(key, intervalSec)
-        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now = (CuraEqui.Now and CuraEqui.Now()) or 0
         local t   = tonumber(intervalSec or 1) or 1
         local nxt = _next[key] or 0
         if now >= nxt then
@@ -37,7 +37,7 @@ do
             "Sated"
         }
 
-        local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now   = (CuraEqui.Now and CuraEqui.Now()) or 0
         local rem   = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
         if rem > 0 then return names.sated, "sated" end
 
@@ -47,16 +47,6 @@ do
             or (h >= (th.minor or 20)) and "minor"
             or "ok"
         return names[tier] or tier, tier
-    end
-end
-
--- Pause-aware gameplay clock (fallback if Utils.lua didn’t define it yet)
-if not CuraEqui.Now then
-    function CuraEqui.Now()
-        if GetCurrTime then return GetCurrTime() end
-        if System and System.GetCurrTime then return System.GetCurrTime() end
-        if Calendar and Calendar.GetGameTime then return Calendar.GetGameTime() end
-        return (Script and Script.GetTime and Script.GetTime()) or os.clock()
     end
 end
 
@@ -210,30 +200,49 @@ function CuraEqui.StartProbing()
 
     local periodMs = 10000 -- every 10 s
     _G["CuraEqui_HorseProbeTick"] = function()
-        local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+        local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+
         if h then
-            if ST.probeTimer then
-                Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
-            end
-            local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
             local fp                      = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+            local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
 
             CuraEqui.state.hasHorse       = true
             CuraEqui.state.lastHorseEnt   = h
             CuraEqui.state.lastHorseFpExt = fp
             CuraEqui.state.lastHorseId    = gid
             CuraEqui.state.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
-            CuraEqui.state.lastHorseFp    = fp -- seed fingerprint
+            CuraEqui.state.lastHorseFp    = fp
 
-            -- Gift once for this *fingerprint* in this session
-            if CuraEqui._GiftOncePerHorse then
-                pcall(CuraEqui._GiftOncePerHorse, h, fp, "horse_gain")
-                -- (fix the undefined var)
-                System.LogAlways(("[CuraEqui][HorseSwap] %s → %s"):format(tostring(CuraEqui.state.lastHorseFp or "∅"), fp))
-            end
+            CuraEqui.Log("Horse",
+                "probe→ owned horse id=%s fp=%s name=%s",
+                tostring(gid), tostring(fp), tostring(CuraEqui.state.lastHorseName or "?"))
 
             return CuraEqui.StartWatching and CuraEqui.StartWatching()
         end
+
+        -- if h then
+        --     if ST.probeTimer then
+        --         Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
+        --     end
+        --     local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
+        --     local fp                      = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+
+        --     CuraEqui.state.hasHorse       = true
+        --     CuraEqui.state.lastHorseEnt   = h
+        --     CuraEqui.state.lastHorseFpExt = fp
+        --     CuraEqui.state.lastHorseId    = gid
+        --     CuraEqui.state.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
+        --     CuraEqui.state.lastHorseFp    = fp -- seed fingerprint
+
+        --     -- Gift once for this *fingerprint* in this session
+        --     -- if CuraEqui._GiftOncePerHorse then
+        --     --     pcall(CuraEqui._GiftOncePerHorse, h, fp, "horse_gain")
+        --     --     -- (fix the undefined var)
+        --     --     System.LogAlways(("[CuraEqui][HorseSwap] %s → %s"):format(tostring(CuraEqui.state.lastHorseFp or "∅"), fp))
+        --     -- end
+
+        --     return CuraEqui.StartWatching and CuraEqui.StartWatching()
+        -- end
 
         -- keep probing
         ST.probeTimer = Script.SetTimerForFunction(periodMs, "CuraEqui_HorseProbeTick")
@@ -287,7 +296,7 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     if maxMin > 0 and minutes > maxMin then minutes = maxMin end
 
     -- Snapshot before
-    local now       = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local now       = (CuraEqui.Now and CuraEqui.Now()) or 0
     local beforeH   = tonumber(S.hunger or 0) or 0
     local remBefore = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
@@ -311,7 +320,7 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
     local isNightNow = (Calendar and Calendar.IsNightTimeOfDay and Calendar.IsNightTimeOfDay()) or false
 
     -- Sated multiplier (same as tick)
-    local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local now        = (CuraEqui.Now and CuraEqui.Now()) or 0
     local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and (tonumber(H.satedDrainMul) or 0.75)) or 1.0
 
     local timeMul    = isNightNow and (tonumber(NC.timeDrainMul) or 1.0) or 1.0
@@ -369,9 +378,25 @@ end
 function CuraEqui._HungerTickBody()
     CuraEqui.state = CuraEqui.state or {}
     local st       = CuraEqui.state
-    local now      = (Calendar and Calendar.GetGameTime and Calendar.GetGameTime()) or 0
+    local now      = (CuraEqui.Now and CuraEqui.Now()) or 0
 
-    local h        = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+
+    -- TEMPORARY DEBUG: compare time APIs every tick
+    do
+        local a = GetCurrTime and GetCurrTime() or -1
+        local b = System and System.GetCurrTime and System.GetCurrTime() or -1
+        local c = (CuraEqui.Now and CuraEqui.Now()) or 0
+        local d = Script and Script.GetTime and Script.GetTime() or -1
+        local e = os.clock()
+
+        System.LogAlways(string.format(
+            "[CuraEqui][TimeDiag] GetCurrTime=%.2f Sys=%.2f Cal=%.2f Script=%.2f osc=%.2f",
+            a, b, c, d, e
+        ))
+    end
+
+
+    local h = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
 
     if not h then
         -- log at most once every 5s while horseless
@@ -592,7 +617,7 @@ function CuraEqui._HungerTickBody()
         -- if night and disableGrazing ~= false, we skip graze_compute entirely
 
         -- Sated multiplier (by design, only drains)
-        local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now        = (CuraEqui.Now and CuraEqui.Now()) or 0
         local mul        = (((tonumber(S.satedUntil or 0) or 0) > now) and C.satedMul) or 1.0
 
         local passive    = (timeDrain * mul) + graze
@@ -706,7 +731,7 @@ function CuraEqui._HungerTickBody()
             local preset = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
             local U      = CuraEqui.Utils
             local h      = math.floor(tonumber(S.hunger or 0) or 0)
-            local now    = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+            local now    = (CuraEqui.Now and CuraEqui.Now()) or 0
             local rem    = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
             local pretty = (U and U.hunger_label) and select(1, U.hunger_label(h, S.satedUntil))
                 or ((rem > 0) and "Sated" or "OK")
@@ -741,8 +766,17 @@ end
 
 -- ---------- TIMER WRAPPER (ALWAYS REARMS) ----------
 function CuraEqui_HungerTick()
+    local C  = CuraEqui
+    local ST = C.state or {}
+
+    -- 🔥 First real runtime heartbeat after load
+    if ST.loadingSave then
+        ST.loadingSave = nil
+        System.LogAlways("[CuraEqui] load flag cleared (first hunger tick)")
+    end
+
     do
-        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now = (CuraEqui.Now and CuraEqui.Now()) or 0
         if CuraEqui.RevalidateHorseIdentity then
             pcall(CuraEqui.RevalidateHorseIdentity, now)
         end
@@ -759,12 +793,13 @@ function CuraEqui_HungerTick()
     local ok, err = xpcall(CuraEqui._HungerTickBody, debug.traceback)
     if not ok then System.LogAlways("[CuraEqui][Tick][ERROR] " .. tostring(err)) end
 
-    local hasHorse = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) and true or false
+    local hasHorse = (CuraEqui.HasHorse and CuraEqui.HasHorse()) or false
     if not hasHorse then
         CuraEqui._noHorseStrikes = (CuraEqui._noHorseStrikes or 0) + 1
     else
         CuraEqui._noHorseStrikes = 0
     end
+
     if (CuraEqui._noHorseStrikes or 0) >= 3 then
         CuraEqui.StopWatching()
         return CuraEqui.StartProbing()
@@ -775,44 +810,52 @@ function CuraEqui_HungerTick()
 end
 
 -- ---------- START/STOP ----------
+-- ---------- START/STOP ----------
 function CuraEqui.StartWatching()
-    -- Guard instead of kill+recreate (avoids duplicate logs/timers)
-    -- if CuraEqui.state.hungerTimer then
-    --     return
-    -- end
+    local C  = CuraEqui
+    C.state  = C.state or {}
+    local ST = C.state
 
-    CuraEqui.state.hungerTimer =
-        Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
-    CuraEqui.Log("poll", "Hunger watcher started (timerId=%s)", tostring(CuraEqui.state.hungerTimer))
-
-    -- Do NOT re-apply sated if load already seeded it
-    if CuraEqui.state.didInitialSatedApply then
-        CuraEqui.state.didInitialSatedApply = nil
+    -- Already running?
+    if ST.hungerTimer then
         return
     end
 
-    -- Apply/refresh the visible sated timer once on start
-    local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
-    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-    if not (h and S) then return end
+    -- We only trust session state here:
+    local h = ST.lastHorseEnt
+    if not (ST.hasHorse and h) then
+        local D = C.Config and C.Config.Debug
+        if D and D.hungerTrace then
+            System.LogAlways("[CuraEqui][Hunger] StartWatching aborted - no session horse")
+        end
+        return
+    end
 
-    local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
-    local hasSated = tonumber(S.satedUntil or 0) > now
+    -- Arm the timer once
+    ST.hungerTimer =
+        Script.SetTimerForFunction(C.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
+    C.Log("poll", "Hunger watcher started (timerId=%s)", tostring(ST.hungerTimer))
+
+    -- Refresh sated UI *once* if we have valid state
+    local S = C.HorseStateGet and C.HorseStateGet(h) or nil
+    if not S then return end
+
+    local now       = (C.Now and C.Now()) or 0
+    local hasSated  = tonumber(S.satedUntil or 0) > now
 
     -- ensure status tier is recomputed on this start
     S._lastBuffTier = nil
 
     if hasSated then
-        -- sated already running → refresh (no force)
-        if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-            pcall(CuraEqui.Buffs.SyncAll, h, S)
+        if C.Buffs and C.Buffs.SyncAll then
+            pcall(C.Buffs.SyncAll, h, S)
         end
     else
-        if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
-            pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = "start", force = false })
+        if C.Buffs and C.Buffs.SyncSatedTimer then
+            pcall(C.Buffs.SyncSatedTimer, h, S, { cause = "start", force = false })
         end
-        if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-            pcall(CuraEqui.Buffs.SyncAll, h, S)
+        if C.Buffs and C.Buffs.SyncAll then
+            pcall(C.Buffs.SyncAll, h, S)
         end
     end
 end
@@ -824,7 +867,7 @@ function CuraEqui.StopWatching()
     end
 
     -- skip safety-save if we’re inside the boot/load mute window
-    local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local now = (CuraEqui.Now and CuraEqui.Now()) or 0
     local muted = CuraEqui.state and CuraEqui.state.persistMuteUntil and (now < CuraEqui.state.persistMuteUntil)
 
     if (not muted) then
@@ -865,7 +908,7 @@ function CuraEqui._ApplyNutrition(diet, label)
 
     -- 2) sated timing
     local H      = (CuraEqui.Config and CuraEqui.Config.Hunger) or {}
-    local now    = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local now    = (CuraEqui.Now and CuraEqui.Now()) or 0
     local perSec = tonumber(H.satedSecPerNutrition or 6) -- dial
     local capSec = tonumber(H.satedCapSec or 600)        -- dial
     local addSec = n * perSec
@@ -874,7 +917,7 @@ function CuraEqui._ApplyNutrition(diet, label)
 
     -- Ceil to the next visible bucket so internal == buff duration
     do
-        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now = (CuraEqui.Now and CuraEqui.Now()) or 0
         local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         local BL  = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
         if BL and #BL > 0 then

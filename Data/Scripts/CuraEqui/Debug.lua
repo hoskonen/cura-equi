@@ -118,7 +118,7 @@ end
 CuraEqui.Debug = CuraEqui.Debug or {}
 
 local function _now()
-    return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    return (CuraEqui.Now and CuraEqui.Now()) or 0
 end
 
 local function _horse()
@@ -304,7 +304,7 @@ function CuraEqui.Debug.ShowHorseStatsTutorial()
 
     -- Preset + hunger/sated
     local preset           = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
-    local now              = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local now              = (CuraEqui.Now and CuraEqui.Now()) or 0
     local hval             = math.floor(tonumber(S.hunger or 0) or 0)
     local rem              = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 

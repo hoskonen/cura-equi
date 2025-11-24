@@ -6,7 +6,7 @@ local UI                 = CuraEqui.UI
 -- ── dedupe (avoid spam) ─────────────────────────────────────────────────────
 local _lastText, _lastAt = nil, 0
 local function _dedupe(text)
-    local nowMs = ((CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()) * 1000
+    local nowMs = ((CuraEqui.Now and CuraEqui.Now()) or 0) * 1000
     if text == _lastText and (nowMs - _lastAt) < 800 then return true end
     _lastText, _lastAt = text, nowMs
     return false

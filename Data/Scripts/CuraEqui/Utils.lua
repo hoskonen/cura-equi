@@ -11,15 +11,15 @@ local M = CuraEqui.Utils -- local alias for this file only
 -- Time
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- One gameplay clock for everyone
+-- One gameplay clock for everyone (pause-aware, no os.clock fallback)
 CuraEqui = CuraEqui or {}
 CuraEqui.Now = CuraEqui.Now or function()
-    if GetCurrTime then return GetCurrTime() end
-    if System and System.GetCurrTime then return System.GetCurrTime() end
-    if Calendar and Calendar.GetGameTime then return Calendar.GetGameTime() end
-    return (Script and Script.GetTime and Script.GetTime()) or os.clock()
+    if System and System.GetCurrTime then
+        return System.GetCurrTime()
+    end
+    -- Ultra-rare fallback: still use something if engine clock missing
+    return 0
 end
-
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Player/entity helpers
@@ -95,7 +95,7 @@ end
 do
     local _next = {}
     function M.throttle(key, intervalSec)
-        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now = (CuraEqui.Now and CuraEqui.Now()) or 0
         local t   = tonumber(intervalSec or 1) or 1
         local nxt = _next[key] or 0
         if now >= nxt then
@@ -109,10 +109,16 @@ end
 function M.hunger_label(hungerPct, satedUntil)
     local HUD   = CuraEqui.Config and CuraEqui.Config.HUD or {}
     local th    = HUD.thresholds or { minor = 20, moderate = 50, critical = 80 }
-    local names = HUD.hungerNames or { ok = "OK", minor = "Mild", moderate = "Hungry", critical = "Starving", sated =
-    "Sated" }
+    local names = HUD.hungerNames or {
+        ok = "OK",
+        minor = "Mild",
+        moderate = "Hungry",
+        critical = "Starving",
+        sated =
+        "Sated"
+    }
 
-    local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+    local now   = (CuraEqui.Now and CuraEqui.Now()) or 0
     local rem   = math.max(0, (tonumber(satedUntil or 0) or 0) - now)
     if rem > 0 then return names.sated, "sated" end
 

@@ -31,7 +31,7 @@ CuraEqui.Config = {
         persistTrace = true,     -- log saving
         tickTrace = true,
         buffTraceVerbose = true, -- false = log only when buff changes
-        buffTraceTick = false,
+        buffTraceTick = true,
         skipTrace = true,
         skipTraceVerbose = true,
         staminaSnapshot = true, -- capture a reference staminaMax (debug only)

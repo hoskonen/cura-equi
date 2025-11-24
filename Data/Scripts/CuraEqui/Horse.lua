@@ -1,5 +1,4 @@
 -- Scripts/CuraEqui/Horse.lua
-local QH = function(fmt, ...) CuraEqui.Log("Horse", fmt, ...) end
 CuraEqui.Horse = CuraEqui.Horse or { playerHorseId = nil }
 CuraEqui.HorseState = CuraEqui.HorseState or {}
 CuraEqui.HorseCfg = CuraEqui.HorseCfg or
@@ -10,6 +9,16 @@ local function FeedLog(fmt, ...)
     local D = CuraEqui.Config and CuraEqui.Config.Debug
     if not (D and D.feedTrace) then return end
     CuraEqui.Log("Feed", fmt, ...)
+end
+
+-- Logging helper for horse-related traces
+local function QH(fmt, ...)
+    local D = CuraEqui.Config and CuraEqui.Config.Debug
+    -- while debugging, you probably want this always on:
+    -- if not (D and D.horseTrace) then return end
+    if D and D.horseTrace then
+        CuraEqui.Log("Horse", fmt, ...)
+    end
 end
 
 local function _log_feed_cap(S, needPoints, used, usedEff, overshoot, consumedUnits, selectedUnits, addSec, bucketSec)
@@ -180,7 +189,7 @@ local function _calc_need_points(S, mode)
 
     if mode == "sated" then
         local C          = _sated_cfg() -- {minSec, maxSec, perPt, capPts, alsoHun}
-        local now        = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now        = (CuraEqui.Now and CuraEqui.Now()) or 0
         local remS       = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
 
         -- points needed to reach the minimum sated target (minSec)
@@ -279,7 +288,7 @@ local function _apply_feed(S, mode, used)
     local newH    = beforeH
     if mode == "sated" then
         local C     = _sated_cfg()
-        local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now   = (CuraEqui.Now and CuraEqui.Now()) or 0
         local add   = used * C.perPt
         local base  = math.max(now, tonumber(S.satedUntil or 0) or 0)
         local capA  = now + C.maxSec
@@ -315,7 +324,7 @@ local function _emit_feed_toasts(removePlan, used, mode, S)
     end
     local msg
     if mode == "sated" then
-        local now  = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now  = (CuraEqui.Now and CuraEqui.Now()) or 0
         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         msg        = string.format("Fed %d type(s) (-%d) → Sated %.0fs", #parts, used, remS)
     else
@@ -416,22 +425,6 @@ function CuraEqui.Horse.Resolve()
     return nil
 end
 
--- Logs what the various helpers return at this moment (WUID vs id vs nil)
-do
-    local H = _G.Horse
-    if H and type(H.OnMount) == "function" and not H.__curaequi_mount then
-        local base = H.OnMount
-        function H:OnMount(user, ...)
-            local r = base(self, user, ...); if player and user and user.id == player.id then
-                CuraEqui.Horse.playerHorseId = self.id; QH("OnMount → %s", tostring(self.id))
-            end; return r
-        end
-
-        H.__curaequi_mount = true
-    end
-end
-Script.SetTimer(1000, function() CuraEqui.Horse.Resolve() end)
-
 function CuraEqui.HorseStateGet(horse)
     if not (horse and horse.id) then return nil end
     local S = CuraEqui.HorseState[horse.id]
@@ -512,7 +505,7 @@ function Horse:OnInventoryClosed()
         local thrSec = tonumber((H.satedBlockIfRemainingSec ~= nil) and H.satedBlockIfRemainingSec or
             F.satedBlockIfRemainingSec or 0) or 0
         if hard and thrSec > 0 then
-            local now  = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+            local now  = (CuraEqui.Now and CuraEqui.Now()) or 0
             local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
             if remS >= thrSec then
                 local pickedAny = false
@@ -689,7 +682,7 @@ function Horse:OnInventoryClosed()
     -- Now apply sated seconds using the composition-aware addSec we computed
     do
         local C     = _sated_cfg()
-        local now   = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now   = (CuraEqui.Now and CuraEqui.Now()) or 0
         local base  = math.max(now, tonumber(S.satedUntil or 0) or 0)
         local capA  = now + (C.maxSec or 0)
         local next  = math.min(base + (addSec or 0), capA)
@@ -702,7 +695,7 @@ function Horse:OnInventoryClosed()
     -- Round 'rem' up to the next visible bucket (from Buffs.SATED_TIERS) and clamp internal sated
     -- Why? Because we are using fixed durations from the buff.xml so we clamp to the nearest buff
     do
-        local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+        local now = (CuraEqui.Now and CuraEqui.Now()) or 0
         local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
         local BL  = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
 
@@ -755,7 +748,7 @@ function Horse:OnInventoryClosed()
                 appliedPts, usedPts, overshoot,
                 beforeH, math.floor(tonumber(S.hunger or 0) or 0),
                 math.max(0,
-                    ((tonumber(S.satedUntil or 0) or 0) - ((CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock())))
+                    ((tonumber(S.satedUntil or 0) or 0) - ((CuraEqui.Now and CuraEqui.Now()) or 0)))
             )
         )
     end
@@ -765,7 +758,7 @@ function Horse:OnInventoryClosed()
         if CuraEqui.Persist and CuraEqui.Persist.Save then
             CuraEqui.Persist.Save(S.hunger, S.satedUntil)
             if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.persistTrace then
-                local now = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                local now = (CuraEqui.Now and CuraEqui.Now()) or 0
                 local h   = math.floor(tonumber(S.hunger or 0) or 0)
                 local rem = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
                 System.LogAlways(("[CuraEqui][Persist] Saved (feed) hunger=%d satedRemain=%.0f"):format(h, rem))
@@ -910,7 +903,7 @@ function Horse:OnFeedHorse(user)
                     local thrSec = tonumber((H.satedBlockIfRemainingSec ~= nil) and H.satedBlockIfRemainingSec or
                         F.satedBlockIfRemainingSec or 0) or 0
                     if hard and thrSec > 0 then
-                        local now  = (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()
+                        local now  = (CuraEqui.Now and CuraEqui.Now()) or 0
                         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
                         if remS >= thrSec then
                             if CuraEqui.UI and CuraEqui.UI.Toast then
@@ -956,6 +949,31 @@ function Horse:OnFeedHorse(user)
     -- Fallback: open inventory if picker API missing
     if not opened and UIAction and UIAction.CallFunction then
         pcall(UIAction.CallFunction, "ApseInventoryList", -1, "fc_activate")
+    end
+end
+
+function CuraEqui.OnPlayerMountedHorseInternal(h)
+    local ST          = CuraEqui.state or {}
+    CuraEqui.state    = ST
+
+    ST.hasHorse       = true
+    ST.lastHorseEnt   = h
+    ST.lastHorseId    = h and h.id or nil
+    ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ST.lastHorseFp
+    ST.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ST.lastHorseFpExt
+
+    System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → session hasHorse=true")
+        :format(tostring(h and h.id or "nil"),
+            (h and h.GetName and h.GetName()) and h:GetName() or "Horse"))
+
+    -- Kick the hunger watcher AFTER horse identity is fully known
+    local okSw, errSw = pcall(function()
+        if CuraEqui.StartWatching then
+            CuraEqui.StartWatching()
+        end
+    end)
+    if not okSw then
+        System.LogAlways("[CuraEqui][Horse][Mount] StartWatching ERROR: " .. tostring(errSw))
     end
 end
 
@@ -1018,5 +1036,45 @@ do
 
         H.__curaequi_feed_wrapped = true
         System.LogAlways("[CuraEqui][Feed] ✅ Wrapped Horse.GetActions")
+    end
+end
+
+-- Hook Horse.OnMount so we know when the player mounts an owned horse
+do
+    local H = _G.Horse
+    if H and type(H.OnMount) == "function" and not H.__curaequi_mount then
+        local base = H.OnMount
+
+        function H:OnMount(user, ...)
+            -- Always call original first
+            local r = base(self, user, ...)
+
+            -- Only care if the *player* mounted
+            if player and user and user.id == player.id then
+                -- cache id for Resolve()
+                CuraEqui.Horse.playerHorseId = self.id
+
+                -- debug log
+                QH("OnMount → %s", tostring(self.id))
+
+                -- Protect the internal handler with xpcall
+                local ok, err = xpcall(function()
+                    if CuraEqui and CuraEqui.OnPlayerMountedHorseInternal then
+                        CuraEqui.OnPlayerMountedHorseInternal(self)
+                    else
+                        System.LogAlways("[CuraEqui][Horse][OnMount] OnPlayerMountedHorseInternal is nil")
+                    end
+                end, debug and debug.traceback or nil)
+
+                if not ok then
+                    System.LogAlways("[CuraEqui][Horse][OnMount][ERROR] " .. tostring(err))
+                end
+            end
+
+            return r
+        end
+
+        H.__curaequi_mount = true
+        System.LogAlways("[CuraEqui][Horse] ✅ Wrapped Horse.OnMount")
     end
 end

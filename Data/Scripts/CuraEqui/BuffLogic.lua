@@ -42,7 +42,7 @@ M.SATED_TOMBSTONES    = {
 }
 
 -- pick tier name from hunger/sated (HUD thresholds)
-local function _now() return (CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock() end
+local function _now() return (CuraEqui.Now and CuraEqui.Now()) or 0 end
 local function _pickTierName(hunger, satedUntil)
     if (satedUntil or 0) > _now() then return "sated" end
     local hud      = CuraEqui.Config and CuraEqui.Config.HUD or {}
@@ -111,7 +111,7 @@ function M.SyncPlayerStatus(horseEnt, S)
     do
         local ST = CuraEqui.state or {}
         local untilTs = tonumber(ST.suppressStatusUntil or 0) or 0
-        if untilTs > ((CuraEqui and CuraEqui.Now and CuraEqui.Now()) or os.clock()) then
+        if untilTs > (CuraEqui.Now and CuraEqui.Now()) or 0 then
             if M._lastPlayerUuid then
                 CuraEqui.Effects.ClearPlayerStatus(); M._lastPlayerUuid = nil
             end
@@ -302,21 +302,34 @@ function CuraEqui.Buffs.PredictBucketSecAfterAdd(S, addSec)
 end
 
 function M.ClearSatedTimers()
-    local L = CuraEqui and CuraEqui.Config and CuraEqui.Config.Sated and CuraEqui.Config.Sated.TIERS
-    -- Fallback to module's tier list if you host it here:
-    L = L or M.SATED_TIERS
-    if not L then return end
+    local C = CuraEqui
+    if not C then return end
+
+    local L = (C.Config and C.Config.Sated and C.Config.Sated.TIERS) or M.SATED_TIERS or {}
+    local E = C.Effects
+
+    if not (E and E.PlayerRemove) then return end
+
+    local D = C.Config and C.Config.Debug or {}
+    local removed = 0
 
     for i = 1, #L do
         local uuid = L[i] and L[i].uuid
-        if uuid and CuraEqui.Effects and CuraEqui.Effects.PlayerRemove then
-            local ok = CuraEqui.Effects.PlayerRemove(uuid)
-            if (CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose) then
-                System.LogAlways(("[CuraEqui][Effects] player remove %s ok=%s"):format(tostring(uuid), tostring(ok)))
+        if uuid then
+            local ok = E.PlayerRemove(uuid)
+            removed = removed + 1
+            if D.buffTraceVerbose then
+                System.LogAlways(("[CuraEqui][Effects] ClearSatedTimers: remove %s ok=%s")
+                    :format(tostring(uuid), tostring(ok)))
             end
         end
     end
+
     M._lastSatedUuid = nil
+
+    if D.buffTraceVerbose then
+        System.LogAlways(("[CuraEqui][Effects] ClearSatedTimers: %d uuids processed"):format(removed))
+    end
 end
 
 -- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
@@ -338,6 +351,12 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
         if D and D.buffTraceVerbose then
             System.LogAlways("[CuraEqui][SatedSync] fenced (drop reentry)")
         end
+        return
+    end
+
+    if (not h) or (not CuraEqui.PlayerOwnsHorse(h)) or (not S) then
+        M.ClearSatedTimers()
+        M._lastSatedUuid = nil
         return
     end
 
@@ -473,4 +492,22 @@ function CuraEqui.Buffs.SweepPlayerSatedEffects(tag)
         for i = 1, #dead do pcall(CuraEqui.Effects.PlayerRemove, dead[i]) end
     end
     CuraEqui.Buffs._lastSatedUuid = nil
+end
+
+-- Core.lua
+function CuraEqui.PlayerOwnsHorse(h)
+    local ST = CuraEqui.state or {}
+
+    -- If this session never saw a player-mounted horse, we don't own anything
+    if not (ST.hasHorse and ST.lastHorseId) then
+        return false
+    end
+
+    -- No specific handle → just "does player own *some* horse?"
+    if not h then
+        return true
+    end
+
+    -- Compare against the last horse we recorded from OnMount
+    return h.id == ST.lastHorseId
 end
