@@ -203,15 +203,11 @@ function CuraEqui.StartProbing()
         local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
 
         if h then
-            local fp                      = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
-            local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
+            local fp  = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+            local gid = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
 
-            CuraEqui.state.hasHorse       = true
-            CuraEqui.state.lastHorseEnt   = h
-            CuraEqui.state.lastHorseFpExt = fp
-            CuraEqui.state.lastHorseId    = gid
-            CuraEqui.state.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
-            CuraEqui.state.lastHorseFp    = fp
+            -- Route identity through ownership scaffolding (no behavior change)
+            CuraEqui.SetOwnedHorse(h, { reason = "probe" })
 
             CuraEqui.Log("Horse",
                 "probe→ owned horse id=%s fp=%s name=%s",
@@ -219,30 +215,6 @@ function CuraEqui.StartProbing()
 
             return CuraEqui.StartWatching and CuraEqui.StartWatching()
         end
-
-        -- if h then
-        --     if ST.probeTimer then
-        --         Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
-        --     end
-        --     local gid                     = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
-        --     local fp                      = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
-
-        --     CuraEqui.state.hasHorse       = true
-        --     CuraEqui.state.lastHorseEnt   = h
-        --     CuraEqui.state.lastHorseFpExt = fp
-        --     CuraEqui.state.lastHorseId    = gid
-        --     CuraEqui.state.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
-        --     CuraEqui.state.lastHorseFp    = fp -- seed fingerprint
-
-        --     -- Gift once for this *fingerprint* in this session
-        --     -- if CuraEqui._GiftOncePerHorse then
-        --     --     pcall(CuraEqui._GiftOncePerHorse, h, fp, "horse_gain")
-        --     --     -- (fix the undefined var)
-        --     --     System.LogAlways(("[CuraEqui][HorseSwap] %s → %s"):format(tostring(CuraEqui.state.lastHorseFp or "∅"), fp))
-        --     -- end
-
-        --     return CuraEqui.StartWatching and CuraEqui.StartWatching()
-        -- end
 
         -- keep probing
         ST.probeTimer = Script.SetTimerForFunction(periodMs, "CuraEqui_HorseProbeTick")

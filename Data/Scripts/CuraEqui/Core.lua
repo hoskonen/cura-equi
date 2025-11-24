@@ -66,6 +66,46 @@ function CuraEqui.ResolveHorse()
     return h
 end
 
+---------------------------------------------------------------------------
+-- Ownership scaffolding (Step 3/4): centralize horse identity writes
+---------------------------------------------------------------------------
+function CuraEqui.SetOwnedHorse(h, opts)
+    CuraEqui.state = CuraEqui.state or {}
+    local ST       = CuraEqui.state
+    opts           = opts or {}
+
+    if h then
+        local gid         = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
+        local fp          = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
+        local fpExt       = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
+
+        ST.hasHorse       = true
+        ST.lastHorseEnt   = h
+        ST.lastHorseId    = gid
+        ST.lastHorseName  = (CuraEqui._HorseName and CuraEqui._HorseName(h)) or ""
+        ST.lastHorseFp    = fp
+        ST.lastHorseFpExt = fpExt
+
+        CuraEqui.Log("HorseId",
+            "SetOwnedHorse[%s]: id=%s fpExt=%s name=%s",
+            tostring(opts.reason or "?"),
+            tostring(gid),
+            tostring(fpExt),
+            tostring(ST.lastHorseName or "?"))
+    else
+        ST.hasHorse       = false
+        ST.lastHorseEnt   = nil
+        ST.lastHorseId    = nil
+        ST.lastHorseName  = nil
+        ST.lastHorseFp    = nil
+        ST.lastHorseFpExt = nil
+
+        CuraEqui.Log("HorseId",
+            "SetOwnedHorse[%s]: cleared identity",
+            tostring(opts.reason or "?"))
+    end
+end
+
 function CuraEqui._HorseGuid(ent)
     if not ent then return nil end
 
@@ -347,13 +387,9 @@ function CuraEqui.Bootstrap(reason)
     ST._giftedFor       = {}
     ST._giftedSessionId = (ST._giftedSessionId or 0) + 1
     ST.noHorseStrikes   = 0
-    ST.hasHorse         = false
-    ST.lastHorseEnt     = nil
-    ST.lastHorseId      = nil
-    ST.lastHorseName    = nil
-    ST.lastHorseFp      = nil
-    ST.lastHorseFpExt   = nil
     ST.justLoaded       = true
+
+    CuraEqui.SetOwnedHorse(nil, { reason = "load-reset" })
 
     -- 5) Force a clean buff recompute (icons/state) next time we sync
     if CuraEqui.Buffs then
@@ -966,16 +1002,14 @@ end
 
 -- Called when the player mounts any horse (hooked from Horse.OnMount)
 function CuraEqui.OnPlayerMountedHorse(horse)
-    local C         = CuraEqui
-    C.state         = C.state or {}
-    local ST        = C.state
+    local C  = CuraEqui
+    C.state  = C.state or {}
+    local ST = C.state
 
-    -- Mark session as having a horse
-    ST.hasHorse     = true
-    ST.lastHorseId  = (C._HorseGuid and C._HorseGuid(horse)) or ST.lastHorseId
-    ST.lastHorseEnt = horse
+    -- Route identity through ownership scaffolding (no behavior change)
+    CuraEqui.SetOwnedHorse(horse, { reason = "mount" })
 
-    local name      = (horse and horse.GetName and horse:GetName()) or "?"
+    local name = (horse and horse.GetName and horse:GetName()) or "?"
     System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → session hasHorse=true")
         :format(tostring(horse and horse.id or "nil"), tostring(name)))
 
