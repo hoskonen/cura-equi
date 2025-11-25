@@ -960,6 +960,24 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     -- Route identity through central ownership scaffolding
     if CuraEqui.SetOwnedHorse then
         CuraEqui.SetOwnedHorse(h, { reason = "mount-internal" })
+
+        -- Optional: debug whether this horse is "ownable" per whitelist
+        local nm      = CuraEqui._HorseName and CuraEqui._HorseName(h) or nil
+        local ownable = true
+
+        if nm and CuraEqui.HorseOwnership and CuraEqui.HorseOwnership.IsHorseStormNameOwnable then
+            ownable = CuraEqui.HorseOwnership.IsHorseStormNameOwnable(nm)
+        end
+
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D.horseIdentityTrace then
+            System.LogAlways(("[CuraEqui][OWNDBG] name=%s ownable=%s"):
+            format(tostring(nm), tostring(ownable)))
+        end
+
+        if CuraEqui.DebugLogHorseIdentity then
+            CuraEqui.DebugLogHorseIdentity(h, { tag = "mount-internal" })
+        end
     else
         -- Legacy fallback (should never be used in this branch, but safe)
         ST.hasHorse       = true
@@ -977,8 +995,10 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     ST.hasMountedOwnedHorseOnce = true
 
     System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → session hasHorse=true")
-        :format(tostring(h and h.id or "nil"),
-            (h and h.GetName and h.GetName()) and h:GetName() or "Horse"))
+        :format(
+            tostring(h and h.id or "nil"),
+            (h and h.GetName and h.GetName()) and h:GetName() or "Horse"
+        ))
 
     -- Kick the hunger watcher AFTER horse identity is fully known
     local okSw, errSw = pcall(function()

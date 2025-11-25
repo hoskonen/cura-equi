@@ -365,23 +365,7 @@ function CuraEqui._HungerTickBody()
     local st       = CuraEqui.state
     local now      = (CuraEqui.Now and CuraEqui.Now()) or 0
 
-
-    -- TEMPORARY DEBUG: compare time APIs every tick
-    do
-        local a = GetCurrTime and GetCurrTime() or -1
-        local b = System and System.GetCurrTime and System.GetCurrTime() or -1
-        local c = (CuraEqui.Now and CuraEqui.Now()) or 0
-        local d = Script and Script.GetTime and Script.GetTime() or -1
-        local e = os.clock()
-
-        System.LogAlways(string.format(
-            "[CuraEqui][TimeDiag] GetCurrTime=%.2f Sys=%.2f Cal=%.2f Script=%.2f osc=%.2f",
-            a, b, c, d, e
-        ))
-    end
-
-
-    local h = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    local h        = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
 
     if not h then
         -- log at most once every 5s while horseless
