@@ -353,9 +353,10 @@ function CuraEqui.Hunger_CatchUpAfterSleep()
 
     -- 8) Clear log
     local remAfter = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-    System.LogAlways(("[CuraEqui][CatchUp] minutes=%.1f sated=%d→%d hunger=%d→%d (Δ=%.2f)")
-        :format(minutes, remBefore, remAfter, math.floor(beforeH), math.floor(afterH), delta))
-
+    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.skipTrace then
+        System.LogAlways(("[CuraEqui][CatchUp] minutes=%.1f sated=%d→%d hunger=%d→%d (Δ=%.2f)")
+            :format(minutes, remBefore, remAfter, math.floor(beforeH), math.floor(afterH), delta))
+    end
     return minutes, delta, beforeH, afterH
 end
 
@@ -370,7 +371,9 @@ function CuraEqui._HungerTickBody()
     if not h then
         -- log at most once every 5s while horseless
         if not st._noHorseLogAt or (now - st._noHorseLogAt) > 5.0 then
-            System.LogAlways("[CuraEqui][Horse] Player does not have a horse — skipping hunger tick.")
+            if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.ownershipTrace then
+                System.LogAlways("[CuraEqui][Horse] Player does not have a horse — skipping hunger tick.")
+            end
             st._noHorseLogAt = now
         end
         return
@@ -412,7 +415,9 @@ function CuraEqui._HungerTickBody()
                 if enableFallback and minutes > 2.0 and not (CuraEqui.state and CuraEqui.state._skipSessionOpen) then
                     -- UI events didn’t arrive: run catch-up using prev as start
                     CuraEqui.state._sleepStartHour = CuraEqui.state._sleepStartHour or prev
-                    System.LogAlways(("[CuraEqui][SkipTime][fallback] jump %.1f min → catch-up"):format(minutes))
+                    if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.skipTrace then
+                        System.LogAlways(("[CuraEqui][SkipTime][fallback] jump %.1f min → catch-up"):format(minutes))
+                    end
                     if CuraEqui.Hunger_CatchUpAfterSleep then pcall(CuraEqui.Hunger_CatchUpAfterSleep) end
                     CuraEqui.state._sleepStartHour = nil
                 end
@@ -425,7 +430,9 @@ function CuraEqui._HungerTickBody()
         if st and st._skipSessionOpen and st._sleepNeedSeed and st._prevHour then
             st._sleepStartHour = st._prevHour
             st._sleepNeedSeed  = false
-            System.LogAlways(("[CuraEqui][SkipTime] OPEN (late) → mark hour=%.2f"):format(st._sleepStartHour))
+            if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.skipTrace then
+                System.LogAlways(("[CuraEqui][SkipTime] OPEN (late) → mark hour=%.2f"):format(st._sleepStartHour))
+            end
         end
     end
 
@@ -810,6 +817,8 @@ end
 
 -- ---------- START/STOP ----------
 -- ---------- START/STOP ----------
+-- file: Scripts/CuraEqui/Hunger.lua
+
 function CuraEqui.StartWatching()
     local C  = CuraEqui
     C.state  = C.state or {}
@@ -830,20 +839,13 @@ function CuraEqui.StartWatching()
         return
     end
 
-    -- Only if this horse is truly owned
-    if CuraEqui.PlayerOwnsHorse and not CuraEqui.PlayerOwnsHorse(h) then
-        local D = C.Config and C.Config.Debug
-        if D and D.hungerTrace then
-            System.LogAlways("[CuraEqui][Hunger] StartWatching blocked - horse not owned")
-        end
-        return
-    end
-
-    -- Only after mounting the owned horse at least once this session
+    -- Only after mounting the *owned* horse at least once this session.
+    -- (Ownership is decided elsewhere; this flag is set in OnPlayerMountedHorseInternal
+    --  only if PlayerOwnsHorse(h) is true.)
     if not ST.hasMountedOwnedHorseOnce then
         local D = C.Config and C.Config.Debug
         if D and D.hungerTrace then
-            System.LogAlways("[CuraEqui][Hunger] StartWatching blocked - owned horse not mounted yet this session")
+            System.LogAlways("[CuraEqui][Hunger] StartWatching skipped - owned horse not mounted yet this session")
         end
         return
     end

@@ -956,57 +956,74 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     -- Always have a state table
     CuraEqui.state = CuraEqui.state or {}
     local ST       = CuraEqui.state
+    local C        = CuraEqui
 
-    -- Route identity through central ownership scaffolding
-    if CuraEqui.SetOwnedHorse then
-        CuraEqui.SetOwnedHorse(h, { reason = "mount-internal" })
+    ----------------------------------------------------------------
+    -- 1) Route identity through central ownership scaffolding
+    ----------------------------------------------------------------
+    if C.SetOwnedHorse then
+        C.SetOwnedHorse(h, { reason = "mount-internal" })
 
         -- Optional: debug whether this horse is "ownable" per whitelist
-        local nm      = CuraEqui._HorseName and CuraEqui._HorseName(h) or nil
+        local nm      = C._HorseName and C._HorseName(h) or nil
         local ownable = true
 
-        if nm and CuraEqui.HorseOwnership and CuraEqui.HorseOwnership.IsHorseStormNameOwnable then
-            ownable = CuraEqui.HorseOwnership.IsHorseStormNameOwnable(nm)
+        if nm and C.HorseOwnership and C.HorseOwnership.IsHorseStormNameOwnable then
+            ownable = C.HorseOwnership.IsHorseStormNameOwnable(nm)
         end
 
-        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        local D = C.Config and C.Config.Debug or {}
         if D.horseIdentityTrace then
             System.LogAlways(("[CuraEqui][OWNDBG] name=%s ownable=%s"):
             format(tostring(nm), tostring(ownable)))
         end
 
-        if CuraEqui.DebugLogHorseIdentity then
-            CuraEqui.DebugLogHorseIdentity(h, { tag = "mount-internal" })
+        if C.DebugLogHorseIdentity then
+            C.DebugLogHorseIdentity(h, { tag = "mount-internal" })
         end
     else
         -- Legacy fallback (should never be used in this branch, but safe)
         ST.hasHorse       = true
         ST.lastHorseEnt   = h
         ST.lastHorseId    =
-            (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h))
+            (C._HorseGuid and C._HorseGuid(h))
             or (h and h.id)
             or ST.lastHorseId
 
-        ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ST.lastHorseFp
-        ST.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ST.lastHorseFpExt
+        ST.lastHorseFp    = (C._HorseFingerprint and C._HorseFingerprint(h)) or ST.lastHorseFp
+        ST.lastHorseFpExt = (C._HorseFpExt and C._HorseFpExt(h)) or ST.lastHorseFpExt
     end
 
-    -- Mark that in THIS session we have mounted our owned horse at least once
-    ST.hasMountedOwnedHorseOnce = true
+    ----------------------------------------------------------------
+    -- 2) Decide if THIS mount is actually the owned horse
+    ----------------------------------------------------------------
+    local isOwned = false
+    if C.PlayerOwnsHorse then
+        local ok, owns = pcall(C.PlayerOwnsHorse, h)
+        isOwned = ok and owns == true
+    end
+    if isOwned then
+        ST.hasMountedOwnedHorseOnce = true
+    end
 
-    System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → session hasHorse=true")
-        :format(
-            tostring(h and h.id or "nil"),
-            (h and h.GetName and h.GetName()) and h:GetName() or "Horse"
-        ))
+    local D = C.Config and C.Config.Debug or {}
+    if D.horseIdentityTrace then
+        System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → owned=%s")
+            :format(
+                tostring(h and h.id or "nil"),
+                (h and h.GetName and h.GetName()) and h:GetName() or "Horse",
+                tostring(isOwned)
+            ))
+    end
 
-    -- Kick the hunger watcher AFTER horse identity is fully known
     local okSw, errSw = pcall(function()
-        if CuraEqui.StartWatching then
-            CuraEqui.StartWatching()
+        if isOwned and C.StartWatching then
+            C.StartWatching()
+        elseif D.hungerTrace and not isOwned then
+            System.LogAlways("[CuraEqui][Hunger] StartWatching skipped - mounted horse not owned")
         end
     end)
-    if not okSw then
+    if not okSw and D.hungerTrace then
         System.LogAlways("[CuraEqui][Horse][Mount] StartWatching ERROR: " .. tostring(errSw))
     end
 end
@@ -1029,10 +1046,28 @@ do
             end
 
             -- only allow feeding your own horse unless explicitly enabled
-            local allowAny = CuraEqui.Config and CuraEqui.Config.Feeding and CuraEqui.Config.Feeding.allowAnyHorse
+            local allowAny = CuraEqui.Config
+                and CuraEqui.Config.Feeding
+                and CuraEqui.Config.Feeding.allowAnyHorse
+
             if not allowAny then
-                local mine = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
-                if not (mine and self and mine.id == self.id) then
+                local isOwned = false
+
+                -- Preferred: use centralized ownership helper
+                if CuraEqui.PlayerOwnsHorse then
+                    local ok, owns = pcall(CuraEqui.PlayerOwnsHorse, self)
+                    isOwned = ok and owns == true
+                else
+                    -- Fallback to legacy Resolve() if helper is missing
+                    local mine = CuraEqui.Horse
+                        and CuraEqui.Horse.Resolve
+                        and CuraEqui.Horse.Resolve() or nil
+
+                    isOwned = (mine and self and mine.id == self.id) or false
+                end
+
+                -- Block feeding if this horse is not considered owned
+                if not isOwned then
                     return actions
                 end
             end

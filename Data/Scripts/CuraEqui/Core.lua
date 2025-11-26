@@ -535,6 +535,14 @@ function CuraEqui.Initialize(fullInit)
         return -- nothing else in Initialize should run in horse-less saves
     end
 
+    ----------------------------------------------------------------
+    -- NEW: now that `h` is final and confirmed owned → allow the
+    -- "mounted on load" logic to arm ownership + hunger session.
+    ----------------------------------------------------------------
+    if CuraEqui.HorseOwnership and CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad then
+        CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
+    end
+
     -- 1) If we have a horse, hydrate ONLY hunger from DB.
     --    Sated is *never* re-applied from DB to avoid cross-save leakage.
     do

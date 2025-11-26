@@ -34,6 +34,8 @@ CuraEqui.Config = {
         buffTraceTick = true,
         skipTrace = true,
         skipTraceVerbose = true,
+        ownershipTrace = true,
+        horseIdentityTrace = true,
         staminaSnapshot = true, -- capture a reference staminaMax (debug only)
         horseDerived = true,
     },
@@ -150,6 +152,7 @@ CuraEqui.Config = {
         toastOnDone            = true,
         toastLane              = "notification", -- "notification" (right) | "tutorial" | "infotext"
         toastSec               = 2.0,
+        allowAnyHorse          = false
     },
     Drinking = {
         sources = {
