@@ -32,76 +32,106 @@ function CuraEqui.SetOwnedHorse(h, opts)
     local reason   = tostring(opts.reason or "?")
 
     ---------------------------------------------------------
-    -- CLEAR CASE: nil horse → forget identity
+    -- 1) CLEAR CASE: nil horse → forget identity and exit
     ---------------------------------------------------------
     if not h then
+        local oldEnt                = ST.lastHorseEnt
+
         ST.hasHorse                 = false
         ST.lastHorseEnt             = nil
         ST.lastHorseId              = nil
         ST.lastHorseName            = nil
         ST.lastHorseFp              = nil
         ST.lastHorseFpExt           = nil
-
         ST.currentOwnedHorseId      = nil
         ST.currentOwnedHorseGuid    = nil
         ST.hasMountedOwnedHorseOnce = false
+        ST._hungerLoadedFromDB      = nil
 
-        if D.ownershipTrace then
-            C.Log("HorseId",
-                "SetOwnedHorse[%s]: id=%s fpExt=%s name=%s",
-                tostring(opts.reason or "?"),
-                tostring(gid),
-                tostring(fpExt),
-                tostring(ST.lastHorseName or "?"))
+        -- Also clear any old debuffs on the previous horse entity
+        if oldEnt and C.Effects and C.Effects.ClearHorseDebuffs then
+            pcall(C.Effects.ClearHorseDebuffs, oldEnt) -- pcall: never hard-crash if Effects is missing  <https://www.lua.org/manual/5.1/manual.html#pdf-pcall>
         end
 
+        C.Log("HorseId", "SetOwnedHorse[%s]: cleared identity", reason)
         return
     end
 
     ---------------------------------------------------------
-    -- OPTIONAL DEBUG: name snapshot
+    -- 2) OPTIONAL DEBUG: name snapshot BEFORE whitelist
     ---------------------------------------------------------
-    do
-        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-        if D.horseIdentityTrace then
-            System.LogAlways(("[CuraEqui][OWNDBG] _HorseName(h)=%s lastHorseName=%s"):
-            format(
-                tostring(CuraEqui._HorseName and CuraEqui._HorseName(h) or "nil"),
-                tostring(ST.lastHorseName)
-            ))
-        end
+    local nm = C._HorseName and C._HorseName(h) or nil
+    if D.horseIdentityTrace then
+        System.LogAlways(("[CuraEqui][OWNDBG] _HorseName(h)=%s lastHorseName=%s"):
+        format(
+            tostring(nm or "nil"),
+            tostring(ST.lastHorseName)
+        ))
     end
 
     ---------------------------------------------------------
-    -- WHITELIST CHECK (use current horse name)
+    -- 3) WHITELIST CHECK (use current horse name)
     ---------------------------------------------------------
-    local nm = CuraEqui._HorseName and CuraEqui._HorseName(h) or nil
     if nm and HorseOwnership.IsHorseStormNameOwnable then
         local ownable = HorseOwnership.IsHorseStormNameOwnable(nm)
 
-        -- If this horse is NOT ownable AND it's not the already-owned horse,
-        -- THEN block. Otherwise allow.
-        local ST = CuraEqui.state or {}
-        local alreadyOwned = false
-        if ST.currentOwnedHorseId and h.id == ST.currentOwnedHorseId then
-            alreadyOwned = true
-        end
+        -- If this horse is NOT ownable, never treat it as the player's mount.
+        if not ownable then
+            -- FULL REJECTION: clear identity
+            ST.hasHorse                 = false
+            ST.lastHorseEnt             = nil
+            ST.lastHorseId              = nil
+            ST.lastHorseName            = nil
+            ST.lastHorseFp              = nil
+            ST.lastHorseFpExt           = nil
+            ST.currentOwnedHorseId      = nil
+            ST.currentOwnedHorseGuid    = nil
+            ST.hasMountedOwnedHorseOnce = false
+            ST._hungerLoadedFromDB      = nil
 
-        if (not ownable) and (not alreadyOwned) then
-            CuraEqui.Log("HorseId",
+            -- Also wipe any existing CuraEqui debuffs from this horse
+            if C.Effects and C.Effects.ClearHorseDebuffs then
+                pcall(C.Effects.ClearHorseDebuffs, h)
+            end
+
+            C.Log("HorseId",
                 "SetOwnedHorse[%s]: rejected non-ownable horse (%s)",
-                reason,
-                tostring(nm))
+                reason, tostring(nm))
+
             return
         end
     end
 
     ---------------------------------------------------------
-    -- ACCEPT OWNABLE HORSE (original logic)
+    -- 4) LAZY HUNGER HYDRATION – ONLY ONCE PER SESSION
+    --    (only for accepted / ownable horses)
     ---------------------------------------------------------
-    local gid                = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or tostring(h.id)
-    local fp                 = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
-    local fpExt              = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
+    if not ST._hungerLoadedFromDB
+        and C.Persist and C.Persist.Load
+        and C.HorseStateGet then
+        local S = C.HorseStateGet(h)
+        if S then
+            local ph, ps = C.Persist.Load()
+            if ph ~= nil then
+                -- clamp into 0..100 just in case
+                S.hunger = math.max(0, math.min(100, ph))
+            end
+
+            ST._hungerLoadedFromDB = true
+
+            C.Log("Persist",
+                "Hydrated hunger on SetOwnedHorse[%s]: hunger=%s (sated ignored)",
+                reason,
+                tostring(ph))
+        end
+    end
+
+    ---------------------------------------------------------
+    -- 5) ACCEPT OWNABLE HORSE (original snapshot logic)
+    ---------------------------------------------------------
+    local gid                = (C._HorseGuid and C._HorseGuid(h)) or tostring(h.id)
+    local fp                 = (C._HorseFingerprint and C._HorseFingerprint(h)) or ""
+    local fpExt              = (C._HorseFpExt and C._HorseFpExt(h)) or ""
 
     ST.hasHorse              = true
     ST.lastHorseEnt          = h
@@ -167,47 +197,67 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
     C.state  = C.state or {}
     local ST = C.state
 
-    -- If we already have an owned horse + have mounted it at least once,
-    -- no need to do anything.
-    if ST.currentOwnedHorseId and ST.hasMountedOwnedHorseOnce then
+    ----------------------------------------------------------------
+    -- 1) Only run once, and only directly after a load.
+    ----------------------------------------------------------------
+    if not ST.justLoaded then
         return
     end
 
-    -- Best-effort: ask the game which horse we should treat as "current"
+    -- If we already had a proper mount this session, nothing to do.
+    if ST.hasMountedOwnedHorseOnce then
+        return
+    end
+
+    ----------------------------------------------------------------
+    -- 2) Resolve the current horse (whatever the game thinks is active)
+    ----------------------------------------------------------------
     local h = C.ResolveHorse and C.ResolveHorse() or nil
     if not h then
         return
     end
 
-    -- Derive storm name for whitelist check
+    ----------------------------------------------------------------
+    -- 3) Whitelist check: only auto-own horses marked as ownable
+    ----------------------------------------------------------------
     local nm = C._HorseName and C._HorseName(h) or nil
     if not nm then
         return
     end
 
-    -- Only auto-own horses that the whitelist says are ownable
     local ownable = false
-    if CuraEqui.HorseOwnership.IsHorseStormNameOwnable then
-        ownable = CuraEqui.HorseOwnership.IsHorseStormNameOwnable(nm)
+    if C.HorseOwnership and C.HorseOwnership.IsHorseStormNameOwnable then
+        ownable = C.HorseOwnership.IsHorseStormNameOwnable(nm)
     end
     if not ownable then
         -- e.g. dummyWanderer_horse_1, tsem_horse_7 → ignore
         return
     end
 
-    -- At this point: we loaded into a save where ResolveHorse()
-    -- points to an ownable template (e.g. tsem_sedivka).
-    -- Treat this as the owned horse for this session.
-    C.SetOwnedHorse(h, { reason = "load-mounted" })
+    ----------------------------------------------------------------
+    -- 4) Treat this as the owned horse + mark "mounted once".
+    ----------------------------------------------------------------
+    if C.SetOwnedHorse then
+        C.SetOwnedHorse(h, { reason = "load-mounted" })
+    end
 
-    -- Mark "mounted at least once" so hunger logic is allowed to run
-    ST.hasMountedOwnedHorseOnce = true
+    ST.hasHorse                 = true
+    ST.lastHorseEnt             = h
+    ST.lastHorseId              = (C._HorseGuid and C._HorseGuid(h)) or h.id
+    ST.hasMountedOwnedHorseOnce = true -- 🔑 unblocks StartWatching / HungerTick
 
-    -- Arm hunger if not already running; StartWatching is idempotent
+    ----------------------------------------------------------------
+    -- 5) Arm hunger watcher if not already running.
+    ----------------------------------------------------------------
     if C.StartWatching then
         local ok, err = pcall(C.StartWatching)
         if not ok then
             C.Log("Hunger", "TryInitOwnedHorseOnLoad: StartWatching failed: %s", tostring(err))
         end
     end
+
+    ST.justLoaded = false -- don’t run again this session
+    local prettyName = (h.GetName and h:GetName()) or "Horse"
+    System.LogAlways(("[CuraEqui][HorseOwn] mounted-on-load init for id=%s name=%s")
+        :format(tostring(h.id), tostring(prettyName)))
 end

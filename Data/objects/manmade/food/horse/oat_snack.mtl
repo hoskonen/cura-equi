@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<Material MtlFlags="524544" vertModifType="0">
+  <SubMaterials>
+    <Material CustomSortPriority="1" Diffuse="1,1,1" GenMask="20000010002000" LayerAct="1" MatTemplate="" MtlFlags="524416" Name="sack_items" Opacity="1" Shader="Illum" Shininess="255" Specular="0.031896032,0.031896032,0.031896032" StringGenMask="%DETAIL_MAPPING%NORMAL_MAP%SUBSURFACE_SCATTERING" SurfaceType="mat_fabric_items" vertModifType="0">
+      <Textures>
+        <Texture File="objects/manmade/common_furniture/sacks/sack_items/sack_items_diff.tif" Map="Diffuse" />
+        <Texture File="objects/manmade/common_furniture/sacks/sack_items/sack_items_ddna.tif" Map="Bumpmap" />
+        <Texture File="engineassets/textures/detailatlas/04_fabric_02_detail_dt.tif" Map="Detail">
+          <TexMod TexMod_bTexGenProjected="0" TexMod_RotateType="0" TexMod_TexGenType="0" TileU="3" TileV="3" />
+        </Texture>
+      </Textures>
+      <PublicParams DetailBumpScale="1.4" DetailDiffuseScale="1" DetailGlossScale="0.2" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>
+	<Material CustomSortPriority="3" Diffuse="0.86315721,0.838799,0.838799" GenMask="20000010000200" LayerAct="1" MatTemplate="" MtlFlags="524416" Name="sack_flour" Opacity="1" Shader="Illum" Shininess="255" Specular="0.029556835,0.029556835,0.029556835" StringGenMask="%DETAIL_ATLAS%NORMAL_MAP%SUBSURFACE_SCATTERING" SurfaceType="" vertModifType="0">
+      <Textures>
+        <Texture File="./oat_snack_diff.tif" Map="Diffuse" />
+        <Texture File="objects/manmade/common_furniture/sacks/sack_pig_feed_ddna.tif" Map="Bumpmap" />
+        <Texture File="objects/manmade/common_furniture/sacks/sack_flour_dt.tif" Map="Detail">
+          <TexMod TexMod_bTexGenProjected="0" TexMod_RotateType="0" TexMod_TexGenType="0" TileU="3" TileV="3" />
+        </Texture>
+      </Textures>
+      <PublicParams DetailBumpScale="3.01" DetailDiffuseScale="1" DetailFadeoutDistance="0" DetailGlossScale="0.5" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>
+    <Material Diffuse="0.39215699,0.39215699,0.39215699" GenMask="0" LayerAct="1" MatTemplate="" MtlFlags="525440" Name="proxy" Opacity="1" Shader="Nodraw" Shininess="50" Specular="0.196078,0.196078,0.196078" StringGenMask="" SurfaceType="mat_fabric_items" vertModifType="0">
+      <Textures />
+    </Material>
+  </SubMaterials>
+  <PublicParams EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+</Material>

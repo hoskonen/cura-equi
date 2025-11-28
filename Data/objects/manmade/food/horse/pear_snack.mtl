@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<Material MtlFlags="524544" vertModifType="0">
+  <SubMaterials>
+    <Material CustomSortPriority="3" Diffuse="1,1,1" GenMask="20002010002080" LayerAct="1" MatTemplate="" MtlFlags="524416" Name="sack" Opacity="1" Shader="Illum" Shininess="255" Specular="0.029556835,0.029556835,0.029556835" StringGenMask="%COLORIZING%DETAIL_MAPPING%NORMAL_MAP%SUBSURFACE_SCATTERING%VERTCOLORS" SurfaceType="" vertModifType="0">
+      <Textures>
+        <Texture File="objects/manmade/food/food/sacks/sack_vegetables_diff.tif" Map="Diffuse" />
+        <Texture File="objects/manmade/common_furniture/sacks/sack_flour_ddna.tif" Map="Bumpmap" />
+        <Texture File="objects/manmade/food/food/sacks/sack_height_dt.tif" Map="Detail" />
+      </Textures>
+      <PublicParams ColorizingBrightness="0.60000002" ColorizingHue="0" ColorizingSaturation="1" DetailBumpScale="0.98000002" DetailDiffuseScale="1" DetailFadeoutDistance="0" DetailGlossScale="0.396" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>
+<Material Diffuse="1,1,1" GenMask="20002010002090" LayerAct="1" MatTemplate="" MtlFlags="524416" Name="pears" Opacity="1" Shader="Illum" Shininess="98" Specular="0.029556835,0.029556835,0.029556835" StringGenMask="%BLENDLAYER%COLORIZING%DETAIL_MAPPING%NORMAL_MAP%SUBSURFACE_SCATTERING%VERTCOLORS" SurfaceType="" vertModifType="0">
+      <Textures>
+        <Texture File="objects/manmade/food/food/pear_diff.tif" Map="Diffuse" />
+        <Texture File="objects/manmade/food/food/pear_ddna.tif" Map="Bumpmap" />
+        <Texture File="engineassets/textures/detailatlas/26_metal_brushed_detail_dt.tif" Map="Detail">
+          <TexMod TexMod_bTexGenProjected="0" TexMod_RotateType="0" TexMod_TexGenType="0" TileU="2" TileV="2" />
+        </Texture>
+      </Textures>
+      <PublicParams BlendFactor="-4.5100002" BlendFalloff="1.3" BlendLayer2Specular="0.039500002" BlendLayer2Tiling="1" BlendMaskTiling="1" ColorizingBrightness="0.88" ColorizingHue="-36.900002" ColorizingSaturation="0.74000001" Detail2BumpScale="1.7" Detail2DiffuseScale="0.43599999" Detail2GlossScale="0.103" DetailBumpScale="1" DetailDiffuseScale="0.41" DetailFadeoutDistance="0" DetailGlossScale="1" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>    
+  </SubMaterials>
+  <PublicParams EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+</Material>

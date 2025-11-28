@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<Material MtlFlags="524544" vertModifType="0">
+  <SubMaterials>
+    <Material AlphaTest="0.5" CustomSortPriority="9" Diffuse="0.5583405,0.5583405,0.5583405" GenMask="20002010000080" LayerAct="1" MatTemplate="" MtlFlags="524418" Name="straw_01_alfy" Opacity="1" Shader="Illum" Shininess="255" Specular="0.03189603,0.03189603,0.03189603" StringGenMask="%COLORIZING%NORMAL_MAP%SUBSURFACE_SCATTERING%VERTCOLORS" SurfaceType="mat_thatch" vertModifType="0">
+      <Textures>
+        <Texture File="objects/manmade/structures/industrial/hay/straw_01_alfy_diff.tif" Map="Diffuse" />
+        <Texture File="objects/manmade/structures/industrial/hay/straw_01_alfy_ddna.tif" Map="Bumpmap" />
+      </Textures>
+      <PublicParams ColorizingBrightness="1" ColorizingHue="0" ColorizingSaturation="1.2" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>
+    <Material AlphaTest="0.5" CustomSortPriority="8" Diffuse="0.6307572,0.6307572,0.6307572" GenMask="20002010000080" LayerAct="1" MatTemplate="" MtlFlags="524418" Name="thatch" Opacity="1" Shader="Illum" Shininess="255" Specular="0.03189603,0.03189603,0.03189603" StringGenMask="%COLORIZING%NORMAL_MAP%SUBSURFACE_SCATTERING%VERTCOLORS" SurfaceType="mat_thatch" vertModifType="0">
+      <Textures>
+        <Texture File="objects/intermediates/roofify/thatched_roof_reed_01_decals_03_diff.tif" Map="Diffuse" />
+        <Texture File="objects/intermediates/roofify/thatched_roof_reed_01_decals_03_ddna.tif" Map="Bumpmap" />
+        <Texture File="objects/intermediates/roofify/thatched_roof_reed_01_decals_03_displ.tif" Map="Heightmap" />
+      </Textures>
+      <PublicParams ColorizingBrightness="0.6" ColorizingHue="0" ColorizingSaturation="1" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>
+  </SubMaterials>
+  <PublicParams EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+</Material>

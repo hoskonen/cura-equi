@@ -440,6 +440,22 @@ function CuraEqui.HorseStateGet(horse)
             _dbgNextLogAt = 100.0,
         }
         CuraEqui.HorseState[horse.id] = S
+
+        ----------------------------------------------------------------
+        -- NEW: hydrate hunger lazily from persistence on first access
+        ----------------------------------------------------------------
+        if CuraEqui.Persist and CuraEqui.Persist.Load then
+            local ph, ps = CuraEqui.Persist.Load()
+            if ph ~= nil then
+                S.hunger = math.max(0, math.min(100, ph))
+            end
+
+            -- we still ignore ps (sated time) on load to avoid
+            -- cross-save leakage; timers are re-derived at runtime.
+            CuraEqui.state                      = CuraEqui.state or {}
+            CuraEqui.state.didInitialSatedApply = false
+            CuraEqui.state.satedRemainSec       = 0
+        end
     end
     return S
 end
@@ -958,6 +974,12 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     local ST       = CuraEqui.state
     local C        = CuraEqui
 
+    if C._lastMountId == h then
+        C.Log("[mount] duplicate event, ignoring")
+        return
+    end
+    C._lastMountId = h
+
     ----------------------------------------------------------------
     -- 1) Route identity through central ownership scaffolding
     ----------------------------------------------------------------
@@ -996,24 +1018,23 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
 
     ----------------------------------------------------------------
     -- 2) Decide if THIS mount is actually the owned horse
+    --    (based on canonical ownership helper)
     ----------------------------------------------------------------
     local isOwned = false
     if C.PlayerOwnsHorse then
-        local ok, owns = pcall(C.PlayerOwnsHorse, h)
-        isOwned = ok and owns == true
+        local okOwn, owns = pcall(C.PlayerOwnsHorse, h)
+        isOwned = okOwn and owns == true
     end
+
     if isOwned then
         ST.hasMountedOwnedHorseOnce = true
     end
 
     local D = C.Config and C.Config.Debug or {}
     if D.horseIdentityTrace then
-        System.LogAlways(("[CuraEqui][Horse] Player mounted horse id=%s name=%s → owned=%s")
-            :format(
-                tostring(h and h.id or "nil"),
-                (h and h.GetName and h.GetName()) and h:GetName() or "Horse",
-                tostring(isOwned)
-            ))
+        local prettyName = (h and h.GetName and h:GetName()) or "Horse"
+        System.LogAlways(("[CuraEqui][Horse] OnMount resolved: id=%s name=%s owned=%s"):
+        format(tostring(h and h.id or "nil"), tostring(prettyName), tostring(isOwned)))
     end
 
     local okSw, errSw = pcall(function()
@@ -1025,6 +1046,16 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     end)
     if not okSw and D.hungerTrace then
         System.LogAlways("[CuraEqui][Horse][Mount] StartWatching ERROR: " .. tostring(errSw))
+    end
+
+    -- Extra safety: ensure non-owned mounts never keep CuraEqui horse debuffs
+    local okClr, errClr = pcall(function()
+        if not isOwned and C.Effects and C.Effects.ClearHorseDebuffs then
+            C.Effects.ClearHorseDebuffs(h)
+        end
+    end)
+    if not okClr and D.horseIdentityTrace then
+        System.LogAlways("[CuraEqui][Horse][Mount] ClearHorseDebuffs ERROR: " .. tostring(errClr))
     end
 end
 

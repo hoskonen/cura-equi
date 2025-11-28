@@ -88,6 +88,14 @@ local function _schedule(ms, fn)
     end
 end
 
+local function _dbgStatus(fmt, ...)
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+    if not (D and D.buffTrace) then
+        return
+    end
+    CuraEqui.Log("Buff", fmt, ...)
+end
+
 -- module locals for debouncing
 M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
 M._playerApplyPending = M._playerApplyPending or false
@@ -99,100 +107,188 @@ function M.DebugPickSatedBucket(remS)
     return b.sec, b.uuid
 end
 
+-- function M.SyncPlayerStatus(horseEnt, S)
+--     local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.playerStatusTiers
+--     if not S or not list then
+--         if M._lastPlayerUuid then
+--             CuraEqui.Effects.ClearPlayerStatus(); M._lastPlayerUuid = nil
+--         end
+--         return
+--     end
+
+--     do
+--         local ST = CuraEqui.state or {}
+--         local untilTs = tonumber(ST.suppressStatusUntil or 0) or 0
+--         if untilTs > (CuraEqui.Now and CuraEqui.Now()) or 0 then
+--             if M._lastPlayerUuid then
+--                 CuraEqui.Effects.ClearPlayerStatus(); M._lastPlayerUuid = nil
+--             end
+--             return
+--         end
+--     end
+
+--     -- Previously: if sated is active, we hid all status tiers.
+--     -- Now: only log it; status tiers are still allowed.
+--     do
+--         local now  = _now()
+--         local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+--         if remS > 0 then
+--             _dbgStatus("PlayerStatus: sated active rem=%.1fs (hunger=%.1f) – status allowed",
+--                 remS, tonumber(S.hunger or -1) or -1)
+--             -- no ClearPlayerStatus, no return
+--         end
+--     end
+
+--     -- Previously: a live sated timer completely hid the status tiers.
+--     -- Now: we just log it; hunger status is still allowed.
+--     do
+--         if M._lastSatedUuid then
+--             _dbgStatus("PlayerStatus: _lastSatedUuid=%s present (hunger=%.1f) – status allowed",
+--                 tostring(M._lastSatedUuid), tonumber(S.hunger or -1) or -1)
+--             -- no ClearPlayerStatus, no return
+--         end
+--     end
+
+--     local hval = tonumber(S.hunger or 0) or 0
+--     local tier = _pickTierName(hval, S.satedUntil)
+
+--     -- (Optional guard: if your picker can return 'sated', map to 'ok' here)
+--     if tier == "sated" then tier = "ok" end
+
+--     local uuid = _uuidFromList(list, tier)
+
+--     _dbgStatus("PlayerStatus: hunger=%.1f → tier=%s uuid=%s lastUuid=%s lastSated=%s",
+--         hval,
+--         tostring(tier),
+--         tostring(uuid),
+--         tostring(M._lastPlayerUuid),
+--         tostring(M._lastSatedUuid))
+
+--     -- decision crumb (quiet unless Debug.enabled)
+--     local D = CuraEqui.Config and CuraEqui.Config.Debug
+--     local wantPickLog = D and D.buffPickTrace and (uuid ~= M._lastPlayerUuid)
+
+--     if wantPickLog then
+--         local now = _now()
+--         local rem = math.max(0, (S.satedUntil or 0) - now)
+--         CuraEqui.Log("buff",
+--             "PlayerStatus pick tier=%s hunger=%d remSated=%.1f uuid=%s",
+--             tier, hval, rem, uuid and (#uuid > 8 and (uuid:sub(1, 8) .. "…") or (uuid or "-"))
+--         )
+--     end
+
+--     if not uuid or uuid == "" then
+--         _dbgStatus("PlayerStatus: no uuid for tier=%s hunger=%.1f → clear",
+--             tostring(tier), hval)
+
+--         if M._lastPlayerUuid then
+--             CuraEqui.Effects.ClearPlayerStatus(); M._lastPlayerUuid = nil
+--         end
+--         return
+--     end
+
+--     -- debounced clear→apply
+--     if uuid == M._lastPlayerUuid then return end
+--     if M._playerApplyPending and uuid == M._desiredPlayerUuid then return end
+
+--     M._desiredPlayerUuid = uuid
+--     if not M._playerApplyPending then
+--         M._playerApplyPending = true
+--         CuraEqui.Effects.ClearPlayerStatus()
+--         local want   = uuid
+--         local delay  = _delay_ms()
+--         M._playerGen = (M._playerGen or 0) + 1
+--         local myGen  = M._playerGen
+
+--         -- clear immediately (pcall for safety)
+--         pcall(CuraEqui.Effects.ClearPlayerStatus)
+
+--         _schedule(delay, function()
+--             -- still current, and we weren't superseded?
+--             if M._desiredPlayerUuid == want and myGen == M._playerGen then
+--                 _dbgStatus("PlayerStatus: apply uuid=%s (tier=%s hunger=%.1f)",
+--                     tostring(want),
+--                     tostring(tier), -- optional, you can stash tier in closure if you like
+--                     hval)
+--                 pcall(CuraEqui.Effects.ApplyPlayer, want)
+--                 M._lastPlayerUuid = want
+--             end
+--             M._playerApplyPending = false
+--         end)
+--     end
+-- end
+
 function M.SyncPlayerStatus(horseEnt, S)
-    local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.playerStatusTiers
+    local C    = CuraEqui
+    local list = C.Config and C.Config.HUD and C.Config.HUD.playerStatusTiers
+
+    -- No state or no config → clear and bail
     if not S or not list then
         if M._lastPlayerUuid then
-            CuraEqui.Effects.ClearPlayerStatus(); M._lastPlayerUuid = nil
+            CuraEqui.Effects.ClearPlayerStatus()
+            M._lastPlayerUuid = nil
         end
         return
     end
 
-    do
-        local ST = CuraEqui.state or {}
-        local untilTs = tonumber(ST.suppressStatusUntil or 0) or 0
-        if untilTs > (CuraEqui.Now and CuraEqui.Now()) or 0 then
-            if M._lastPlayerUuid then
-                CuraEqui.Effects.ClearPlayerStatus(); M._lastPlayerUuid = nil
-            end
-            return
-        end
-    end
-
-    -- If Sated timer is active, don't show any status-tier (OK/min/mod/crit)
-    do
-        local now  = _now()
-        local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-        if remS > 0 then
-            -- This clears only status-tier buffs; make sure your ClearPlayerStatus() does NOT remove the sated timer UUIDs
-            CuraEqui.Effects.ClearPlayerStatus()
-            M._lastPlayerUuid = nil
-            return
-        end
-    end
-
-    -- Extra safety: if a sated timer buff was applied and hasn't been cleared yet,
-    -- keep status tiers hidden until it’s gone (prevents OK appearing under the timer icon)
-    do
-        if M._lastSatedUuid then
-            -- We assume SyncSatedTimer will clear this when the internal timer elapses.
-            -- With the clamp sync in Horse.lua, internal/end-of-buff now align.
-            if M._lastPlayerUuid then
-                CuraEqui.Effects.ClearPlayerStatus()
-                M._lastPlayerUuid = nil
-            end
-            return
-        end
-    end
-
+    ----------------------------------------------------------------
+    -- 1) Decide tier based purely on hunger + satedUntil
+    ----------------------------------------------------------------
     local hval = tonumber(S.hunger or 0) or 0
     local tier = _pickTierName(hval, S.satedUntil)
 
-    -- (Optional guard: if your picker can return 'sated', map to 'ok' here)
-    if tier == "sated" then tier = "ok" end
+    -- Treat "sated" tier as "ok" for status icon purposes
+    if tier == "sated" then
+        tier = "ok"
+    end
 
     local uuid = _uuidFromList(list, tier)
 
-    -- decision crumb (quiet unless Debug.enabled)
-    local D = CuraEqui.Config and CuraEqui.Config.Debug
-    local wantPickLog = D and D.buffPickTrace and (uuid ~= M._lastPlayerUuid)
+    _dbgStatus("PlayerStatus: hunger=%.1f tier=%s uuid=%s last=%s",
+        hval,
+        tostring(tier),
+        tostring(uuid),
+        tostring(M._lastPlayerUuid))
 
-    if wantPickLog then
-        local now = _now()
-        local rem = math.max(0, (S.satedUntil or 0) - now)
-        CuraEqui.Log("buff",
-            "PlayerStatus pick tier=%s hunger=%d remSated=%.1f uuid=%s",
-            tier, hval, rem, uuid and (#uuid > 8 and (uuid:sub(1, 8) .. "…") or (uuid or "-"))
-        )
-    end
-
+    ----------------------------------------------------------------
+    -- 2) No UUID for this tier → clear and bail
+    ----------------------------------------------------------------
     if not uuid or uuid == "" then
         if M._lastPlayerUuid then
-            CuraEqui.Effects.ClearPlayerStatus(); M._lastPlayerUuid = nil
+            CuraEqui.Effects.ClearPlayerStatus()
+            M._lastPlayerUuid = nil
         end
         return
     end
 
-    -- debounced clear→apply
-    if uuid == M._lastPlayerUuid then return end
-    if M._playerApplyPending and uuid == M._desiredPlayerUuid then return end
+    ----------------------------------------------------------------
+    -- 3) Debounced clear → apply
+    ----------------------------------------------------------------
+    if uuid == M._lastPlayerUuid then
+        -- Already showing this tier; nothing to do
+        return
+    end
 
     M._desiredPlayerUuid = uuid
+
     if not M._playerApplyPending then
         M._playerApplyPending = true
-        CuraEqui.Effects.ClearPlayerStatus()
-        local want   = uuid
-        local delay  = _delay_ms()
-        M._playerGen = (M._playerGen or 0) + 1
-        local myGen  = M._playerGen
+        local want            = uuid
+        local delay           = _delay_ms()
+        M._playerGen          = (M._playerGen or 0) + 1
+        local myGen           = M._playerGen
 
-        -- clear immediately (pcall for safety)
+        -- Clear current status immediately (safely)
         pcall(CuraEqui.Effects.ClearPlayerStatus)
 
         _schedule(delay, function()
             -- still current, and we weren't superseded?
             if M._desiredPlayerUuid == want and myGen == M._playerGen then
-                pcall(CuraEqui.Effects.ApplyPlayer, want)
+                _dbgStatus("PlayerStatus: apply uuid=%s (tier=%s hunger=%.1f)",
+                    tostring(want),
+                    tostring(tier),
+                    hval)
+                pcall(CuraEqui.Effects.ApplyPlayer, want) -- safe AddBuff call
                 M._lastPlayerUuid = want
             end
             M._playerApplyPending = false
@@ -260,6 +356,10 @@ function M.SyncHorseDebuff(horseEnt, S)
 end
 
 function M.SyncAll(horseEnt, S)
+    _dbgStatus("SyncAll: hunger=%.1f satedUntil=%.1f",
+        tonumber(S and S.hunger or -1) or -1,
+        tonumber(S and S.satedUntil or 0) or 0)
+
     M.SyncHorseDebuff(horseEnt, S)
     M.SyncPlayerStatus(horseEnt, S)
 end
@@ -392,6 +492,7 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
         if remS <= 0 then
             M.ClearSatedTimers()
             M._lastSatedUuid = nil
+            S.satedUntil = 0
             return
         end
 

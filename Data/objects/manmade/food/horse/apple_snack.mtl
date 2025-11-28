@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<Material MtlFlags="524544" vertModifType="0">
+  <SubMaterials>
+    <Material CustomSortPriority="3" Diffuse="1,1,1" GenMask="20002010002080" LayerAct="1" MatTemplate="" MtlFlags="524416" Name="sack" Opacity="1" Shader="Illum" Shininess="255" Specular="0.029556835,0.029556835,0.029556835" StringGenMask="%COLORIZING%DETAIL_MAPPING%NORMAL_MAP%SUBSURFACE_SCATTERING%VERTCOLORS" SurfaceType="" vertModifType="0">
+      <Textures>
+        <Texture File="objects/manmade/food/food/sacks/sack_vegetables_diff.tif" Map="Diffuse" />
+        <Texture File="objects/manmade/common_furniture/sacks/sack_flour_ddna.tif" Map="Bumpmap" />
+        <Texture File="objects/manmade/food/food/sacks/sack_height_dt.tif" Map="Detail" />
+      </Textures>
+      <PublicParams ColorizingBrightness="0.60000002" ColorizingHue="0" ColorizingSaturation="1" DetailBumpScale="0.98000002" DetailDiffuseScale="1" DetailFadeoutDistance="0" DetailGlossScale="0.396" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>
+    <Material CustomSortPriority="2" Diffuse="1,1,1" GenMask="20002010002000" LayerAct="1" MatTemplate="" MtlFlags="524416" Name="apples" Opacity="1" Shader="Illum" Shininess="155" Specular="0.031896032,0.031896032,0.031896032" StringGenMask="%DETAIL_MAPPING%NORMAL_MAP%SUBSURFACE_SCATTERING%VERTCOLORS" SurfaceType="" vertModifType="0">
+      <Textures>
+        <Texture File="objects/manmade/food/food/fruits/apple_diff.tif" Map="Diffuse" />
+        <Texture File="objects/manmade/food/food/fruits/apple_ddna.tif" Map="Bumpmap" />
+        <Texture File="engineassets/textures/detailatlas/26_metal_brushed_detail_dt.tif" Map="Detail">
+          <TexMod TexMod_bTexGenProjected="0" TexMod_RotateType="0" TexMod_TexGenType="0" TileU="0.5" TileV="0.5" />
+        </Texture>
+      </Textures>
+      <PublicParams DetailBumpScale="0.5" DetailDiffuseScale="1" DetailFadeoutDistance="0" DetailGlossScale="0.5" EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+    </Material>
+  </SubMaterials>
+  <PublicParams EmittanceMapGamma="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+</Material>

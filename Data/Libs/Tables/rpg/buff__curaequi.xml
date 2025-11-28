@@ -104,7 +104,6 @@
 		nrs = DerivStat_NormalizedRunSpeed
 		nsb = DerivStat_NormalizedRunSpeedBase
 		rsa = DerivStat_RelativeMovementSpeedAddition
-
 		-->
 
 		<!-- Cura Equi / Horse Debuff: Minor Hunger -->

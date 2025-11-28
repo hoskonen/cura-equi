@@ -479,16 +479,20 @@ function CuraEqui.Initialize(fullInit)
     end
 
     -- seed the state and start probing if horseless
-    local ST   = CuraEqui.state
-    local h    = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+    local ST = CuraEqui.state
+    local h  = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
 
-    -- Ownership: if player doesn't own this horse, treat as "no horse"
-    local owns = h and CuraEqui.PlayerOwnsHorse and CuraEqui.PlayerOwnsHorse(h) or false
+    System.LogAlways(("[CuraEqui][Init] ResolveHorse→ id=%s hasHorseState=%s")
+        :format(tostring(h and h.id or "nil"), tostring(ST.hasHorse)))
 
-    System.LogAlways(("[CuraEqui][Init] ResolveHorse→ id=%s owns=%s hasHorseState=%s")
-        :format(tostring(h and h.id or "nil"), tostring(owns), tostring(ST.hasHorse)))
-    if h and not owns then
-        h = nil
+    -- ⚠️ IMPORTANT:
+    -- Do *not* gate h by PlayerOwnsHorse here. Ownership scaffolding is
+    -- not populated yet on load; the dedicated helper will decide.
+
+    -- If we load into a save while already having an ownable horse present,
+    -- try to arm ownership + hunger once for this session.
+    if CuraEqui.TryInitOwnedHorseOnLoad then
+        CuraEqui.TryInitOwnedHorseOnLoad()
     end
 
     -- DO NOT trust h ~= nil; horse entities exist even in horse-less saves
@@ -807,11 +811,8 @@ function CuraEqui.OnGameplayStarted()
 
     local function try(i)
         local ST = CuraEqui.state or {}
-        -- If we don't yet know of a horse, do nothing.
-        if not CuraEqui.HasHorse or not CuraEqui.HasHorse() then
-            return
-        end
 
+        -- Always try to resolve a horse; on horseless saves this just returns nil.
         local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
         if not h then
             if i < #tries and Script and Script.SetTimer then
@@ -820,14 +821,23 @@ function CuraEqui.OnGameplayStarted()
             return
         end
 
-        System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
-            :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
-
+        ST.hasHorse       = true
+        ST.lastHorseEnt   = h
+        ST.lastHorseId    = (CuraEqui._HorseGuid and CuraEqui._HorseGuid(h)) or h.id
         ST.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
         ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
 
-        if CuraEqui.StopProbing then CuraEqui.StopProbing() end
-        --if CuraEqui.StartWatching then CuraEqui.StartWatching() end
+        System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
+            :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
+
+        -- 🔑 One-shot “mounted on load” bridge
+        if CuraEqui.HorseOwnership and CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad then
+            CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
+        end
+
+        if CuraEqui.StopProbing then
+            CuraEqui.StopProbing()
+        end
     end
 
     try(1)
