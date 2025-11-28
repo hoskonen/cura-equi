@@ -488,11 +488,31 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
             return
         end
 
-        -- Expired → ALWAYS clear all sated tiers and leave
+        -- Expired → clear all sated tiers and do a one-off status resync
         if remS <= 0 then
+            local rawUntil = tonumber(S and S.satedUntil or 0) or 0
+
+            -- If there's no active sated timer anymore (already processed),
+            -- avoid re-running the expiry logic on every tick.
+            if rawUntil <= 0 then
+                -- Just ensure we don't think a sated UUID is still live.
+                M._lastSatedUuid = nil
+                return
+            end
+
+            -- First time crossing from active → expired.
             M.ClearSatedTimers()
             M._lastSatedUuid = nil
             S.satedUntil = 0
+
+            -- Make sure the status debouncer doesn't block the next apply.
+            M._lastPlayerUuid = nil
+
+            -- Force a one-off status sync so the hunger status comes back immediately.
+            if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll and h and S then
+                pcall(CuraEqui.Buffs.SyncAll, h, S)
+            end
+
             return
         end
 
