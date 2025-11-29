@@ -1026,10 +1026,6 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
         isOwned = okOwn and owns == true
     end
 
-    if isOwned then
-        ST.hasMountedOwnedHorseOnce = true
-    end
-
     local D = C.Config and C.Config.Debug or {}
     if D.horseIdentityTrace then
         local prettyName = (h and h.GetName and h:GetName()) or "Horse"

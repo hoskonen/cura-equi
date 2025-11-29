@@ -35,18 +35,17 @@ function CuraEqui.SetOwnedHorse(h, opts)
     -- 1) CLEAR CASE: nil horse → forget identity and exit
     ---------------------------------------------------------
     if not h then
-        local oldEnt                = ST.lastHorseEnt
+        local oldEnt             = ST.lastHorseEnt
 
-        ST.hasHorse                 = false
-        ST.lastHorseEnt             = nil
-        ST.lastHorseId              = nil
-        ST.lastHorseName            = nil
-        ST.lastHorseFp              = nil
-        ST.lastHorseFpExt           = nil
-        ST.currentOwnedHorseId      = nil
-        ST.currentOwnedHorseGuid    = nil
-        ST.hasMountedOwnedHorseOnce = false
-        ST._hungerLoadedFromDB      = nil
+        ST.hasHorse              = false
+        ST.lastHorseEnt          = nil
+        ST.lastHorseId           = nil
+        ST.lastHorseName         = nil
+        ST.lastHorseFp           = nil
+        ST.lastHorseFpExt        = nil
+        ST.currentOwnedHorseId   = nil
+        ST.currentOwnedHorseGuid = nil
+        ST._hungerLoadedFromDB   = nil
 
         -- Also clear any old debuffs on the previous horse entity
         if oldEnt and C.Effects and C.Effects.ClearHorseDebuffs then
@@ -78,16 +77,15 @@ function CuraEqui.SetOwnedHorse(h, opts)
         -- If this horse is NOT ownable, never treat it as the player's mount.
         if not ownable then
             -- FULL REJECTION: clear identity
-            ST.hasHorse                 = false
-            ST.lastHorseEnt             = nil
-            ST.lastHorseId              = nil
-            ST.lastHorseName            = nil
-            ST.lastHorseFp              = nil
-            ST.lastHorseFpExt           = nil
-            ST.currentOwnedHorseId      = nil
-            ST.currentOwnedHorseGuid    = nil
-            ST.hasMountedOwnedHorseOnce = false
-            ST._hungerLoadedFromDB      = nil
+            ST.hasHorse              = false
+            ST.lastHorseEnt          = nil
+            ST.lastHorseId           = nil
+            ST.lastHorseName         = nil
+            ST.lastHorseFp           = nil
+            ST.lastHorseFpExt        = nil
+            ST.currentOwnedHorseId   = nil
+            ST.currentOwnedHorseGuid = nil
+            ST._hungerLoadedFromDB   = nil
 
             -- Also wipe any existing CuraEqui debuffs from this horse
             if C.Effects and C.Effects.ClearHorseDebuffs then
@@ -204,11 +202,6 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
         return
     end
 
-    -- If we already had a proper mount this session, nothing to do.
-    if ST.hasMountedOwnedHorseOnce then
-        return
-    end
-
     ----------------------------------------------------------------
     -- 2) Resolve the current horse (whatever the game thinks is active)
     ----------------------------------------------------------------
@@ -241,10 +234,9 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
         C.SetOwnedHorse(h, { reason = "load-mounted" })
     end
 
-    ST.hasHorse                 = true
-    ST.lastHorseEnt             = h
-    ST.lastHorseId              = (C._HorseGuid and C._HorseGuid(h)) or h.id
-    ST.hasMountedOwnedHorseOnce = true -- 🔑 unblocks StartWatching / HungerTick
+    ST.hasHorse     = true
+    ST.lastHorseEnt = h
+    ST.lastHorseId  = (C._HorseGuid and C._HorseGuid(h)) or h.id
 
     ----------------------------------------------------------------
     -- 5) Arm hunger watcher if not already running.

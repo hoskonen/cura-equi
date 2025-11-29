@@ -24,7 +24,6 @@ end
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Player/entity helpers
 -- ─────────────────────────────────────────────────────────────────────────────
-
 function M.GetPlayer()
     -- Keep your usual resolution order; extend if needed.
     return System.GetEntityByName("Henry")
@@ -92,16 +91,29 @@ end
 -- Returns true only when enough time passed for this key.
 -- Usage: if M.throttle("tick-fired", 10) then System.LogAlways("fired") end
 -- throttle
+-- Returns true only when enough time passed for this key.
+-- Usage: if M.throttle("tick-fired", 10) then System.LogAlways("fired") end
+-- throttle
 do
     local _next = {}
+
     function M.throttle(key, intervalSec)
         local now = (CuraEqui.Now and CuraEqui.Now()) or 0
         local t   = tonumber(intervalSec or 1) or 1
         local nxt = _next[key] or 0
         if now >= nxt then
-            _next[key] = now + t; return true
+            _next[key] = now + t
+            return true
         end
         return false
+    end
+
+    -- Reset all throttle timers. Used when a save load rewinds game time,
+    -- so previous "next fire" times don't silence logs / dev HUD forever.
+    function M.reset_throttle()
+        for k in pairs(_next) do
+            _next[k] = nil
+        end
     end
 end
 

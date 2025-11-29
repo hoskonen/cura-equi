@@ -74,6 +74,9 @@ end
 -- Toast(text, ms, prio, id, lane)
 function CuraEqui.UI.Toast(text, ms, prio, id, lane)
     text = tostring(text or "")
+
+    -- DEBUG: see when Toast is actually called + lane
+    System.LogAlways(("[CuraEqui][UI] Toast text=%q lane=%s ms=%s"):format(text, tostring(lane), tostring(ms)))
     if _dedupe(text) then return true end
 
     -- normalize lanes

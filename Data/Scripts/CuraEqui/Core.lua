@@ -565,18 +565,30 @@ function CuraEqui.Initialize(fullInit)
                 System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s (sated ignored on load)")
                     :format(tostring(ph), tostring(ps)))
 
-                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-                if D and D.buffTraceVerbose then
-                    System.LogAlways("[CE][LOAD] sated ignored on load (no buff reapply)")
-                end
-
-                -- Clear any lingering sated tiers just in case the engine carried them over
-                if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
-                    pcall(CuraEqui.Effects.ClearSatedTimers)
-                end
-
                 CuraEqui.state.didInitialSatedApply = false
                 CuraEqui.state.satedRemainSec       = 0
+            end
+        end
+    end
+
+    ----------------------------------------------------------------
+    -- 2) NEW: If we already have an owned horse on load, auto-start
+    --    the hunger watcher for this session (even if not mounted).
+    ----------------------------------------------------------------
+    do
+        local ST2 = CuraEqui.state or {}
+
+        -- Ownership scaffolding should already have populated hasHorse/lastHorseEnt
+        if ST2.hasHorse and ST2.lastHorseEnt and CuraEqui.StartWatching then
+            -- Treat this as "mounted at least once this session" for hunger purposes
+            ST2.hasMountedOwnedHorseOnce = ST2.hasMountedOwnedHorseOnce or true
+
+            local okSw, errSw = pcall(CuraEqui.StartWatching)
+            if not okSw then
+                local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+                if D.hungerTrace then
+                    System.LogAlways("[CuraEqui][Hunger] Auto StartWatching on load ERROR: " .. tostring(errSw))
+                end
             end
         end
     end
@@ -887,6 +899,13 @@ function CuraEqui.OnQuickLoadingStart()
         Script.KillTimer(ST.hungerTimer)
         ST.hungerTimer = nil
         System.LogAlways("[CuraEqui][Fix] Killed inherited hunger timer on load start")
+    end
+
+    -- Reset throttled debug / HUD timers so loading an older save
+    -- doesn't "mute" logs and dev toasts until time catches up.
+    local U = CuraEqui.Utils
+    if U and U.reset_throttle then
+        U.reset_throttle()
     end
 end
 
