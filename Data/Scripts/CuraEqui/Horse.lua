@@ -1080,16 +1080,34 @@ do
             if not allowAny then
                 local isOwned = false
 
-                -- Preferred: use centralized ownership helper
-                if CuraEqui.PlayerOwnsHorse then
+                ----------------------------------------------------------------
+                -- 1) Fast path: Storm-name whitelist (stable / legitimately
+                --    ownable horses) – does NOT depend on session state.
+                ----------------------------------------------------------------
+                do
+                    local HO = CuraEqui.HorseOwnership
+                    local nm = CuraEqui._HorseName and CuraEqui._HorseName(self) or nil
+                    if HO and HO.IsHorseStormNameOwnable and nm then
+                        local okOwn, ownable = pcall(HO.IsHorseStormNameOwnable, nm)
+                        if okOwn and ownable == true then
+                            isOwned = true
+                        end
+                    end
+                end
+
+                ----------------------------------------------------------------
+                -- 2) Fallback: centralized helper (may look at session state)
+                ----------------------------------------------------------------
+                if not isOwned and CuraEqui.PlayerOwnsHorse then
                     local ok, owns = pcall(CuraEqui.PlayerOwnsHorse, self)
                     isOwned = ok and owns == true
-                else
-                    -- Fallback to legacy Resolve() if helper is missing
-                    local mine = CuraEqui.Horse
-                        and CuraEqui.Horse.Resolve
-                        and CuraEqui.Horse.Resolve() or nil
+                end
 
+                ----------------------------------------------------------------
+                -- 3) Final fallback: Resolve() equality (legacy behaviour)
+                ----------------------------------------------------------------
+                if not isOwned and CuraEqui.Horse and CuraEqui.Horse.Resolve then
+                    local mine = CuraEqui.Horse.Resolve()
                     isOwned = (mine and self and mine.id == self.id) or false
                 end
 
