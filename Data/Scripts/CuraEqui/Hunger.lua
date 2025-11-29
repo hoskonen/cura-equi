@@ -759,8 +759,55 @@ function CuraEqui_HungerTick()
     end
 
     -------------------------------------------------------------------
-    -- NEW: if we have not yet mounted an owned horse this session,
-    --       this tick is considered a stale/ghost timer → drop it.
+    -- If this is the first heartbeat and we are ALREADY mounted on an
+    -- ownable horse (loaded while mounted), mark the session flag now.
+    -------------------------------------------------------------------
+    if ST and not ST.hasMountedOwnedHorseOnce then
+        local mounted = false
+        pcall(function()
+            mounted = (CuraEqui.Horse and CuraEqui.Horse.IsMounted and CuraEqui.Horse.IsMounted()) or false
+        end)
+
+        if mounted and CuraEqui.Horse and CuraEqui.Horse.Resolve then
+            local okH, h = pcall(CuraEqui.Horse.Resolve)
+            if okH and h and h.id then
+                local isOwned = false
+                local nm      = nil
+
+                -- Same ownership logic as OnPlayerMountedHorseInternal
+                if CuraEqui.GetCleanHorseName then
+                    nm = CuraEqui.GetCleanHorseName(h)
+                elseif h.GetName then
+                    nm = h:GetName()
+                end
+
+                if nm and CuraEqui.HorseOwnership
+                    and CuraEqui.HorseOwnership.IsHorseStormNameOwnable then
+                    local okOwn, ownable =
+                        pcall(CuraEqui.HorseOwnership.IsHorseStormNameOwnable, nm)
+                    isOwned = okOwn and (ownable == true)
+                elseif CuraEqui.PlayerOwnsHorse then
+                    local okOwn, owns = pcall(CuraEqui.PlayerOwnsHorse, h)
+                    isOwned = okOwn and (owns == true)
+                end
+
+                if isOwned then
+                    ST.hasMountedOwnedHorseOnce = true
+                    ST.hasHorse                 = true
+                    ST.lastHorseEnt             = h
+
+                    local D                     = CuraEqui.Config and CuraEqui.Config.Debug or {}
+                    if D.ownershipTrace then
+                        System.LogAlways("[CuraEqui][Tick] auto-flagged mounted owned horse this session")
+                    end
+                end
+            end
+        end
+    end
+
+    -------------------------------------------------------------------
+    -- If we STILL haven't seen an owned mount this session, this tick
+    -- is considered a stale/ghost timer → drop it.
     -------------------------------------------------------------------
     if not (ST and ST.hasMountedOwnedHorseOnce) then
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
@@ -775,6 +822,7 @@ function CuraEqui_HungerTick()
 
         return
     end
+
 
     do
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
@@ -796,21 +844,14 @@ function CuraEqui_HungerTick()
         return
     end
 
-
-    if not ok then System.LogAlways("[CuraEqui][Tick][ERROR] " .. tostring(err)) end
-
-    local hasHorse = (CuraEqui.HasHorse and CuraEqui.HasHorse()) or false
-    if not hasHorse then
-        CuraEqui._noHorseStrikes = (CuraEqui._noHorseStrikes or 0) + 1
-    else
-        CuraEqui._noHorseStrikes = 0
+    if not ok then
+        System.LogAlways("[CuraEqui][Tick][ERROR] " .. tostring(err))
     end
 
-    if (CuraEqui._noHorseStrikes or 0) >= 3 then
-        CuraEqui.StopWatching()
-        return CuraEqui.StartProbing()
-    end
-
+    ----------------------------------------------------------------
+    -- Once the watcher is running for this session, keep it alive.
+    -- Ownership / identity safety is handled at init + load/reset.
+    ----------------------------------------------------------------
     CuraEqui.state.hungerTimer =
         Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
 end
