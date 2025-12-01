@@ -373,6 +373,18 @@ local function _pick_bucket_floor(remS)
     return nil
 end
 
+local function _find_bucket_by_uuid(uuid)
+    if not uuid then return nil end
+    local T = M.SATED_TIERS
+    for i = 1, #T do
+        if T[i].uuid == uuid then
+            return T[i]
+        end
+    end
+    return nil
+end
+
+
 local function _pick_bucket_ceil(remS)
     remS = math.max(0, tonumber(remS or 0) or 0)
     local T = M.SATED_TIERS
@@ -434,8 +446,33 @@ end
 
 -- opts.force=true → re-apply even if bucket unchanged (used after feeding/load/diet)
 function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
-    local M = CuraEqui.Buffs
-    opts = opts or {}
+    local C         = CuraEqui
+    local D         = (C.Config and C.Config.Debug) or {}
+    local U         = C.Utils
+    opts            = opts or {}
+
+    local now       = (C.Now and C.Now()) or 0
+    local oldUntil  = tonumber(S and S.satedUntil or 0) or 0
+    local oldRem    = math.max(0, oldUntil - now)
+    local oldGuid   = S and S.satedBuffGuid or nil
+    local cause     = tostring(opts.cause or "?")
+    local force     = (opts.force == true)
+
+    -- Optional throttle so we don't spam every tick when nothing changes
+    local shouldLog = D.satedTraceVerbose
+        or (U and U.throttle and U.throttle("sated-sync-" .. cause, 0.5)) -- 0.5s bucket
+        or false
+
+    -- EXISTING EARLY-EXIT: no tiers configured
+    local BL        = CuraEqui.Buffs.SATED_TIERS or {}
+    if not (BL and #BL > 0) then
+        if shouldLog then
+            System.LogAlways(("[CuraEqui][Buff] SatedSync skip – no tiers (cause=%s, rem=%ds, force=%s, guid=%s)")
+                :format(cause, math.floor(oldRem + 0.5), tostring(force), tostring(oldGuid)))
+        end
+        return
+    end
+
 
     local ST = CuraEqui.state or {}
     if ST._preloadFence and not (opts and opts.force) then
@@ -454,14 +491,18 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
         return
     end
 
-    if (not h) or (not CuraEqui.PlayerOwnsHorse(h)) or (not S) then
+    -- Early guard: if we somehow lost the horse entity or state, wipe timers
+    if (not h) or (not S) then
+        if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
+            System.LogAlways("[CuraEqui][SatedSync] early-clear: missing horse or state")
+        end
         M.ClearSatedTimers()
         M._lastSatedUuid = nil
         return
     end
 
-    M._syncBusy = true
-    local ok, err = xpcall(function()
+    M._syncBusy    = true
+    local ok, err  = xpcall(function()
         local D    = CuraEqui.Config and CuraEqui.Config.Debug or {}
         local now  = _now()
         local remS = math.max(0, (tonumber(S and S.satedUntil or 0) or 0) - now)
@@ -492,23 +533,19 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
         if remS <= 0 then
             local rawUntil = tonumber(S and S.satedUntil or 0) or 0
 
-            -- If there's no active sated timer anymore (already processed),
-            -- avoid re-running the expiry logic on every tick.
             if rawUntil <= 0 then
-                -- Just ensure we don't think a sated UUID is still live.
                 M._lastSatedUuid = nil
+                S.satedBuffGuid  = nil
                 return
             end
 
-            -- First time crossing from active → expired.
             M.ClearSatedTimers()
-            M._lastSatedUuid = nil
-            S.satedUntil = 0
+            M._lastSatedUuid  = nil
+            S.satedUntil      = 0
+            S.satedBuffGuid   = nil
 
-            -- Make sure the status debouncer doesn't block the next apply.
             M._lastPlayerUuid = nil
 
-            -- Force a one-off status sync so the hunger status comes back immediately.
             if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll and h and S then
                 pcall(CuraEqui.Buffs.SyncAll, h, S)
             end
@@ -516,40 +553,40 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
             return
         end
 
-        -- Decide desired bucket (ceil so UI shows full tier)
-        local bucket = _pick_bucket_ceil(remS)
-        if not bucket or not bucket.uuid then return end
+        -- Decide desired bucket
+        local forcing = (opts.force == true)
+        local bucket
 
-        local forcing = opts.force == true
+        if not forcing and M._lastSatedUuid then
+            -- 🔒 Freeze bucket for this run: reuse the existing tier
+            bucket = _find_bucket_by_uuid(M._lastSatedUuid) or _pick_bucket_ceil(remS)
+        else
+            -- First apply or forced resync (e.g. after feeding)
+            bucket = _pick_bucket_ceil(remS)
+        end
+
+        if not bucket or not bucket.uuid then return end
 
         -- memo for throttling identical skip logs
         M._lastSkipLog = M._lastSkipLog or { uuid = nil, rem = -1 }
 
         -- Mid-run, already on desired bucket → no-op
-        if (not forcing) and M._lastSatedUuid == bucket.uuid then
-            -- round remain so we only print when the UI-visible seconds change
+        if (not forcing) and (M._lastSatedUuid == bucket.uuid) then
+            -- Always preserve the active UUID
+            M._lastSatedUuid = bucket.uuid
+
+            -- compute a rounded remain for logging
             local remRounded = math.floor(remS + 0.5)
 
-            if D.buffTraceVerbose and not opts.quiet then
-                -- only log if (uuid changed) OR (rounded remain changed)
-                if M._lastSkipLog.uuid ~= bucket.uuid or M._lastSkipLog.rem ~= remRounded then
-                    System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%ss, last=%s)")
-                        :format(tostring(remRounded), tostring(M._lastSatedUuid)))
-                    M._lastSkipLog.uuid = bucket.uuid
-                    M._lastSkipLog.rem  = remRounded
-                end
-            end
-
-            return
-        end
-
-        -- Mid-run, different bucket wanted, but we don't force switches while running
-        if (not forcing) and M._lastSatedUuid == bucket.uuid then
+            -- throttled debug
             if D.buffTraceVerbose and (not M._nextSkipLogAt or now >= M._nextSkipLogAt) then
-                System.LogAlways(("[CuraEqui][Buff] Sated: skip mid-run (rem=%.0fs, last=%s)"):format(remS,
-                    tostring(M._lastSatedUuid)))
-                M._nextSkipLogAt = now + 2.0
+                System.LogAlways(
+                    ("[CuraEqui][Buff] Sated: skip mid-run (1) cause=%s rem=%ds guid=%s")
+                    :format(tostring(opts.cause), remRounded, bucket.uuid)
+                )
+                M._nextSkipLogAt = now + 2
             end
+
             return
         end
 
@@ -561,18 +598,40 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
         end
 
         if applied then
+            -- record the buff tier in runtime memory
+            S.satedBuffGuid = bucket.uuid
+
+            -- record the tracker UUID
             M._lastSatedUuid = bucket.uuid
-            M._satedFence    = now + 0.30 -- small debounce
+
+            -- minimal debounce
+            M._satedFence = now + 0.30
         else
+            -- apply failed -> clear state
+            S.satedBuffGuid = nil
             M._lastSatedUuid = nil
-            if D and D.enabled then
-                System.LogAlways("[CuraEqui][SatedSync] apply failed (no effect instance)")
-            end
         end
     end, debug.traceback)
 
     -- ALWAYS release the fence
-    M._syncBusy = false
+    M._syncBusy    = false
+
+    -- At this point the function has decided to (re)sync the timer/buff
+    local newUntil = tonumber(S and S.satedUntil or 0) or 0
+    local newRem   = math.max(0, newUntil - now)
+    local newGuid  = S and S.satedBuffGuid or nil
+
+    if shouldLog or D.satedTraceVerbose then
+        System.LogAlways(("[CuraEqui][Buff] SatedSync apply cause=%s force=%s rem %ds→%ds guid %s→%s")
+            :format(
+                cause,
+                tostring(force),
+                math.floor(oldRem + 0.5),
+                math.floor(newRem + 0.5),
+                tostring(oldGuid),
+                tostring(newGuid)
+            ))
+    end
 
     if not ok then
         System.LogAlways("[CuraEqui][SatedSync][ERROR] " .. tostring(err))
