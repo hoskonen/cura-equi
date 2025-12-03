@@ -553,8 +553,35 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
             return
         end
 
+        -- ----------------------------------------------------------------
+        -- MID-RUN LOCK:
+        -- If we still have time remaining AND we know which bucket we're
+        -- using (either via _lastSatedUuid or S.satedBuffGuid), DO NOT
+        -- clear/reapply the buff unless this is a real extension event.
+        -- ----------------------------------------------------------------
+        local causeStr         = tostring(opts.cause or "tick")
+        local forcing          = (opts.force == true)
+        local existingUuid     = M._lastSatedUuid or (S and S.satedBuffGuid) or nil
+        local isExtensionCause =
+            (causeStr == "feed") or
+            (causeStr == "catchup") or
+            (causeStr == "catchup-extend") or
+            (causeStr == "ogs-settle") -- keep/adjust as needed
+
+        if existingUuid and remS > 0 and not isExtensionCause then
+            -- Recover _lastSatedUuid if it was lost, but NEVER re-apply.
+            M._lastSatedUuid = existingUuid
+
+            if D.buffTraceVerbose and ((causeStr ~= "tick") or D.buffTraceTick) then
+                System.LogAlways(("[CuraEqui][Buff] Sated mid-run lock cause=%s rem=%.0fs guid=%s")
+                    :format(causeStr, remS, existingUuid))
+            end
+
+            return
+        end
+
         -- Decide desired bucket
-        local forcing = (opts.force == true)
+
         local bucket
 
         if not forcing and M._lastSatedUuid then
