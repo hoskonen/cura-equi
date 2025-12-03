@@ -232,6 +232,24 @@ function M.SyncPlayerStatus(horseEnt, S)
     end
 
     ----------------------------------------------------------------
+    -- 0) If sated is active, suppress hunger status tiers entirely.
+    --    This avoids buff-class conflicts with timed Sated buffs
+    --    (engine exclusivity=3) and keeps the icon strip showing
+    --    the "fed" state instead of flipping back to OK/moderate.
+    ----------------------------------------------------------------
+    local now  = _now()
+    local remS = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+    if remS > 0 then
+        -- We DO have a running sated timer -> no hunger status icon.
+        if M._lastPlayerUuid then
+            pcall(CuraEqui.Effects.ClearPlayerStatus)
+            M._lastPlayerUuid = nil
+        end
+        return
+    end
+
+    ----------------------------------------------------------------
     -- 1) Decide tier based purely on hunger + satedUntil
     ----------------------------------------------------------------
     local hval = tonumber(S.hunger or 0) or 0
