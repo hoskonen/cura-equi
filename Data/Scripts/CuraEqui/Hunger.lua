@@ -704,7 +704,12 @@ function CuraEqui._HungerTickBody()
                 if CuraEqui.Debug and CuraEqui.Debug.MaybeResnapStamina then
                     CuraEqui.Debug.MaybeResnapStamina(h)
                 end
-                if CuraEqui.Debug and CuraEqui.Debug.ShowHorseStatsTutorial then
+
+                local dbgCfg = CuraEqui.Config and CuraEqui.Config.Debug or {}
+                if dbgCfg.showHorseStatsTutorial
+                    and CuraEqui.Debug
+                    and CuraEqui.Debug.ShowHorseStatsTutorial
+                then
                     CuraEqui.Debug.ShowHorseStatsTutorial()
                 end
             end
@@ -804,8 +809,6 @@ function CuraEqui_HungerTick()
 end
 
 -- ---------- START/STOP ----------
--- ---------- START/STOP ----------
--- file: Scripts/CuraEqui/Hunger.lua
 
 function CuraEqui.StartWatching()
     local C  = CuraEqui

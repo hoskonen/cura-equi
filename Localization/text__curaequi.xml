@@ -24,6 +24,10 @@
     <Cell>curaequi_horse_not_hungry_yet</Cell><Cell>Horse is sated, he's not feeling like eating at the moment</Cell><Cell>Horse is sated, he's not feeling like eating at the moment</Cell>
 </Row>
 
+<Row>
+    <Cell>curaequi_black_market_horse</Cell><Cell>This mount is not a stable-bought horse. Hunger and care tracking do not apply to it.</Cell><Cell>This mount is not a stable-bought horse. Hunger and care tracking do not apply to it.</Cell>
+</Row>
+
 <!-- Custom Food: Hay Bundle SM-->
  <Row><Cell>ui_nm_curaequi_hay_bundle_sm</Cell><Cell>Horse - Hay Bundle Small</Cell><Cell>Horse - Hay Bundle Small</Cell></Row>
  
@@ -78,7 +82,7 @@
 </Row>
 <Row>
     <Cell>buff_ce_horse_sated_desc</Cell>
-    <Cell>Well-fed and calm. Hunger builds more slowly; handling and courage improve while this lasts.</Cell><Cell>Well-fed and calm. Hunger builds more slowly; handling and courage improve while this lasts.</Cell>
+    <Cell>Well-fed and calm. Hunger builds more slowly.</Cell><Cell>Well-fed and calm. Hunger builds more slowly.</Cell>
 </Row>
 
 <Row>
@@ -94,7 +98,7 @@
 </Row>
 <Row>
     <Cell>buff_ce_minor_desc</Cell>
-    <Cell>A little hungry. Slight drop in responsiveness—feed soon to prevent worsening effects.</Cell><Cell>A little hungry. Slight drop in responsiveness—feed soon to prevent worsening effects.</Cell>
+    <Cell>A mild hunger troubles the horse. Its step is a touch heavy, though its spirit remains steady.</Cell><Cell>A mild hunger troubles the horse. Its step is a touch heavy, though its spirit remains steady.</Cell>
 </Row>
 
 <Row>
@@ -102,7 +106,7 @@
 </Row>
 <Row>
     <Cell>buff_ce_moderate_desc</Cell>
-    <Cell>Hungry. Noticeable loss of acceleration and courage; stamina drains faster.</Cell><Cell>Hungry. Noticeable loss of acceleration and courage; stamina drains faster.</Cell>
+    <Cell>Hunger wears on the horse—its pace dulls, and its courage thins when fear draws near.</Cell><Cell>Hunger wears on the horse—its pace dulls, and its courage thins when fear draws near.</Cell>
 </Row>
 
 <Row>
@@ -110,6 +114,6 @@
 </Row>
 <Row>
     <Cell>buff_ce_critical_desc</Cell>
-    <Cell>Starving. Severely reduced speed, stamina, and courage; may ignore or delay commands.</Cell><Cell>Starving. Severely reduced speed, stamina, and courage; may ignore or delay commands.</Cell>
+    <Cell>The horse is hollow-eyed and weary. The reins hold less sway, and the faintest alarm sends it shying.</Cell><Cell>The horse is hollow-eyed and weary. The reins hold less sway, and the faintest alarm sends it shying.</Cell>
 </Row>
 </Table> 

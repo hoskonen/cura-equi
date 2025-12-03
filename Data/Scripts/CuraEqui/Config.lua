@@ -38,6 +38,7 @@ CuraEqui.Config = {
         horseIdentityTrace = true,
         staminaSnapshot = true, -- capture a reference staminaMax (debug only)
         horseDerived = true,
+        showHorseStatsTutorial = false
     },
     Hunger = {
         preset                   = "moderate", -- "hardcore" | "moderate" | "laidback" "moderate" | "laidback"
