@@ -478,58 +478,88 @@ function CuraEqui.Initialize(fullInit)
         CuraEqui.state._prevHour = CuraEqui._get_player_hour()
     end
 
-    -- seed the state and start probing if horseless
-    local ST = CuraEqui.state
-    local h  = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+    ----------------------------------------------------------------
+    -- Seed the state from both RAW engine horse and OWNED horse view
+    ----------------------------------------------------------------
+    local ST      = CuraEqui.state
 
-    System.LogAlways(("[CuraEqui][Init] ResolveHorse→ id=%s hasHorseState=%s")
-        :format(tostring(h and h.id or "nil"), tostring(ST.hasHorse)))
+    -- Raw engine view: "what does the game think is my horse?"
+    local H       = CuraEqui.Horse
+    local hRaw    = H and H.Resolve and H.Resolve() or nil
 
-    -- ⚠️ IMPORTANT:
-    -- Do *not* gate h by PlayerOwnsHorse here. Ownership scaffolding is
-    -- not populated yet on load; the dedicated helper will decide.
+    -- Mark that we are in the post-load window so the helper can run
+    ST.justLoaded = true
 
-    -- If we load into a save while already having an ownable horse present,
-    -- try to arm ownership + hunger once for this session.
-    if CuraEqui.TryInitOwnedHorseOnLoad then
-        CuraEqui.TryInitOwnedHorseOnLoad()
+    ----------------------------------------------------------------
+    -- Give the ownership helper a chance to promote the raw horse
+    -- into an "owned" horse for this session.
+    ----------------------------------------------------------------
+    if CuraEqui.HorseOwnership and CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad then
+        local ok, err = pcall(CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad)
+        if not ok then
+            CuraEqui.Log("HorseOwn", "TryInitOwnedHorseOnLoad failed in Initialize: %s", tostring(err))
+        end
     end
 
-    -- DO NOT trust h ~= nil; horse entities exist even in horse-less saves
-    -- Default: horse-less until proven otherwise
+    -- Owned view *after* the helper has had a chance to run
+    local hOwned = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+
+    System.LogAlways(("[CuraEqui][Init] ResolveHorse→ rawId=%s ownedId=%s hasHorseState=%s")
+        :format(
+            tostring(hRaw and hRaw.id or "nil"),
+            tostring(hOwned and hOwned.id or "nil"),
+            tostring(ST.hasHorse)
+        ))
+
+    -- Default: horseless until proven otherwise
     ST.hasHorse = ST.hasHorse or false
-    ST.lastHorseId = (h and CuraEqui._HorseGuid(h)) or ST.lastHorseId
+
+    -- Prefer owned guid for lastHorseId, otherwise fall back to raw
+    if CuraEqui._HorseGuid then
+        if hOwned then
+            ST.lastHorseId = CuraEqui._HorseGuid(hOwned)
+        elseif hRaw then
+            ST.lastHorseId = CuraEqui._HorseGuid(hRaw)
+        end
+    else
+        ST.lastHorseId = (hOwned and hOwned.id)
+            or (hRaw and hRaw.id)
+            or ST.lastHorseId
+    end
+
+    ----------------------------------------------------------------
+    -- Branch A: no OWNED horse → treat as horseless for hunger.
+    -- We still might have a raw engine horse (e.g. stolen/unsupported),
+    -- but we don’t want hunger/buffs for it.
+    ----------------------------------------------------------------
+    local h = hOwned
 
     if not h then
         local now = (CuraEqui.Now and CuraEqui.Now()) or 0
 
-        -- 1) Log the horse-less init clearly
-        System.LogAlways("[CuraEqui][NoHorse] Initialize in horse-less save → flushing sated state")
+        System.LogAlways("[CuraEqui][NoHorse] Initialize as horseless (no owned horse on load)")
 
-        -- 2) Reset in-memory sated state
+        -- 1) Reset in-memory sated state
         ST.satedRemainSec = 0
         ST.satedUntil     = 0
 
-        -- 🔥 Also reset any stray per-horse sated state
-        local hAny        = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
-        if hAny and CuraEqui.HorseStateGet then
-            local S = CuraEqui.HorseStateGet(hAny)
+        -- 2) Optionally wipe stray per-horse sated state on the raw mount
+        if hRaw and CuraEqui.HorseStateGet then
+            local S = CuraEqui.HorseStateGet(hRaw)
             if S then
-                S.satedUntil    = 0
-                S._lastBuffTier = nil
+                S.satedRemainSec = 0
+                S.satedUntil     = 0
             end
         end
 
-        -- 3) Hard-clear any Sated buff on the player
-        if CuraEqui.Effects and CuraEqui.Effects.ClearSatedTimers then
-            System.LogAlways("[CuraEqui][NoHorse] ClearSatedTimers() (no-horse flush)")
-            pcall(CuraEqui.Effects.ClearSatedTimers)
+        -- 3) Kill watchers and probes, then rely on probe loop
+        if ST.hungerTimer then
+            Script.KillTimer(ST.hungerTimer)
+            ST.hungerTimer = nil
         end
-
-        -- 5) Normal logging + probe restart
-        if (now - (ST._noHorseLogAt or 0)) > 3.0 then
-            System.LogAlways("[CuraEqui][Horse] No horse detected — hunger/buffs are idle until a horse is acquired.")
-            ST._noHorseLogAt = now
+        if ST.probeTimer then
+            Script.KillTimer(ST.probeTimer)
+            ST.probeTimer = nil
         end
 
         if CuraEqui.StartProbing then
@@ -540,12 +570,9 @@ function CuraEqui.Initialize(fullInit)
     end
 
     ----------------------------------------------------------------
-    -- NEW: now that `h` is final and confirmed owned → allow the
-    -- "mounted on load" logic to arm ownership + hunger session.
+    -- NOTE: TryInitOwnedHorseOnLoad already ran above and should have
+    -- called SetOwnedHorse + StartWatching when it succeeded.
     ----------------------------------------------------------------
-    if CuraEqui.HorseOwnership and CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad then
-        CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
-    end
 
     -- 1) If we have a horse, hydrate ONLY hunger from DB.
     --    Sated is *never* re-applied from DB to avoid cross-save leakage.
@@ -572,15 +599,14 @@ function CuraEqui.Initialize(fullInit)
     end
 
     ----------------------------------------------------------------
-    -- 2) NEW: If we already have an owned horse on load, auto-start
-    --    the hunger watcher for this session (even if not mounted).
+    -- 2) If we already have an owned horse on load, auto-start
+    --    the hunger watcher for this session (even if not mounted),
+    --    but only if it isn't already running.
     ----------------------------------------------------------------
     do
         local ST2 = CuraEqui.state or {}
 
-        -- Ownership scaffolding should already have populated hasHorse/lastHorseEnt
-        if ST2.hasHorse and ST2.lastHorseEnt and CuraEqui.StartWatching then
-            -- Treat this as "mounted at least once this session" for hunger purposes
+        if ST2.hasHorse and ST2.lastHorseEnt and CuraEqui.StartWatching and not ST2.hungerTimer then
             ST2.hasMountedOwnedHorseOnce = ST2.hasMountedOwnedHorseOnce or true
 
             local okSw, errSw = pcall(CuraEqui.StartWatching)
@@ -823,6 +849,12 @@ function CuraEqui.OnGameplayStarted()
 
     local function try(i)
         local ST = CuraEqui.state or {}
+
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D.horseIdentityTrace and CuraEqui.Horse and CuraEqui.Horse.DebugProbePlayerHorse then
+            local tag = ("[OGS try=%d]"):format(tryIdx)
+            pcall(CuraEqui.Horse.DebugProbePlayerHorse, tag)
+        end
 
         -- Always try to resolve a horse; on horseless saves this just returns nil.
         local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil

@@ -38,6 +38,37 @@ local function _log_feed_cap(S, needPoints, used, usedEff, overshoot, consumedUn
         ))
 end
 
+local function _asEnt(handle)
+    if not handle then return nil end
+    local ty = type(handle)
+    if ty == "number" then
+        return System.GetEntity(handle)
+    end
+    if ty == "table" and handle.id then
+        return handle
+    end
+    -- WUID path (string/userdata depending on binding)
+    if XGenAIModule and (ty == "string" or ty == "userdata") then
+        local id = XGenAIModule.GetEntityIdByWUID(handle)
+        if id and id ~= 0 then
+            return System.GetEntity(id)
+        end
+        local e = XGenAIModule.GetEntityByWUID(handle)
+        if e and e.id then
+            return e
+        end
+    end
+    return nil
+end
+
+local function _horseProbeLog(fmt, ...)
+    local C = CuraEqui
+    local D = C.Config and C.Config.Debug or {}
+    if not D.horseIdentityTrace then return end
+    System.LogAlways(("[CuraEqui][HorseProbe] " .. fmt):format(...))
+end
+
+
 -- Pretty summary for feed → sated timers, showing clamp if any.
 local function _log_sated_summary(used, rawSec, bucketSec, buffSec)
     -- used: total nutrition consumed this feed
@@ -369,6 +400,76 @@ function CuraEqui.Horse.Has()
         return true, h
     end
     return false
+end
+
+function CuraEqui.Horse.DebugProbePlayerHorse(tag)
+    tag = tag or "probe"
+
+    _horseProbeLog("%s BEGIN", tag)
+
+    local ent
+
+    -- 1) player.player:GetPlayerHorse
+    if player and player.player and player.player.GetPlayerHorse then
+        local ok, wuid = pcall(player.player.GetPlayerHorse, player.player)
+        _horseProbeLog("%s source=player.player:GetPlayerHorse ok=%s handle=%s",
+            tag, tostring(ok), tostring(wuid))
+        if ok then
+            local e = _asEnt(wuid)
+            _horseProbeLog("%s source=player.player:GetPlayerHorse → ent=%s",
+                tag, e and tostring(e.id) or "nil")
+            ent = ent or e
+        end
+    else
+        _horseProbeLog("%s source=player.player:GetPlayerHorse unavailable", tag)
+    end
+
+    -- 2) Game.GetPlayerHorse
+    if Game and Game.GetPlayerHorse then
+        local ok, h = pcall(Game.GetPlayerHorse, Game)
+        _horseProbeLog("%s source=Game.GetPlayerHorse ok=%s handle=%s",
+            tag, tostring(ok), tostring(h))
+        if ok then
+            local e = _asEnt(h)
+            _horseProbeLog("%s source=Game.GetPlayerHorse → ent=%s",
+                tag, e and tostring(e.id) or "nil")
+            ent = ent or e
+        end
+    else
+        _horseProbeLog("%s source=Game.GetPlayerHorse unavailable", tag)
+    end
+
+    -- 3) g_gameRules.game:GetPlayerHorse
+    if g_gameRules and g_gameRules.game and g_gameRules.game.GetPlayerHorse then
+        local ok, h = pcall(g_gameRules.game.GetPlayerHorse, g_gameRules.game)
+        _horseProbeLog("%s source=g_gameRules.game:GetPlayerHorse ok=%s handle=%s",
+            tag, tostring(ok), tostring(h))
+        if ok then
+            local e = _asEnt(h)
+            _horseProbeLog("%s source=g_gameRules.game:GetPlayerHorse → ent=%s",
+                tag, e and tostring(e.id) or "nil")
+            ent = ent or e
+        end
+    else
+        _horseProbeLog("%s source=g_gameRules.game:GetPlayerHorse unavailable", tag)
+    end
+
+    -- 4) player.actor:GetHorseId
+    if player and player.actor and player.actor.GetHorseId then
+        local ok, hid = pcall(player.actor.GetHorseId, player.actor)
+        _horseProbeLog("%s source=player.actor:GetHorseId ok=%s handle=%s",
+            tag, tostring(ok), tostring(hid))
+        if ok then
+            local e = _asEnt(hid)
+            _horseProbeLog("%s source=player.actor:GetHorseId → ent=%s",
+                tag, e and tostring(e.id) or "nil")
+            ent = ent or e
+        end
+    else
+        _horseProbeLog("%s source=player.actor:GetHorseId unavailable", tag)
+    end
+
+    _horseProbeLog("%s FINAL ent=%s", tag, ent and tostring(ent.id) or "nil")
 end
 
 -- Returns the player's horse entity or nil. Caches id when found.

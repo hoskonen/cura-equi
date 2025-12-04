@@ -190,6 +190,9 @@ end
 -- Try to arm hunger + ownership when loading into a save
 -- where the player already has an owned horse present.
 -- Try to re-establish ownership + hunger if player loads while mounted
+-- Try to arm hunger + ownership when loading into a save
+-- where the player already has an owned horse present.
+-- Safe, defensive, and independent of ResolveHorse gating.
 function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
     local C  = CuraEqui
     C.state  = C.state or {}
@@ -203,10 +206,26 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
     end
 
     ----------------------------------------------------------------
-    -- 2) Resolve the current horse (whatever the game thinks is active)
+    -- 2) Resolve the current horse using the raw resolver
+    --    (what the ENGINE thinks is the player’s horse).
+    --    We avoid C.ResolveHorse here to keep things simple and
+    --    avoid any recursion / ownership gating during bootstrap.
     ----------------------------------------------------------------
-    local h = C.ResolveHorse and C.ResolveHorse() or nil
-    if not h then
+    local h = nil
+
+    do
+        local H = C.Horse
+        if H and H.Resolve then
+            local ok, ent = pcall(H.Resolve)
+            if ok and ent and ent.id then
+                h = ent
+            end
+        end
+    end
+
+    if not h or not h.id then
+        -- Nothing to promote → we’re effectively horseless.
+        ST.justLoaded = false
         return
     end
 
@@ -214,24 +233,40 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
     -- 3) Whitelist check: only auto-own horses marked as ownable
     ----------------------------------------------------------------
     local nm = C._HorseName and C._HorseName(h) or nil
-    if not nm then
+    if not nm or nm == "" then
+        ST.justLoaded = false
         return
     end
 
     local ownable = false
     if C.HorseOwnership and C.HorseOwnership.IsHorseStormNameOwnable then
-        ownable = C.HorseOwnership.IsHorseStormNameOwnable(nm)
+        local okOwn, res = pcall(C.HorseOwnership.IsHorseStormNameOwnable, nm)
+        if okOwn and res == true then
+            ownable = true
+        end
     end
+
     if not ownable then
         -- e.g. dummyWanderer_horse_1, tsem_horse_7 → ignore
+        ST.justLoaded = false
         return
     end
 
     ----------------------------------------------------------------
-    -- 4) Treat this as the owned horse + mark "mounted once".
+    -- 4) Treat this as the owned horse for this session.
+    --    Let SetOwnedHorse do the heavy lifting (snapshots, DB hydration).
     ----------------------------------------------------------------
     if C.SetOwnedHorse then
-        C.SetOwnedHorse(h, { reason = "load-mounted" })
+        local okSet, errSet = pcall(C.SetOwnedHorse, h, { reason = "load-mounted" })
+        if not okSet then
+            if C.Log then
+                C.Log("HorseOwn",
+                    "TryInitOwnedHorseOnLoad: SetOwnedHorse failed: %s",
+                    tostring(errSet))
+            end
+            ST.justLoaded = false
+            return
+        end
     end
 
     ST.hasHorse     = true
@@ -241,14 +276,17 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
     ----------------------------------------------------------------
     -- 5) Arm hunger watcher if not already running.
     ----------------------------------------------------------------
-    if C.StartWatching then
-        local ok, err = pcall(C.StartWatching)
-        if not ok then
-            C.Log("Hunger", "TryInitOwnedHorseOnLoad: StartWatching failed: %s", tostring(err))
+    if C.StartWatching and not ST.hungerTimer then
+        local okSw, errSw = pcall(C.StartWatching)
+        if not okSw and C.Log then
+            C.Log("Hunger",
+                "TryInitOwnedHorseOnLoad: StartWatching failed: %s",
+                tostring(errSw))
         end
     end
 
     ST.justLoaded = false -- don’t run again this session
+
     local prettyName = (h.GetName and h:GetName()) or "Horse"
     System.LogAlways(("[CuraEqui][HorseOwn] mounted-on-load init for id=%s name=%s")
         :format(tostring(h.id), tostring(prettyName)))
