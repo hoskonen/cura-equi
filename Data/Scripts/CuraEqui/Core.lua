@@ -2,23 +2,23 @@
 CuraEqui                        = CuraEqui or {}
 CuraEqui.VERSION                = "0.2.0"
 CuraEqui.state                  = CuraEqui.state or {
-    hungerTimer              = nil,
-    pausedForSleep           = false,
-    started                  = false,
+    hungerTimer           = nil,
+    pausedForSleep        = false,
+    started               = false,
 
     -- (horse identity + probing/watch glue)
-    hasHorse                 = false, -- single source of truth
-    lastHorseId              = nil,   -- GUID we think we’re riding
-    lastHorseEnt             = nil,
-    probeTimer               = nil,   -- lazy probe timer id (horseless only)
-    _noHorseLogAt            = 0,     -- rate-limit for “no horse” logs
-    _revalNextAt             = 0,     -- next time we may revalidate identity
-    _lastHorseSwapAt         = nil,   -- debounce for swaps
+    hasHorse              = false,    -- single source of truth
+    lastHorseId           = nil,      -- GUID we think we’re riding
+    lastHorseEnt          = nil,
+    probeTimer            = nil,      -- lazy probe timer id (horseless only)
+    _noHorseLogAt         = 0,        -- rate-limit for “no horse” logs
+    _revalNextAt          = 0,        -- next time we may revalidate identity
+    _lastHorseSwapAt      = nil,      -- debounce for swaps
 
     -- (owned-horse tracking – not used yet)
-    currentOwnedHorseId      = nil,   -- entity id / GUID of main owned horse
-    currentOwnedHorseGuid    = nil,   -- strong GUID if available
-    hasMountedOwnedHorseOnce = false, -- true after first mount of owned horse this session
+    currentOwnedHorseId   = nil,    -- entity id / GUID of main owned horse
+    currentOwnedHorseGuid = nil,    -- strong GUID if available
+    --hasMountedOwnedHorseOnce = false, -- true after first mount of owned horse this session
 }
 -- debounce + session flags
 CuraEqui.state._skipLastInitAt  = 0
@@ -388,15 +388,14 @@ function CuraEqui.Bootstrap(reason)
     if CuraEqui.StopWatching then pcall(CuraEqui.StopWatching) end
 
     -- 4) RESET per-session mirrors/flags (single source of truth)
-    ST._giftedFor               = {}
-    ST._giftedSessionId         = (ST._giftedSessionId or 0) + 1
-    ST.noHorseStrikes           = 0
-    ST.justLoaded               = true
+    ST._giftedFor            = {}
+    ST._giftedSessionId      = (ST._giftedSessionId or 0) + 1
+    ST.noHorseStrikes        = 0
+    ST.justLoaded            = true
 
     -- Owned-horse tracking (Step 5 – fields only, no behavior yet)
-    ST.currentOwnedHorseId      = nil
-    ST.currentOwnedHorseGuid    = nil
-    ST.hasMountedOwnedHorseOnce = false
+    ST.currentOwnedHorseId   = nil
+    ST.currentOwnedHorseGuid = nil
 
     CuraEqui.SetOwnedHorse(nil, { reason = "load-reset" })
 
