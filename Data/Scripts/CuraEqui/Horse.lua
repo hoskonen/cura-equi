@@ -1133,20 +1133,6 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     if C.SetOwnedHorse then
         C.SetOwnedHorse(h, { reason = "mount-internal" })
 
-        -- Optional: debug whether this horse is "ownable" per whitelist
-        local nm      = C._HorseName and C._HorseName(h) or nil
-        local ownable = true
-
-        if nm and C.HorseOwnership and C.HorseOwnership.IsHorseStormNameOwnable then
-            ownable = C.HorseOwnership.IsHorseStormNameOwnable(nm)
-        end
-
-        local D = C.Config and C.Config.Debug or {}
-        if D.horseIdentityTrace then
-            System.LogAlways(("[CuraEqui][OWNDBG] name=%s ownable=%s"):
-            format(tostring(nm), tostring(ownable)))
-        end
-
         if C.DebugLogHorseIdentity then
             C.DebugLogHorseIdentity(h, { tag = "mount-internal" })
         end
@@ -1228,37 +1214,13 @@ do
                 local isOwned = false
 
                 ----------------------------------------------------------------
-                -- 1) Fast path: Storm-name whitelist (stable / legitimately
-                --    ownable horses) – does NOT depend on session state.
+                -- Single authority: central ownership helper (engine-based).
                 ----------------------------------------------------------------
-                do
-                    local HO = CuraEqui.HorseOwnership
-                    local nm = CuraEqui._HorseName and CuraEqui._HorseName(self) or nil
-                    if HO and HO.IsHorseStormNameOwnable and nm then
-                        local okOwn, ownable = pcall(HO.IsHorseStormNameOwnable, nm)
-                        if okOwn and ownable == true then
-                            isOwned = true
-                        end
-                    end
-                end
-
-                ----------------------------------------------------------------
-                -- 2) Fallback: centralized helper (may look at session state)
-                ----------------------------------------------------------------
-                if not isOwned and CuraEqui.PlayerOwnsHorse then
+                if CuraEqui.PlayerOwnsHorse then
                     local ok, owns = pcall(CuraEqui.PlayerOwnsHorse, self)
                     isOwned = ok and owns == true
                 end
 
-                ----------------------------------------------------------------
-                -- 3) Final fallback: Resolve() equality (legacy behaviour)
-                ----------------------------------------------------------------
-                if not isOwned and CuraEqui.Horse and CuraEqui.Horse.Resolve then
-                    local mine = CuraEqui.Horse.Resolve()
-                    isOwned = (mine and self and mine.id == self.id) or false
-                end
-
-                -- Block feeding if this horse is not considered owned
                 if not isOwned then
                     return actions
                 end
@@ -1296,7 +1258,6 @@ do
         end
 
         H.__curaequi_feed_wrapped = true
-        System.LogAlways("[CuraEqui][Feed] ✅ Wrapped Horse.GetActions")
     end
 end
 

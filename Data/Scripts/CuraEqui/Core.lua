@@ -967,9 +967,7 @@ function CuraEqui.OnQuickLoadingStart()
     -- old C._lastMountId from the previous gameplay session,
     -- and will log "[mount] duplicate event, ignoring]" and bail.
     --
-    -- That means SetOwnedHorse() is never called, and our
-    -- _maybeNotifyUnsupportedHorse() toast never fires for
-    -- saves loaded while already mounted on an unsupported horse.
+    -- That means SetOwnedHorse() is never called
     ----------------------------------------------------------------
     C._lastMountId = nil
 
