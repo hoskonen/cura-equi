@@ -4,22 +4,122 @@ CuraEqui.HorseOwnership = CuraEqui.HorseOwnership or {}
 local HorseOwnership    = CuraEqui.HorseOwnership
 local HorseList         = CuraEqui.HorseList or {}
 
--- Simple helper: check by Storm name via HorseList
-function HorseOwnership.IsHorseStormNameOwnable(name)
-    if not name then return false end
-    name = tostring(name)
+local function _maybeNotifyUnsupportedHorse(h, nm, reason)
+    local C  = CuraEqui
+    C.state  = C.state or {}
+    local ST = C.state
 
-    -- Hard blocklist
-    if HorseList.NeverOwned and HorseList.NeverOwned[name] then
-        return false
+    ----------------------------------------------------------------
+    -- If we already have an owned horse, do NOT spam:
+    --   - the player already “knows” the system is running
+    --   - stolen / unsupported mounts are just ignored silently
+    ----------------------------------------------------------------
+    if ST.hasHorse then
+        return
     end
 
-    -- Allowed list
-    if HorseList.Ownable and HorseList.Ownable[name] then
-        return true
+    ----------------------------------------------------------------
+    -- One toast per session while horseless
+    ----------------------------------------------------------------
+    if ST._unsupportedHorseToastShown then
+        return
+    end
+    ST._unsupportedHorseToastShown = true
+
+    local msg = "@curaequi_black_market_horse"
+
+    -- Prefer unified Toast helper
+    if C.UI and C.UI.Toast then
+        -- text, ms, prio, id, lane
+        C.UI.Toast(msg, 5000, 0, "CuraEqui_UnsupportedHorse", "infotext")
+        return
     end
 
-    return false
+    -- Fallback: center info text
+    if C.UI and C.UI.SendInfoText then
+        C.UI.SendInfoText(msg, 5000, true, 0)
+        return
+    end
+
+    -- Last resort: log only
+    if C.Log then
+        C.Log(
+            "HorseId",
+            "Unsupported horse (%s, %s) – UI not available, message not shown (reason=%s)",
+            tostring(nm or "?"),
+            tostring(h and h.id or "nil"),
+            tostring(reason)
+        )
+    end
+end
+
+-- Engine-side ownership check:
+--  - returns isOwned, hasAnyEngineOwned
+--  - isOwned          → "this specific entity is the engine-owned horse"
+--  - hasAnyEngineOwned→ "the engine currently has some PlayerHorse at all"
+function HorseOwnership.IsEngineOwnedHorse(h)
+    local C = CuraEqui
+    local D = C.Config and C.Config.Debug or {}
+
+    if not (h and h.id) then
+        return false, false
+    end
+
+    local wuid = nil
+
+    -- 1) Ask the engine what it considers the player horse (WUID)
+    if player and player.player and player.player.GetPlayerHorse then
+        local ok, res = pcall(player.player.GetPlayerHorse, player.player)
+        if ok then
+            wuid = res
+        end
+    end
+
+    -- No engine-owned horse at all
+    if (not wuid) or (wuid == 0) then
+        if D.horseIdentityTrace then
+            System.LogAlways("[CuraEqui][HorseDebug] IsEngineOwnedHorse: no engine-owned horse (wuid=nil/0)")
+        end
+        return false, false
+    end
+
+    local horseId = nil
+
+    -- 2) Turn WUID into a concrete entity id
+    if XGenAIModule then
+        local okId, idFromW = pcall(XGenAIModule.GetEntityIdByWUID, wuid)
+        if okId and idFromW and idFromW ~= 0 then
+            horseId = idFromW
+        else
+            local okEnt, entFromW = pcall(XGenAIModule.GetEntityByWUID, wuid)
+            if okEnt and entFromW and entFromW.id then
+                horseId = entFromW.id
+            end
+        end
+    end
+
+    local wuidStr = nil
+    if Framework and Framework.WUIDToString then
+        local okStr, s = pcall(Framework.WUIDToString, wuid)
+        if okStr then
+            wuidStr = s
+        end
+    end
+
+    local isOwned = (horseId ~= nil and horseId ~= 0 and horseId == h.id)
+
+    if D.horseIdentityTrace then
+        System.LogAlways((
+            "[CuraEqui][HorseDebug] IsEngineOwnedHorse: wuid=%s id=%s h.id=%s isOwned=%s"
+        ):format(
+            tostring(wuidStr or wuid or "nil"),
+            tostring(horseId or "nil"),
+            tostring(h.id),
+            tostring(isOwned)
+        ))
+    end
+
+    return isOwned, true -- true = "engine has *some* PlayerHorse"
 end
 
 function CuraEqui.SetOwnedHorse(h, opts)
@@ -35,24 +135,45 @@ function CuraEqui.SetOwnedHorse(h, opts)
     -- 1) CLEAR CASE: nil horse → forget identity and exit
     ---------------------------------------------------------
     if not h then
-        local oldEnt             = ST.lastHorseEnt
+        local oldEnt                   = ST.lastHorseEnt
+        local reasonTag                = tostring(opts.reason or "unknown")
 
-        ST.hasHorse              = false
-        ST.lastHorseEnt          = nil
-        ST.lastHorseId           = nil
-        ST.lastHorseName         = nil
-        ST.lastHorseFp           = nil
-        ST.lastHorseFpExt        = nil
-        ST.currentOwnedHorseId   = nil
-        ST.currentOwnedHorseGuid = nil
-        ST._hungerLoadedFromDB   = nil
+        -- Reset per-session “unsupported horse” toast whenever we
+        -- completely forget horse identity (new load, manual clear, etc.)
+        ST._unsupportedHorseToastShown = nil
+
+        ST.hasHorse                    = false
+        ST.lastHorseEnt                = nil
+        ST.lastHorseId                 = nil
+        ST.lastHorseName               = nil
+        ST.lastHorseFp                 = nil
+        ST.lastHorseFpExt              = nil
+        ST.currentOwnedHorseId         = nil
+        ST.currentOwnedHorseGuid       = nil
+        ST._hungerLoadedFromDB         = nil
+
+        -- Clear cached engine horse id so Resolve() doesn’t return ghosts
+        if C.Horse then
+            C.Horse.playerHorseId = nil
+        end
+
+        -- Also reset mount duplicate filter (new session / identity wipe)
+        C._lastMountId   = nil
+        C._lastMountTime = nil
 
         -- Also clear any old debuffs on the previous horse entity
         if oldEnt and C.Effects and C.Effects.ClearHorseDebuffs then
-            pcall(C.Effects.ClearHorseDebuffs, oldEnt) -- pcall: never hard-crash if Effects is missing  <https://www.lua.org/manual/5.1/manual.html#pdf-pcall>
+            pcall(C.Effects.ClearHorseDebuffs, oldEnt)
         end
 
-        C.Log("HorseId", "SetOwnedHorse[%s]: cleared identity", reason)
+        if reasonTag == "load-reset" then
+            System.LogAlways("[CuraEqui][HorseId] SetOwnedHorse[load-reset]: cleared identity")
+        else
+            if C.Log then
+                C.Log("HorseId", "SetOwnedHorse[%s]: cleared identity", reason)
+            end
+        end
+
         return
     end
 
@@ -69,42 +190,53 @@ function CuraEqui.SetOwnedHorse(h, opts)
     end
 
     ---------------------------------------------------------
-    -- 3) WHITELIST CHECK (use current horse name)
+    -- 3) ENGINE OWNERSHIP GATE (trust the game’s PlayerHorse)
     ---------------------------------------------------------
-    if nm and HorseOwnership.IsHorseStormNameOwnable then
-        local ownable = HorseOwnership.IsHorseStormNameOwnable(nm)
+    local HO = C.HorseOwnership
+    local isEngineOwned, hasEngineOwned = false, false
 
-        -- If this horse is NOT ownable, never treat it as the player's mount.
-        if not ownable then
-            -- FULL REJECTION: clear identity
-            ST.hasHorse              = false
-            ST.lastHorseEnt          = nil
-            ST.lastHorseId           = nil
-            ST.lastHorseName         = nil
-            ST.lastHorseFp           = nil
-            ST.lastHorseFpExt        = nil
-            ST.currentOwnedHorseId   = nil
-            ST.currentOwnedHorseGuid = nil
-            ST._hungerLoadedFromDB   = nil
-
-            -- Also wipe any existing CuraEqui debuffs from this horse
-            if C.Effects and C.Effects.ClearHorseDebuffs then
-                pcall(C.Effects.ClearHorseDebuffs, h)
+    if HO and HO.IsEngineOwnedHorse then
+        local okEO, ownedFlag, anyFlag = pcall(HO.IsEngineOwnedHorse, h)
+        if okEO then
+            isEngineOwned  = (ownedFlag == true)
+            hasEngineOwned = (anyFlag == true)
+        else
+            if D.ownershipTrace and C.Log then
+                C.Log(
+                    "HorseId",
+                    "IsEngineOwnedHorse failed in SetOwnedHorse[%s]: %s",
+                    reason,
+                    tostring(ownedFlag)
+                )
             end
-
-            C.Log("HorseId",
-                "SetOwnedHorse[%s]: rejected non-ownable horse (%s)",
-                reason, tostring(nm))
-
-            return
         end
+    end
+
+    -- Not the engine-owned horse → never treat as CuraEqui’s owned horse.
+    -- IMPORTANT: we do *not* clear existing owned identity; we just ignore
+    -- this mount for hunger purposes.
+    if not isEngineOwned then
+        if C.Effects and C.Effects.ClearHorseDebuffs then
+            pcall(C.Effects.ClearHorseDebuffs, h)
+        end
+
+        if D.ownershipTrace and C.Log then
+            C.Log(
+                "HorseId",
+                "SetOwnedHorse[%s]: engine says NOT owned (nm=%s)",
+                reason,
+                tostring(nm or "?")
+            )
+        end
+
+        return
     end
 
     ---------------------------------------------------------
     -- 4) LAZY HUNGER HYDRATION – ONLY ONCE PER SESSION
-    --    (only for accepted / ownable horses)
+    --    (only for accepted / engine-owned horses)
     ---------------------------------------------------------
-    if not ST._hungerLoadedFromDB
+    if (not ST._hungerLoadedFromDB)
         and C.Persist and C.Persist.Load
         and C.HorseStateGet then
         local S = C.HorseStateGet(h)
@@ -117,10 +249,14 @@ function CuraEqui.SetOwnedHorse(h, opts)
 
             ST._hungerLoadedFromDB = true
 
-            C.Log("Persist",
-                "Hydrated hunger on SetOwnedHorse[%s]: hunger=%s (sated ignored)",
-                reason,
-                tostring(ph))
+            if C.Log then
+                C.Log(
+                    "Persist",
+                    "Hydrated hunger on SetOwnedHorse[%s]: hunger=%s (sated ignored)",
+                    reason,
+                    tostring(ph)
+                )
+            end
         end
     end
 
@@ -141,11 +277,13 @@ function CuraEqui.SetOwnedHorse(h, opts)
     ST.currentOwnedHorseId   = h.id -- raw entity id (fast path)
     ST.currentOwnedHorseGuid = gid  -- strong GUID / table/string
 
-    if D.ownershipTrace then
-        C.Log("HorseId",
+    if D.ownershipTrace and C.Log then
+        C.Log(
+            "HorseId",
             "Owned snapshot: currentOwnedHorseId=%s guid=%s",
             tostring(ST.currentOwnedHorseId),
-            tostring(ST.currentOwnedHorseGuid))
+            tostring(ST.currentOwnedHorseGuid)
+        )
     end
 end
 
@@ -244,12 +382,6 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
         if okOwn and res == true then
             ownable = true
         end
-    end
-
-    if not ownable then
-        -- e.g. dummyWanderer_horse_1, tsem_horse_7 → ignore
-        ST.justLoaded = false
-        return
     end
 
     ----------------------------------------------------------------

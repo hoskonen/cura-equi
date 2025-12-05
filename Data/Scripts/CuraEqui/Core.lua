@@ -479,6 +479,24 @@ function CuraEqui.Initialize(fullInit)
     end
 
     ----------------------------------------------------------------
+    -- Wipe any legacy Sated tiers that may have persisted
+    -- from older saves or previous sessions.
+    --
+    -- Design rule: Sated is *not* persisted. Every session starts
+    -- "clean" and Sated is only granted by feeding this session.
+    ----------------------------------------------------------------
+    do
+        local B = CuraEqui.Buffs
+        if B and B.SweepPlayerSatedEffects then
+            -- tag is just for future debug if you ever log it
+            pcall(B.SweepPlayerSatedEffects, "init")
+        elseif B and B.ClearSatedTimers then
+            -- older fallback: still clears all Sated-tier UUIDs
+            pcall(B.ClearSatedTimers)
+        end
+    end
+
+    ----------------------------------------------------------------
     -- Seed the state from both RAW engine horse and OWNED horse view
     ----------------------------------------------------------------
     local ST      = CuraEqui.state
@@ -852,7 +870,7 @@ function CuraEqui.OnGameplayStarted()
 
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
         if D.horseIdentityTrace and CuraEqui.Horse and CuraEqui.Horse.DebugProbePlayerHorse then
-            local tag = ("[OGS try=%d]"):format(tryIdx)
+            local tag = ("[OGS try=%d]"):format(i)
             pcall(CuraEqui.Horse.DebugProbePlayerHorse, tag)
         end
 
@@ -926,12 +944,34 @@ function CuraEqui.OnQuickLoadingStart()
     System.LogAlways("[CuraEqui] OnQuickLoadingStart")
     local ST = CuraEqui.state or {}
 
-    -- 🔥 HARD KILL: prevent inherited hunger timers from firing after load
+    ----------------------------------------------------------------
+    -- Kill any inherited hunger timer from the previous session
+    ----------------------------------------------------------------
     if ST.hungerTimer then
         Script.KillTimer(ST.hungerTimer)
         ST.hungerTimer = nil
         System.LogAlways("[CuraEqui][Fix] Killed inherited hunger timer on load start")
     end
+
+    ----------------------------------------------------------------
+    -- Mark that the next Initialize() is happening after a load.
+    -- This is used by HorseOwnership.TryInitOwnedHorseOnLoad.
+    ----------------------------------------------------------------
+    ST.justLoaded = true
+
+    ----------------------------------------------------------------
+    -- IMPORTANT: Reset horse-mount dedupe across loads.
+    --
+    -- Without this, the first OnPlayerMountedHorseInternal call
+    -- after a load may see the new horse 'h' as the same as the
+    -- old C._lastMountId from the previous gameplay session,
+    -- and will log "[mount] duplicate event, ignoring]" and bail.
+    --
+    -- That means SetOwnedHorse() is never called, and our
+    -- _maybeNotifyUnsupportedHorse() toast never fires for
+    -- saves loaded while already mounted on an unsupported horse.
+    ----------------------------------------------------------------
+    C._lastMountId = nil
 
     -- Reset throttled debug / HUD timers so loading an older save
     -- doesn't "mute" logs and dev toasts until time catches up.
@@ -1102,7 +1142,7 @@ function CuraEqui.OnPlayerMountedHorse(horse)
     ST.hasMountedOwnedHorseOnce = true
 
     if CuraEqui.DebugLogHorseIdentity then
-        CuraEqui.DebugLogHorseIdentity(h, { tag = "mount-external" })
+        CuraEqui.DebugLogHorseIdentity(horse, { tag = "mount-external" })
     end
 
 

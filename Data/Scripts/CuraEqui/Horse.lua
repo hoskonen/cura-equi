@@ -364,6 +364,37 @@ local function _emit_feed_toasts(removePlan, used, mode, S)
     CuraEqui.UI.Toast(msg, ms, 0, "CuraEqui_FeedSummary", lane)
 end
 
+local function DebugPrintPlayerHorse()
+    local C = CuraEqui
+    if not (player and player.player and player.player.GetPlayerHorse) then
+        System.LogAlways("[HorseDebug] GetPlayerHorse unavailable")
+        return
+    end
+
+    local ok, wuid = pcall(player.player.GetPlayerHorse, player.player)
+    System.LogAlways("[HorseDebug] GetPlayerHorse ok=" .. tostring(ok))
+    System.LogAlways("[HorseDebug]   wuid=" .. tostring(wuid))
+
+    if Framework and Framework.WUIDToString then
+        local readable = Framework.WUIDToString(wuid)
+        System.LogAlways("[HorseDebug]   wuid(str)=" .. tostring(readable))
+    end
+
+    if XGenAIModule then
+        local id = XGenAIModule.GetEntityIdByWUID(wuid)
+        System.LogAlways("[HorseDebug]   translated id=" .. tostring(id))
+    end
+
+    local resolved = C.Horse.Resolve and C.Horse.Resolve()
+    if resolved then
+        local name = C._HorseName(resolved)
+        System.LogAlways("[HorseDebug] Resolve(): id=" .. tostring(resolved.id) .. " name=" .. tostring(name))
+    else
+        System.LogAlways("[HorseDebug] Resolve() returned nil")
+    end
+end
+
+
 function CuraEqui.Horse.Debug_LogPlayerHorseHandles()
     local function log(label, ok, val)
         local t = type(val)
@@ -1075,11 +1106,26 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     local ST       = CuraEqui.state
     local C        = CuraEqui
 
-    if C._lastMountId == h then
+    -- Time-based duplicate filter: only swallow events that arrive
+    -- for the same horse within a very small time window (engine spam).
+    local now      = (C.Now and C.Now()) or 0
+    local last     = C._lastMountTime or 0
+
+    if C._lastMountId == h and (now - last) < 0.2 then
         C.Log("[mount] duplicate event, ignoring")
         return
     end
-    C._lastMountId = h
+
+    C._lastMountId   = h
+    C._lastMountTime = now
+
+    -- if C._lastMountId == h then
+    --     C.Log("[mount] duplicate event, ignoring")
+    --     return
+    -- end
+    -- C._lastMountId = h
+
+    DebugPrintPlayerHorse()
 
     ----------------------------------------------------------------
     -- 1) Route identity through central ownership scaffolding
