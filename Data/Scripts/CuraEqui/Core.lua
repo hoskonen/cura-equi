@@ -7,17 +7,17 @@ CuraEqui.state                  = CuraEqui.state or {
     started               = false,
 
     -- (horse identity + probing/watch glue)
-    hasHorse              = false,    -- single source of truth
-    lastHorseId           = nil,      -- GUID we think we’re riding
+    hasHorse              = false, -- single source of truth
+    lastHorseId           = nil,   -- GUID we think we’re riding
     lastHorseEnt          = nil,
-    probeTimer            = nil,      -- lazy probe timer id (horseless only)
-    _noHorseLogAt         = 0,        -- rate-limit for “no horse” logs
-    _revalNextAt          = 0,        -- next time we may revalidate identity
-    _lastHorseSwapAt      = nil,      -- debounce for swaps
+    probeTimer            = nil,   -- lazy probe timer id (horseless only)
+    _noHorseLogAt         = 0,     -- rate-limit for “no horse” logs
+    _revalNextAt          = 0,     -- next time we may revalidate identity
+    _lastHorseSwapAt      = nil,   -- debounce for swaps
 
     -- (owned-horse tracking – not used yet)
-    currentOwnedHorseId   = nil,    -- entity id / GUID of main owned horse
-    currentOwnedHorseGuid = nil,    -- strong GUID if available
+    currentOwnedHorseId   = nil, -- entity id / GUID of main owned horse
+    currentOwnedHorseGuid = nil, -- strong GUID if available
     --hasMountedOwnedHorseOnce = false, -- true after first mount of owned horse this session
 }
 -- debounce + session flags
@@ -463,7 +463,12 @@ function CuraEqui.Initialize(fullInit)
     end
 
     -- Fallback: if we still have a sleep start timestamp, run catch-up once here.
-    if CuraEqui.state and CuraEqui.state._sleepStartHour and CuraEqui.Hunger_CatchUpAfterSleep then
+    -- Only do this if we actually had an owned horse this session.
+    if CuraEqui.state
+        and CuraEqui.state.hasHorse
+        and CuraEqui.state._sleepStartHour
+        and CuraEqui.Hunger_CatchUpAfterSleep
+    then
         local ok, minutes, delta, before, after = pcall(CuraEqui.Hunger_CatchUpAfterSleep)
         if ok and minutes and minutes > 0 then
             System.LogAlways(("[CuraEqui][Hunger][catchup] +%.1f min → Δ=%.2f → %d→%d")
@@ -705,6 +710,17 @@ function CuraEqui.OnSetFaderState(elementName, instanceId, eventName, argTable)
             if st._skipSessionOpen and not st._skipHandled then
                 st._skipHandled = true
 
+                -- 🔒 if we never had an owned horse this session, skip catch-up entirely
+                if not st.hasHorse then
+                    if Dbg.skipTrace then
+                        System.LogAlways("[CuraEqui][SkipTime] CLOSE (no owned horse) → skip catch-up")
+                    end
+
+                    st._sleepStartHour     = nil
+                    st._skipSessionOpen    = false
+                    st._skipMinutesPlanned = nil
+                    return
+                end
                 if Dbg.skipTrace then
                     local startHour = st._sleepStartHour
                     local endHour   = CuraEqui._get_player_hour() or st._prevHour
@@ -820,6 +836,17 @@ function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
             if st._skipSessionOpen and not st._skipHandled then
                 st._skipHandled = true
 
+                -- 🔒 if we never had an owned horse this session, skip catch-up entirely
+                if not st.hasHorse then
+                    if Dbg.skipTrace then
+                        System.LogAlways("[CuraEqui][SkipTime] CLOSE (no owned horse) → skip catch-up")
+                    end
+
+                    st._sleepStartHour     = nil
+                    st._skipSessionOpen    = false
+                    st._skipMinutesPlanned = nil
+                    return
+                end
                 if Dbg.skipTrace then
                     local startHour = st._sleepStartHour
                     local endHour   = CuraEqui._get_player_hour() or st._prevHour
