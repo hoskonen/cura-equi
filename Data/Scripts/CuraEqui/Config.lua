@@ -28,6 +28,7 @@ CuraEqui.Config = {
         mountTrace = true,
         feedTrace = true,
         feedTraceVerbose = false,
+        feedUI = false,          -- right corner ui notifications
         persistTrace = true,     -- log saving
         tickTrace = true,
         buffTraceVerbose = true, -- false = log only when buff changes
@@ -152,7 +153,7 @@ CuraEqui.Config = {
         -- Toasts (dev-style, no localization)
         toastOnDone            = true,
         toastLane              = "notification", -- "notification" (right) | "tutorial" | "infotext"
-        toastSec               = 2.0,
+        toastSec               = 4.0,
         allowAnyHorse          = false
     },
     Drinking = {

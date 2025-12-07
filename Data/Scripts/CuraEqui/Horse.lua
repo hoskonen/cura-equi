@@ -338,15 +338,22 @@ end
 
 local function _emit_feed_toasts(removePlan, used, mode, S)
     local F = (CuraEqui.Config and CuraEqui.Config.Feeding) or {}
-    if not (F.toastOnDone and CuraEqui.UI and CuraEqui.UI.Toast) then return end
+    local D = (CuraEqui.Config and CuraEqui.Config.Debug) or {}
+
+    -- feeding UI toasts only when:
+    --   feeding.toastOnDone == true
+    --   AND debug.feedUI == true
+    if not (F.toastOnDone and D.feedUI and CuraEqui.UI and CuraEqui.UI.Toast) then
+        return
+    end
+
     local lane, ms = _feed_toast_cfg()
     local parts = {}
     for _, rec in pairs(removePlan) do
         parts[#parts + 1] = {
             label = rec.label,
             units = rec.units,
-            total = rec.units *
-                rec.per
+            total = rec.units * rec.per
         }
     end
     for i = 1, #parts do
@@ -361,7 +368,7 @@ local function _emit_feed_toasts(removePlan, used, mode, S)
     else
         msg = string.format("Fed %d type(s) (-%d) → %d%%", #parts, used, math.floor(tonumber(S.hunger or 0) or 0))
     end
-    CuraEqui.UI.Toast(msg, ms, 0, "CuraEqui_FeedSummary", lane)
+    CuraEqui.UI.Toast(msg, ms, 0, "CuraEqui_FeedType", lane)
 end
 
 local function DebugPrintPlayerHorse()

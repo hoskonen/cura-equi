@@ -717,21 +717,68 @@ function CuraEqui._HungerTickBody()
     end
 
     do
-        local DH = CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.hud
-        if DH and DH.enabled and CuraEqui.UI and CuraEqui.UI.Toast and S then
-            System.LogAlways(("[CuraEqui][HUDDBG] dev HUD block running (h=%.1f satedUntil=%.1f)")
-                :format(tonumber(S.hunger or -1) or -1, tonumber(S.satedUntil or -1) or -1))
-            local preset = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "custom"
-            local U      = CuraEqui.Utils
-            local h      = math.floor(tonumber(S.hunger or 0) or 0)
-            local now    = (CuraEqui.Now and CuraEqui.Now()) or 0
-            local rem    = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
-            local pretty = (U and U.hunger_label) and select(1, U.hunger_label(h, S.satedUntil))
-                or ((rem > 0) and "Sated" or "OK")
-            local line   = string.format("Hunger %s (%d%%) · Sated %.0fs · %s", pretty, h, rem, preset)
-            local r      = (U and U.ms_to_s and U.ms_to_s(DH.refresh or 1200)) or 1.2
-            if U and U.throttle("hud-dev-toast", r) then
-                CuraEqui.UI.Toast(line, r * 1000, 0, "CuraEqui_Status", DH.lane or "notification")
+        local DH = CuraEqui.Config
+            and CuraEqui.Config.Debug
+            and CuraEqui.Config.Debug.hud
+        local U  = CuraEqui.Utils
+        if DH and DH.enabled and CuraEqui.UI and CuraEqui.UI.Toast and S and U then
+            local h            = math.floor(tonumber(S.hunger or 0) or 0)
+            local now          = (CuraEqui.Now and CuraEqui.Now()) or 0
+            local rem          = math.max(0, (tonumber(S.satedUntil or 0) or 0) - now)
+
+            -- Get tier from helper ("ok", "minor", "moderate", "critical", "sated")
+            local pretty, tier = "OK", "ok"
+            if U.hunger_label then
+                pretty, tier = U.hunger_label(h, S.satedUntil)
+            else
+                if rem > 0 then
+                    pretty, tier = "Sated", "sated"
+                elseif h >= 80 then
+                    pretty, tier = "Starving", "critical"
+                elseif h >= 50 then
+                    pretty, tier = "Hungry", "moderate"
+                elseif h >= 20 then
+                    pretty, tier = "Mild", "minor"
+                else
+                    pretty, tier = "OK", "ok"
+                end
+            end
+
+            -- Only show when the *tier* changes (includes sated on/off)
+            if tier ~= S._lastHudTier then
+                S._lastHudTier = tier
+
+                -- Build immersive line
+                local line
+                if rem > 0 then
+                    -- Sated active
+                    line = "Your horse is well-fed and content."
+                else
+                    if tier == "ok" then
+                        line = "Your horse is content."
+                    elseif tier == "minor" then
+                        line = "Your horse is mildly hungry."
+                    elseif tier == "moderate" then
+                        line = "Your horse is hungry and tires more easily."
+                    else -- "critical"
+                        line = "Your horse is starving and will soon refuse to run."
+                    end
+                end
+
+                -- Throttle so we don't double-fire on quick changes
+                local r = (U.ms_to_s and U.ms_to_s(DH.refresh or 1200)) or 1.2
+                if U.throttle and U.throttle("hud-dev-toast", r) then
+                    CuraEqui.UI.Toast(line, r * 1000, 0,
+                        "CuraEqui_Status", DH.lane or "notification")
+                end
+
+                if CuraEqui.Config
+                    and CuraEqui.Config.Debug
+                    and CuraEqui.Config.Debug.hudTrace
+                then
+                    System.LogAlways(("[CuraEqui][HUDDBG] status line '%s' (tier=%s h=%d rem=%.0fs)")
+                        :format(line, tostring(tier), h, rem))
+                end
             end
         end
     end
@@ -942,12 +989,18 @@ function CuraEqui._ApplyNutrition(diet, label)
         pcall(CuraEqui.Buffs.SyncAll, horse, S)
     end
 
-    -- 4) log (nil-safe)
-    CuraEqui.Log("diet",
-        "consume %s src=%s n=%d → hunger %d→%d | sated +%ds (cap %ds)",
-        tostring(label or diet.token or "?"),
-        tostring(diet.source or "?"),
-        n, before, after, addSec, capSec
-    )
+    -- 4) log (nil-safe, debug-gated)
+    do
+        local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if D.feedTrace then
+            CuraEqui.Log("diet",
+                "consume %s src=%s n=%d → hunger %d→%d | sated +%ds (cap %ds)",
+                tostring(label or diet.token or "?"),
+                tostring(diet.source or "?"),
+                n, before, after, addSec, capSec
+            )
+        end
+    end
+
     return true
 end
