@@ -880,9 +880,24 @@ function CuraEqui.OnGameplayStarted()
     local ver = tostring(CuraEqui.VERSION or "?")
     System.LogAlways(("[CuraEqui] Initialized (version %s)"):format(ver))
 
-    if CuraEqui.Ui and CuraEqui.Ui.ShowInitToast then
-        pcall(CuraEqui.Ui.ShowInitToast)
+    ----------------------------------------------------------------
+    -- USER-FACING INIT TOAST (delayed and deduped)
+    ----------------------------------------------------------------
+    local function _initToast()
+        local C = CuraEqui
+        if not C or not C.UI or not C.UI.Toast then return end
+
+        -- Dedup protection: only show once per session
+        if C.__initToastShown then return end
+        C.__initToastShown = true
+
+        -- Show toast (immersive)
+        C.UI.Toast("Cura Equi systems initialized.", 3500, nil, "curaequi_init", "notification")
     end
+
+    -- Delay toast by ~1.8 seconds to ensure UI is ready
+    Script.SetTimer(1800, _initToast)
+
 
     -- Always treat OGS as a fresh runtime session
     if CuraEqui.state then CuraEqui.state._preloadFence = nil end

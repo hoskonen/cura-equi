@@ -20,7 +20,6 @@ CuraEqui.Config = {
     },
     Debug = {
         enabled = false,
-        showInitToast = true,
         distanceTrace = false,
         distanceTraceStepM = 500.0,
         hud = { enabled = true, lane = "notification", id = "CuraEqui_DebugHUD", refresh = 10000 },

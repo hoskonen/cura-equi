@@ -74,18 +74,6 @@ end
 -- UiStubs.lua (or similar)
 CuraEqui.Ui = CuraEqui.Ui or {}
 
-function CuraEqui.Ui.ShowInitToast()
-    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    -- Only show for “normal” play, skip in hardcore debug if you want
-    if D and D.showInitToast == false then return end
-
-    local T = CuraEqui.UiToast or CuraEqui.DebugToast or nil
-    if not T then return end
-
-    -- Right-corner “this mod is alive” style
-    pcall(T, "Cura Equi", "Cura Equi systems active")
-end
-
 -- Toast(text, ms, prio, id, lane)
 function CuraEqui.UI.Toast(text, ms, prio, id, lane)
     text = tostring(text or "")
