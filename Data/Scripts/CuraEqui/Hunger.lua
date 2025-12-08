@@ -79,17 +79,12 @@ local function ProbeOnce(h)
         end
     end)
 
-    System.LogAlways(("[CuraEqui][Probe] horse id=%s name=%s class=%s"):format(tostring(h.id), name, class))
-    System.LogAlways(("[CuraEqui][Probe] ids: fromPlayer=%s fromGame=%s tracking=%s")
-        :format(tostring(pid_from_player), tostring(pid_from_game), tostring(h.id)))
-
     local function has(ent, m) return ent and type(ent[m]) == "function" end
     local caps = {
         GetWorldPos = has(h, "GetWorldPos"),
         GetPos      = has(h, "GetPos"),
         GetVelocity = has(h, "GetVelocity") or (h.actor and has(h.actor, "GetVelocity")) or false,
     }
-    for k, v in pairs(caps) do System.LogAlways(("[CuraEqui][Probe] cap %-11s = %s"):format(k, tostring(v))) end
 end
 
 local function is_night()
@@ -814,7 +809,6 @@ function CuraEqui_HungerTick()
     ----------------------------------------------------------------
     if ST.loadingSave then
         ST.loadingSave = nil
-        System.LogAlways("[CuraEqui] load flag cleared (first hunger tick)")
     end
 
     ----------------------------------------------------------------

@@ -27,7 +27,7 @@ CuraEqui.state._skipSessionOpen = false
 -- Use live config; fill only absolutely critical holes if mod loader races
 local C                         = CuraEqui.Config or {}
 C.Debug                         = C.Debug or
-    { enabled = true, distanceTrace = false, hud = { enabled = false, refresh = 1200 } }
+    { enabled = false, distanceTrace = false, hud = { enabled = false, refresh = 1200 } }
 C.Hunger                        = C.Hunger or { hungerMax = 100, hungerStart = 30, tickSec = 10, debuffAt = 70 }
 C.Diet                          = C.Diet or
     { strict = "guid+token", allowKeywordFallback = false, keywordNutrition = 10 }
@@ -61,9 +61,6 @@ function CuraEqui.ResolveHorse()
     if CuraEqui.PlayerOwnsHorse then
         local ok, owns = pcall(CuraEqui.PlayerOwnsHorse, h)
         if ok and not owns then
-            -- optional debug:
-            -- System.LogAlways(("[CuraEqui][Horse] ResolveHorse→ non-owned id=%s → nil")
-            --     :format(tostring(h.id)))
             return nil
         end
     end
@@ -326,12 +323,14 @@ function CuraEqui.ValidateBuffGuids()
     add(HUD.playerStatusTiers, "player")
     add(HUD.horseDebuffTiers, "horse")
 
+    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
+
     if #dups > 0 then
         System.LogAlways("[CuraEqui][Buff][ERROR] Duplicate GUIDs across player/horse tiers:")
         for _, d in ipairs(dups) do
             System.LogAlways(("[CuraEqui][Buff][ERROR] %s used by %s and %s"):format(d.guid, d.a, d.b))
         end
-    else
+    elseif D.enabled then
         System.LogAlways("[CuraEqui][Buff] GUIDs validated (no cross-channel duplicates).")
     end
 end
@@ -526,12 +525,12 @@ function CuraEqui.Initialize(fullInit)
     -- Owned view *after* the helper has had a chance to run
     local hOwned = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
 
-    System.LogAlways(("[CuraEqui][Init] ResolveHorse→ rawId=%s ownedId=%s hasHorseState=%s")
-        :format(
-            tostring(hRaw and hRaw.id or "nil"),
-            tostring(hOwned and hOwned.id or "nil"),
-            tostring(ST.hasHorse)
-        ))
+    -- System.LogAlways(("[CuraEqui][Init] ResolveHorse→ rawId=%s ownedId=%s hasHorseState=%s")
+    --     :format(
+    --         tostring(hRaw and hRaw.id or "nil"),
+    --         tostring(hOwned and hOwned.id or "nil"),
+    --         tostring(ST.hasHorse)
+    --     ))
 
     -- Default: horseless until proven otherwise
     ST.hasHorse = ST.hasHorse or false
@@ -608,11 +607,8 @@ function CuraEqui.Initialize(fullInit)
                     S.hunger = math.max(0, math.min(100, ph))
                 end
 
-                -- DO NOT use ps to seed S.satedUntil
-                -- DO NOT call SyncSatedTimer here
-
-                System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s (sated ignored on load)")
-                    :format(tostring(ph), tostring(ps)))
+                -- System.LogAlways(("[CuraEqui][Persist] Loaded hunger=%s sated=%s (sated ignored on load)")
+                --     :format(tostring(ph), tostring(ps)))
 
                 CuraEqui.state.didInitialSatedApply = false
                 CuraEqui.state.satedRemainSec       = 0
@@ -881,7 +877,12 @@ end
 
 -- Gameplay start entry
 function CuraEqui.OnGameplayStarted()
-    System.LogAlways("[CuraEqui] OnGameplayStarted")
+    local ver = tostring(CuraEqui.VERSION or "?")
+    System.LogAlways(("[CuraEqui] Initialized (version %s)"):format(ver))
+
+    if CuraEqui.Ui and CuraEqui.Ui.ShowInitToast then
+        pcall(CuraEqui.Ui.ShowInitToast)
+    end
 
     -- Always treat OGS as a fresh runtime session
     if CuraEqui.state then CuraEqui.state._preloadFence = nil end
@@ -895,10 +896,10 @@ function CuraEqui.OnGameplayStarted()
         local ST = CuraEqui.state or {}
 
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-        if D.horseIdentityTrace and CuraEqui.Horse and CuraEqui.Horse.DebugProbePlayerHorse then
-            local tag = ("[OGS try=%d]"):format(i)
-            pcall(CuraEqui.Horse.DebugProbePlayerHorse, tag)
-        end
+        -- if D.horseIdentityTrace and CuraEqui.Horse and CuraEqui.Horse.DebugProbePlayerHorse then
+        --     local tag = ("[OGS try=%d]"):format(i)
+        --     pcall(CuraEqui.Horse.DebugProbePlayerHorse, tag)
+        -- end
 
         -- Always try to resolve a horse; on horseless saves this just returns nil.
         local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
@@ -915,8 +916,10 @@ function CuraEqui.OnGameplayStarted()
         ST.lastHorseFpExt = (CuraEqui._HorseFpExt and CuraEqui._HorseFpExt(h)) or ""
         ST.lastHorseFp    = (CuraEqui._HorseFingerprint and CuraEqui._HorseFingerprint(h)) or ""
 
-        System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
-            :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
+        if D.mountTrace then
+            System.LogAlways(("[CuraEqui][Horse] resolved on start id=%s name=%s")
+                :format(tostring(h.id), (h.GetName and h:GetName()) or "Horse"))
+        end
 
         -- 🔑 One-shot “mounted on load” bridge
         if CuraEqui.HorseOwnership and CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad then
@@ -962,7 +965,9 @@ function CuraEqui.OnGameplayStarted()
     if UIAction and UIAction.RegisterElementListener and not CuraEqui.__skipBound then
         UIAction.RegisterElementListener(CuraEqui, "SkipTime", -1, "", "onSkipTimeEvent")
         CuraEqui.__skipBound = true
-        System.LogAlways("[CuraEqui] Bound SkipTime element listener")
+        if D.skipTraceVerbose then
+            System.LogAlways("[CuraEqui] Bound SkipTime element listener")
+        end
     end
 end
 

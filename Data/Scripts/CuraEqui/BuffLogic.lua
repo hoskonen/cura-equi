@@ -477,12 +477,15 @@ function CuraEqui.Buffs.SyncSatedTimer(h, S, opts)
     local force     = (opts.force == true)
 
     -- Optional throttle so we don't spam every tick when nothing changes
-    local shouldLog = D.satedTraceVerbose
-        or (U and U.throttle and U.throttle("sated-sync-" .. cause, 0.5)) -- 0.5s bucket
-        or false
+    local shouldLog = false
+    if D.enabled then
+        shouldLog = D.satedTraceVerbose
+            or (U and U.throttle and U.throttle("sated-sync-" .. cause, 0.5))
+            or false
+    end
 
     -- EXISTING EARLY-EXIT: no tiers configured
-    local BL        = CuraEqui.Buffs.SATED_TIERS or {}
+    local BL = CuraEqui.Buffs.SATED_TIERS or {}
     if not (BL and #BL > 0) then
         if shouldLog then
             System.LogAlways(("[CuraEqui][Buff] SatedSync skip – no tiers (cause=%s, rem=%ds, force=%s, guid=%s)")

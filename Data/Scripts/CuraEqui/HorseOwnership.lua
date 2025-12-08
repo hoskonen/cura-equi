@@ -1,5 +1,6 @@
 CuraEqui                = CuraEqui or {}
 CuraEqui.HorseOwnership = CuraEqui.HorseOwnership or {}
+local D                 = CuraEqui.Config and CuraEqui.Config.Debug or {}
 
 local HorseOwnership    = CuraEqui.HorseOwnership
 
@@ -113,7 +114,9 @@ function CuraEqui.SetOwnedHorse(h, opts)
         end
 
         if reasonTag == "load-reset" then
-            System.LogAlways("[CuraEqui][HorseId] SetOwnedHorse[load-reset]: cleared identity")
+            if D.ownershipTrace then
+                System.LogAlways(("[CuraEqui][HorseId] SetOwnedHorse[%s]: cleared identity"):format(reason or "?"))
+            end
         else
             if C.Log then
                 C.Log("HorseId", "SetOwnedHorse[%s]: cleared identity", reason)
@@ -351,6 +354,8 @@ function CuraEqui.HorseOwnership.TryInitOwnedHorseOnLoad()
     ST.justLoaded = false -- don’t run again this session
 
     local prettyName = (h.GetName and h:GetName()) or "Horse"
-    System.LogAlways(("[CuraEqui][HorseOwn] mounted-on-load init for id=%s name=%s")
-        :format(tostring(h.id), tostring(prettyName)))
+    if D.ownershipTrace then
+        System.LogAlways(("[CuraEqui][HorseOwn] mounted-on-load init for id=%s name=%s")
+            :format(tostring(h.id), tostring(prettyName)))
+    end
 end

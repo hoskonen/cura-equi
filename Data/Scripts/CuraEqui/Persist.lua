@@ -1,6 +1,7 @@
 -- Scripts/CuraEqui/Persist.lua
 CuraEqui         = CuraEqui or {}
 CuraEqui.Persist = CuraEqui.Persist or {}
+local D          = CuraEqui.Config and CuraEqui.Config.Debug or {}
 
 local P          = CuraEqui.Persist
 P._ver           = 2
