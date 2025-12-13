@@ -990,6 +990,12 @@ function CuraEqui.OnQuickLoadingStart()
     System.LogAlways("[CuraEqui] OnQuickLoadingStart")
     local ST = CuraEqui.state or {}
 
+    if ST.horseDebuffRetryTimer then
+        Script.KillTimer(ST.horseDebuffRetryTimer)
+        ST.horseDebuffRetryTimer = nil
+    end
+    ST._horseDebuffRetryPending = nil
+
     ----------------------------------------------------------------
     -- Kill any inherited hunger timer from the previous session
     ----------------------------------------------------------------

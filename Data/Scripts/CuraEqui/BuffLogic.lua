@@ -317,10 +317,21 @@ end
 function M.SyncHorseDebuff(horseEnt, S)
     -- if sated is active, keep horse strip empty (no 'sated' in horseDebuffTiers)
     if (tonumber(S.satedUntil or 0) or 0) > _now() then
-        CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
+        local cleared = CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
         S._lastHorseDebuffUuid = nil
+
+        -- If cannot clear yet (load timing), retry once
+        if not cleared and not S._horseDebuffRetryPending then
+            S._horseDebuffRetryPending = true
+            S.horseDebuffRetryTimer = Script.SetTimer(250, function()
+                S._horseDebuffRetryPending = nil
+                S.horseDebuffRetryTimer = nil
+                pcall(M.SyncHorseDebuff, horseEnt, S)
+            end)
+        end
         return
     end
+
     local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.horseDebuffTiers
     if not horseEnt or not S or not list then return end
 
@@ -366,19 +377,31 @@ function M.SyncHorseDebuff(horseEnt, S)
     if uuid ~= last then
         local cleared = CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
 
-        -- If we cannot reliably clear (common during load), do NOT apply.
-        -- Schedule a short retry instead to prevent duplicate stacking.
+        -- If we cannot clear (typical during load), do NOT apply yet.
+        -- Schedule a short retry so we don't stack persistent buffs.
         if not cleared then
             if not S._horseDebuffRetryPending then
                 S._horseDebuffRetryPending = true
+
+                -- OPTIONAL: retry cap (see section 2 below)
+                S._horseDebuffRetryCount = (S._horseDebuffRetryCount or 0) + 1
+                if S._horseDebuffRetryCount > 8 then
+                    S._horseDebuffRetryPending = nil
+                    -- stop trying; avoid infinite retries
+                    return
+                end
+
                 S.horseDebuffRetryTimer = Script.SetTimer(250, function()
-                    S._horseDebuffRetryPending = false
+                    S._horseDebuffRetryPending = nil
                     S.horseDebuffRetryTimer = nil
                     pcall(M.SyncHorseDebuff, horseEnt, S)
                 end)
             end
             return
         end
+
+        -- Clear succeeded: apply and reset retry count
+        S._horseDebuffRetryCount = nil
 
         CuraEqui.Effects.ApplyHorse(horseEnt, uuid)
         S._lastHorseDebuffUuid = uuid
