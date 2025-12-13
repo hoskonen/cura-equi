@@ -254,7 +254,7 @@ end
 
 -- Apply a small hunger catch-up for "sleep/wait" time-skip (hour-based).
 function CuraEqui.Hunger_CatchUpAfterSleep()
-    System.LogAlways("[CuraEqui][Hunger][catchup] entered")
+    --System.LogAlways("[CuraEqui][Hunger][catchup] entered")
 
     local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
     local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
@@ -371,7 +371,19 @@ function CuraEqui._HungerTickBody()
     local st       = CuraEqui.state
     local now      = (CuraEqui.Now and CuraEqui.Now()) or 0
 
-    local h        = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
+    ----------------------------------------------------------------
+    -- If SkipTime / sleep is open, suppress per-tick hunger logic.
+    -- The dedicated SkipTime catch-up will handle the full delta.
+    ----------------------------------------------------------------
+    if st._skipSessionOpen then
+        local Dbg = CuraEqui.Config and CuraEqui.Config.Debug or {}
+        if Dbg.skipTrace then
+            System.LogAlways("[CuraEqui][Hunger] tick suppressed during SkipTime")
+        end
+        return
+    end
+
+    local h = (CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve()) or nil
 
     if not h then
         -- log at most once every 5s while horseless
@@ -742,6 +754,16 @@ function CuraEqui._HungerTickBody()
             -- Only show when the *tier* changes (includes sated on/off)
             if tier ~= S._lastHudTier then
                 S._lastHudTier = tier
+
+                ----------------------------------------------------------------
+                -- Optional immersive status toast (right corner)
+                ----------------------------------------------------------------
+                local cfg = CuraEqui.Config
+                local dbg = cfg and cfg.Debug or {}
+                if dbg.hungerToasts ~= true then
+                    -- Toasts disabled (quiet variant) → skip UI, keep internal state
+                    return
+                end
 
                 -- Build immersive line
                 local line

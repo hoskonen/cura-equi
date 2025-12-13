@@ -1132,7 +1132,7 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     -- end
     -- C._lastMountId = h
 
-    DebugPrintPlayerHorse()
+    --DebugPrintPlayerHorse()
 
     ----------------------------------------------------------------
     -- 1) Route identity through central ownership scaffolding

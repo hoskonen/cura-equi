@@ -19,27 +19,28 @@ CuraEqui.Config = {
         }
     },
     Debug = {
-        enabled = false,
+        enabled = true,
         distanceTrace = false,
         distanceTraceStepM = 500.0,
         hud = { enabled = true, lane = "notification", id = "CuraEqui_DebugHUD", refresh = 10000 },
-        hungerTrace = false, -- log a compact hunger line each tick
+        hungerTrace = true, -- log a compact hunger line each tick
         hungerTraceEvery = 10000,
         mountTrace = false,
-        feedTrace = false,
-        feedTraceVerbose = false,
-        feedUI = false,           -- right corner ui notifications
-        persistTrace = false,     -- log saving
+        feedTrace = true,
+        feedTraceVerbose = true,
+        feedUI = false,          -- right corner ui notifications
+        persistTrace = true,     -- log saving
         tickTrace = false,
-        buffTraceVerbose = false, -- false = log only when buff changes
-        buffTraceTick = false,
+        buffTraceVerbose = true, -- false = log only when buff changes
+        buffTraceTick = true,
         skipTrace = false,
         skipTraceVerbose = false,
         ownershipTrace = false,
         horseIdentityTrace = false,
         staminaSnapshot = false, -- capture a reference staminaMax (debug only)
-        horseDerived = true,
-        showHorseStatsTutorial = false
+        horseDerived = false,
+        showHorseStatsTutorial = false,
+        hungerToasts = true -- right corner horse hunger notifications
     },
     Hunger = {
         preset                   = "moderate", -- "hardcore" | "moderate" | "laidback" "moderate" | "laidback"
@@ -83,22 +84,22 @@ CuraEqui.Config = {
                 ratePerMinIdle       = 0.35,
                 ratePerMinMounted    = 0.7,
                 ratePerKmMounted     = 1.0,
-                grazePerMinIdleUnmtd = -0.08,
+                grazePerMinIdleUnmtd = -0.002,
                 night                = { disableGrazing = true, timeDrainMul = 1.2, maxDeltaPerNight = 40 },
             },
             moderate = {
+                ratePerMinIdle       = 0.04,
+                ratePerMinMounted    = 0.18,
+                ratePerKmMounted     = 0.22,
+                grazePerMinIdleUnmtd = -0.005,
+                night                = { disableGrazing = true, timeDrainMul = 1.0, maxDeltaPerNight = 40 },
+            },
+            laidback = {
                 ratePerMinIdle       = 0.025,
                 ratePerMinMounted    = 0.10,
                 ratePerKmMounted     = 0.15,
                 grazePerMinIdleUnmtd = -0.015,
                 night                = { disableGrazing = true, timeDrainMul = 0.75, maxDeltaPerNight = 35 },
-            },
-            laidback = {
-                ratePerMinIdle       = 0.01,
-                ratePerMinMounted    = 0.05,
-                ratePerKmMounted     = 0.10,
-                grazePerMinIdleUnmtd = -0.04,
-                night                = { disableGrazing = false, timeDrainMul = 0.5, maxDeltaPerNight = 12 },
             },
         },
     },

@@ -69,6 +69,11 @@ function CuraEqui.Effects.ApplyHorse(ent, guid)
     local s = ent.soul; if not (s and s.AddBuff) then
         vlog("n", "horse apply: no soul/api"); return false
     end
+
+    if s.RemoveAllBuffsByGuid then
+        pcall(function() s:RemoveAllBuffsByGuid(guid) end)
+    end
+
     local ok, inst = pcall(function() return s:AddBuff(guid) end)
     vlog("n", "horse apply %s ok=%s inst=%s", guid, tostring(ok), tostring(inst))
     return ok and true or false
@@ -88,15 +93,27 @@ function CuraEqui.Effects.ClearPlayerStatus()
 end
 
 function CuraEqui.Effects.ClearHorseDebuffs(ent)
-    local list = CuraEqui.Config.HUD and CuraEqui.Config.HUD.horseDebuffTiers or {}
-    local n = 0
+    if not ent then return false end
+
+    local s = ent.soul
+    if not (s and s.RemoveAllBuffsByGuid) then
+        vlog("n", "horse clear: no soul/api")
+        return false
+    end
+
+    local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.horseDebuffTiers or {}
+    local removedAny = false
+
     for i = 1, #list do
         local g = list[i].uidd
         if _has(g) then
-            pcall(CuraEqui.Effects.RemoveHorse, ent, g); n = n + 1
+            local ok = pcall(function() s:RemoveAllBuffsByGuid(g) end)
+            if ok then removedAny = true end
         end
     end
-    if n > 0 then vlog("n", "horse cleared %d debuff tiers", n) end
+
+    if removedAny then vlog("n", "horse cleared debuff tiers") end
+    return true
 end
 
 -- Apply a player buff and auto-remove after durationSec (fallback if engine lacks native duration)

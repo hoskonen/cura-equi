@@ -364,9 +364,25 @@ function M.SyncHorseDebuff(horseEnt, S)
     end
 
     if uuid ~= last then
-        CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
+        local cleared = CuraEqui.Effects.ClearHorseDebuffs(horseEnt)
+
+        -- If we cannot reliably clear (common during load), do NOT apply.
+        -- Schedule a short retry instead to prevent duplicate stacking.
+        if not cleared then
+            if not S._horseDebuffRetryPending then
+                S._horseDebuffRetryPending = true
+                S.horseDebuffRetryTimer = Script.SetTimer(250, function()
+                    S._horseDebuffRetryPending = false
+                    S.horseDebuffRetryTimer = nil
+                    pcall(M.SyncHorseDebuff, horseEnt, S)
+                end)
+            end
+            return
+        end
+
         CuraEqui.Effects.ApplyHorse(horseEnt, uuid)
         S._lastHorseDebuffUuid = uuid
+
         if D and D.enabled then
             CuraEqui.Log("buff", "HorseDebuff → %s (%s)", tier, uuid)
         end
