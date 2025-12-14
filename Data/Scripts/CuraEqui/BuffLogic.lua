@@ -335,12 +335,13 @@ function M.SyncHorseDebuff(horseEnt, S)
     local list = CuraEqui.Config and CuraEqui.Config.HUD and CuraEqui.Config.HUD.horseDebuffTiers
     if not horseEnt or not S or not list then return end
 
-    local hval = tonumber(S.hunger or 0) or 0
-    local tier = _pickTierName(hval, S.satedUntil)
-    local uuid = _uuidFromList(list, tier)
-    local last = S._lastHorseDebuffUuid
+    local hval        = tonumber(S.hunger or 0) or 0
+    local tier        = _pickTierName(hval, S.satedUntil)
+    local uuid        = _uuidFromList(list, tier)
+    local last        = S._lastHorseDebuffUuid
+    local ST          = CuraEqui.state or {}
 
-    local D = CuraEqui.Config and CuraEqui.Config.Debug
+    local D           = CuraEqui.Config and CuraEqui.Config.Debug
     local wantPickLog = D and D.buffPickTrace and (uuid ~= last)
 
     if wantPickLog then
@@ -383,25 +384,29 @@ function M.SyncHorseDebuff(horseEnt, S)
             if not S._horseDebuffRetryPending then
                 S._horseDebuffRetryPending = true
 
-                -- OPTIONAL: retry cap (see section 2 below)
-                S._horseDebuffRetryCount = (S._horseDebuffRetryCount or 0) + 1
-                if S._horseDebuffRetryCount > 8 then
-                    S._horseDebuffRetryPending = nil
-                    -- stop trying; avoid infinite retries
-                    return
-                end
+                local myGen                = ST._horseDebuffRetryGen or 0
+                local expectId             = tostring(horseEnt.id or horseEnt)
 
-                S.horseDebuffRetryTimer = Script.SetTimer(250, function()
+                ST.horseDebuffRetryTimer   = Script.SetTimer(250, function()
                     S._horseDebuffRetryPending = nil
-                    S.horseDebuffRetryTimer = nil
-                    pcall(M.SyncHorseDebuff, horseEnt, S)
+                    ST.horseDebuffRetryTimer   = nil
+
+                    -- Abort if a quickload happened since scheduling
+                    if (CuraEqui.state and (CuraEqui.state._horseDebuffRetryGen or 0) or 0) ~= myGen then
+                        return
+                    end
+
+                    -- Abort if the "current" horse is not the same entity anymore
+                    local cur = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                    if not cur or tostring(cur.id or cur) ~= expectId then
+                        return
+                    end
+
+                    pcall(M.SyncHorseDebuff, cur, S)
                 end)
             end
             return
         end
-
-        -- Clear succeeded: apply and reset retry count
-        S._horseDebuffRetryCount = nil
 
         CuraEqui.Effects.ApplyHorse(horseEnt, uuid)
         S._lastHorseDebuffUuid = uuid

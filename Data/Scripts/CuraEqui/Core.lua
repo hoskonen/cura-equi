@@ -990,6 +990,10 @@ function CuraEqui.OnQuickLoadingStart()
     System.LogAlways("[CuraEqui] OnQuickLoadingStart")
     local ST = CuraEqui.state or {}
 
+    -- Invalidate any pending debuff retries across save switches.
+    -- (A SetTimer callback can fire after the world/horse changed.)
+    ST._horseDebuffRetryGen = (ST._horseDebuffRetryGen or 0) + 1
+
     if ST.horseDebuffRetryTimer then
         Script.KillTimer(ST.horseDebuffRetryTimer)
         ST.horseDebuffRetryTimer = nil

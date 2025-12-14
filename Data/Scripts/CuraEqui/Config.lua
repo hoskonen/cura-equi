@@ -19,20 +19,20 @@ CuraEqui.Config = {
         }
     },
     Debug = {
-        enabled = true,
+        enabled = false,
         distanceTrace = false,
         distanceTraceStepM = 500.0,
         hud = { enabled = true, lane = "notification", id = "CuraEqui_DebugHUD", refresh = 10000 },
-        hungerTrace = true, -- log a compact hunger line each tick
+        hungerTrace = false, -- log a compact hunger line each tick
         hungerTraceEvery = 10000,
         mountTrace = false,
-        feedTrace = true,
-        feedTraceVerbose = true,
-        feedUI = false,          -- right corner ui notifications
-        persistTrace = true,     -- log saving
+        feedTrace = false,
+        feedTraceVerbose = false,
+        feedUI = false,           -- right corner ui notifications
+        persistTrace = false,     -- log saving
         tickTrace = false,
-        buffTraceVerbose = true, -- false = log only when buff changes
-        buffTraceTick = true,
+        buffTraceVerbose = false, -- false = log only when buff changes
+        buffTraceTick = false,
         skipTrace = false,
         skipTraceVerbose = false,
         ownershipTrace = false,
@@ -43,7 +43,7 @@ CuraEqui.Config = {
         hungerToasts = true -- right corner horse hunger notifications
     },
     Hunger = {
-        preset                   = "moderate", -- "hardcore" | "moderate" | "laidback" "moderate" | "laidback"
+        preset                   = "moderate", -- "hardcore" | "moderate" | "laidback"
         tickSec                  = 10,
         hungerStart              = 50,
         hungerMax                = 100,
@@ -81,11 +81,11 @@ CuraEqui.Config = {
     Presets = {
         Hunger = {
             hardcore = {
-                ratePerMinIdle       = 0.35,
-                ratePerMinMounted    = 0.7,
-                ratePerKmMounted     = 1.0,
-                grazePerMinIdleUnmtd = -0.002,
-                night                = { disableGrazing = true, timeDrainMul = 1.2, maxDeltaPerNight = 40 },
+                ratePerMinIdle       = 0.10,
+                ratePerMinMounted    = 0.24,
+                ratePerKmMounted     = 0.55,
+                grazePerMinIdleUnmtd = -0.001,
+                night                = { disableGrazing = true, timeDrainMul = 1.25, maxDeltaPerNight = 50 },
             },
             moderate = {
                 ratePerMinIdle       = 0.04,
@@ -99,7 +99,7 @@ CuraEqui.Config = {
                 ratePerMinMounted    = 0.10,
                 ratePerKmMounted     = 0.15,
                 grazePerMinIdleUnmtd = -0.015,
-                night                = { disableGrazing = true, timeDrainMul = 0.75, maxDeltaPerNight = 35 },
+                night                = { disableGrazing = false, timeDrainMul = 0.75, maxDeltaPerNight = 35 },
             },
         },
     },
