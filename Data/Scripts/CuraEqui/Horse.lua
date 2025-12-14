@@ -92,8 +92,10 @@ local function _log_sated_summary(used, rawSec, bucketSec, buffSec)
         clampPart = (" (%ds \226\134\146 %ds)"):format(rawI, buckI) -- "87s → 100s"
     end
 
-    System.LogAlways(("[CuraEqui][Feed] Ate %d nutrition \226\134\146 Sated %ds%s (applied buff=%ds)")
-        :format(u, buckI, clampPart, buffI))
+    if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
+        System.LogAlways(("[CuraEqui][Feed] Ate %d nutrition \226\134\146 Sated %ds%s (applied buff=%ds)")
+            :format(u, buckI, clampPart, buffI))
+    end
 end
 
 local function _feed_toast_cfg()
@@ -820,8 +822,10 @@ function Horse:OnInventoryClosed()
         local horsePts, _ = _split_applied_points(removePlan, good, appliedPts)
         if (horsePts or 0) > 0 then
             local C = _sated_cfg()
-            System.LogAlways(("[CuraEqui][Feed] horse bonus: %.0fpts × %ds/pt = +%ds")
-                :format(horsePts, math.floor(C.perPtHorse or 0), math.floor((C.perPtHorse or 0) * horsePts)))
+            if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
+                System.LogAlways(("[CuraEqui][Feed] horse bonus: %.0fpts × %ds/pt = +%ds")
+                    :format(horsePts, math.floor(C.perPtHorse or 0), math.floor((C.perPtHorse or 0) * horsePts)))
+            end
         end
     end
 
@@ -1013,7 +1017,9 @@ function Horse:OnInventoryClosed()
         if failed > 0 then
             System.LogAlways(("[CuraEqui][Feed][WARN] Remove: %d ok, %d fail via inventory"):format(removed, failed))
         else
-            System.LogAlways(("[CuraEqui][Feed] Remove: %d unit(s) ok via inventory"):format(removed))
+            if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
+                System.LogAlways(("[CuraEqui][Feed] Remove: %d unit(s) ok via inventory"):format(removed))
+            end
         end
 
         -- optional: vanilla-style transfer toasts (largest first)
@@ -1038,7 +1044,9 @@ function Horse:OnFeedHorse(user)
         System.LogAlways("[CuraEqui][Feed] blocked: not your horse"); return
     end
 
-    System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
+    if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
+        System.LogAlways("[CuraEqui][Feed] OnFeedHorse")
+    end
 
     -- Early gate: optionally block feeding if already sated enough
     do
@@ -1098,7 +1106,10 @@ function Horse:OnFeedHorse(user)
     local opened = false
     if user and user.actor and user.actor.OpenItemMultiselectionFilter then
         opened = pcall(user.actor.OpenItemMultiselectionFilter, user.actor, self.id, filter)
-        System.LogAlways("[CuraEqui][Feed] OpenItemMultiselectionFilter → " .. tostring(opened) .. " filter=" .. filter)
+        if CuraEqui.Config.Debug and CuraEqui.Config.Debug.feedTrace then
+            System.LogAlways("[CuraEqui][Feed] OpenItemMultiselectionFilter → " ..
+                tostring(opened) .. " filter=" .. filter)
+        end
     end
 
     -- Fallback: open inventory if picker API missing
@@ -1126,12 +1137,6 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     C._lastMountId   = h
     C._lastMountTime = now
 
-    -- if C._lastMountId == h then
-    --     C.Log("[mount] duplicate event, ignoring")
-    --     return
-    -- end
-    -- C._lastMountId = h
-
     --DebugPrintPlayerHorse()
 
     ----------------------------------------------------------------
@@ -1140,9 +1145,9 @@ function CuraEqui.OnPlayerMountedHorseInternal(h)
     if C.SetOwnedHorse then
         C.SetOwnedHorse(h, { reason = "mount-internal" })
 
-        if C.DebugLogHorseIdentity then
-            C.DebugLogHorseIdentity(h, { tag = "mount-internal" })
-        end
+        -- if C.DebugLogHorseIdentity then
+        --     C.DebugLogHorseIdentity(h, { tag = "mount-internal" })
+        -- end
     else
         -- Legacy fallback (should never be used in this branch, but safe)
         ST.hasHorse       = true

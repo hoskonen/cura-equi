@@ -19,24 +19,24 @@ CuraEqui.Config = {
         }
     },
     Debug = {
-        enabled = false,
-        distanceTrace = false,
+        enabled = true,
+        distanceTrace = true,
         distanceTraceStepM = 500.0,
         hud = { enabled = true, lane = "notification", id = "CuraEqui_DebugHUD", refresh = 10000 },
-        hungerTrace = false, -- log a compact hunger line each tick
+        hungerTrace = true, -- log a compact hunger line each tick
         hungerTraceEvery = 10000,
-        mountTrace = false,
-        feedTrace = false,
-        feedTraceVerbose = false,
-        feedUI = false,           -- right corner ui notifications
-        persistTrace = false,     -- log saving
-        tickTrace = false,
-        buffTraceVerbose = false, -- false = log only when buff changes
-        buffTraceTick = false,
-        skipTrace = false,
-        skipTraceVerbose = false,
-        ownershipTrace = false,
-        horseIdentityTrace = false,
+        mountTrace = true,
+        feedTrace = true,
+        feedTraceVerbose = true,
+        feedUI = false,          -- right corner ui notifications
+        persistTrace = true,     -- log saving
+        tickTrace = true,
+        buffTraceVerbose = true, -- false = log only when buff changes
+        buffTraceTick = true,
+        skipTrace = true,
+        skipTraceVerbose = true,
+        ownershipTrace = true,
+        horseIdentityTrace = true,
         staminaSnapshot = false, -- capture a reference staminaMax (debug only)
         horseDerived = false,
         showHorseStatsTutorial = false,
