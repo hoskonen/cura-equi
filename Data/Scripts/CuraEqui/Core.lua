@@ -168,6 +168,58 @@ function CuraEqui.DebugLogHorseIdentity(h, opts)
         ))
 end
 
+function CuraEqui._PrepareForLoad(reason)
+    local ST              = CuraEqui.state or {}
+    CuraEqui.state        = ST
+
+    ST._preloadFence      = true
+    ST._needsStatusClean  = true
+
+    ST._horseSyncFence    = true
+    ST._horseSyncFenceGen = (ST._horseSyncFenceGen or 0) + 1
+
+    System.LogAlways(("[CuraEqui][LoadPrep] reason=%s"):format(tostring(reason)))
+
+    -- Kill hunger watcher timer
+    if ST.hungerTimer then
+        Script.KillTimer(ST.hungerTimer)
+        ST.hungerTimer = nil
+        System.LogAlways("[CuraEqui][LoadPrep] killed hunger timer")
+    end
+
+    -- Kill horse debuff retry timer
+    if ST.horseDebuffRetryTimer then
+        Script.KillTimer(ST.horseDebuffRetryTimer)
+        ST.horseDebuffRetryTimer = nil
+        System.LogAlways("[CuraEqui][LoadPrep] killed horse debuff retry timer")
+    end
+    ST._horseDebuffRetryPending = nil
+    ST._horseDebuffRetryGen     = (ST._horseDebuffRetryGen or 0) + 1
+
+    -- Invalidate player-status delayed apply logic (poison across loads)
+    local BL                    = CuraEqui.BuffLogic
+    if BL then
+        BL._playerGen = (BL._playerGen or 0) + 1
+        if BL._playerRetryTimer then
+            Script.KillTimer(BL._playerRetryTimer)
+            BL._playerRetryTimer = nil
+        end
+        BL._playerRetryPending = nil
+        BL._playerApplyPending = nil
+        BL._desiredPlayerUuid  = nil
+        BL._lastPlayerUuid     = nil
+    end
+
+    -- IMPORTANT: don't hard-clear tiers here; do it in SyncAll via ST._needsStatusClean
+    -- (because soul/horse might not be ready yet)
+
+    CuraEqui._lastMountId = nil
+    ST.justLoaded = true
+
+    local U = CuraEqui.Utils
+    if U and U.reset_throttle then U.reset_throttle() end
+end
+
 -- Call this after a save is loaded / gameplay starts.
 function CuraEqui.EnsureBuffsResynced()
     local B = CuraEqui.Buffs
@@ -346,13 +398,25 @@ if UIAction and UIAction.RegisterEventSystemListener and not CuraEqui.__eventsBo
     CuraEqui.__eventsBound = true
 end
 
+if UIAction and UIAction.RegisterElementListener and not CuraEqui.__gameOverBound then
+    UIAction.RegisterElementListener(CuraEqui, "GameOver", -1, "OnPictureShown", "OnGameOverShown")
+    UIAction.RegisterElementListener(CuraEqui, "GameOver", -1, "OnPictureHided", "OnGameOverHidden")
+    CuraEqui.__gameOverBound = true
+end
+
 -- Call this whenever we think gameplay (re)started or a save was loaded.
 function CuraEqui.Bootstrap(reason)
     CuraEqui.Log("init", "Bootstrap (%s)", tostring(reason or ""))
 
     CuraEqui.state = CuraEqui.state or {}
+
     if reason == "ogs" then
         CuraEqui.state.loadingSave = true -- mark: this was called from OnGameplayStarted
+    end
+
+    if reason == "ogs" then
+        CuraEqui._PrepareForLoad("ogs")
+        CuraEqui.state.loadingSave = true
     end
 
     -- 0) Always reopen DB for the new playline/save
@@ -417,7 +481,7 @@ function CuraEqui.Bootstrap(reason)
                 local B = CuraEqui.Buffs
                 if not (h and S and B) then return end
 
-                -- 🔒 NEW: do not resync on non-owned horses / cross-save ghosts
+                -- 🔒 do not resync on non-owned horses / cross-save ghosts
                 if CuraEqui.PlayerOwnsHorse and not CuraEqui.PlayerOwnsHorse(h) then
                     if CuraEqui.Config and CuraEqui.Config.Debug and CuraEqui.Config.Debug.buffTraceVerbose then
                         System.LogAlways("[CuraEqui][ResyncPass] abort - non-owned horse")
@@ -875,11 +939,33 @@ function CuraEqui:onSkipTimeEvent(elementName, instanceId, eventName, argTable)
     end
 end
 
+function CuraEqui.OnGameOverShown(...)
+    System.LogAlways("[CuraEqui][Death] GAMEOVER SHOWN")
+    CuraEqui._PrepareForLoad("death")
+end
+
+function CuraEqui.OnGameOverHidden(...)
+    --System.LogAlways("[CuraEqui][Death] GAMEOVER EXITED!")
+    local ST = CuraEqui.state or {}
+    ST._pausedForGameOver = false
+
+    if ST._needsPostDeathReconcile then
+        ST._needsPostDeathReconcile = nil
+
+        -- Delay slightly so player/horse entities and UI are stable
+        Script.SetTimer(250, function()
+            if CuraEqui.ForceTierReconcile then
+                CuraEqui.ForceTierReconcile("post-death")
+            end
+        end)
+    end
+end
+
 -- Gameplay start entry
 function CuraEqui.OnGameplayStarted()
     local ver = tostring(CuraEqui.VERSION or "?")
     System.LogAlways(("[CuraEqui] Initialized (version %s)"):format(ver))
-
+    local D = (CuraEqui.Config and CuraEqui.Config.Debug) or {}
     ----------------------------------------------------------------
     -- USER-FACING INIT TOAST (delayed and deduped)
     ----------------------------------------------------------------
@@ -909,12 +995,7 @@ function CuraEqui.OnGameplayStarted()
 
     local function try(i)
         local ST = CuraEqui.state or {}
-
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-        -- if D.horseIdentityTrace and CuraEqui.Horse and CuraEqui.Horse.DebugProbePlayerHorse then
-        --     local tag = ("[OGS try=%d]"):format(i)
-        --     pcall(CuraEqui.Horse.DebugProbePlayerHorse, tag)
-        -- end
 
         -- Always try to resolve a horse; on horseless saves this just returns nil.
         local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
@@ -950,25 +1031,25 @@ function CuraEqui.OnGameplayStarted()
 
     -- Post-OGS settle: drop fence and (optionally) force a single apply ~400ms later
     Script.SetTimer(400, function()
-        local ST = CuraEqui.state or {}
-        ST._preloadFence = nil
+        local ST = CuraEqui.state
+        if not ST then return end
 
-        local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
-        local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-        local B = CuraEqui.Buffs
+        ST._preloadFence   = nil
+        ST._horseSyncFence = nil
 
-        -- Only sync sated if horse is owned and fingerprint is seeded
-        if h
-            and CuraEqui.PlayerOwnsHorse
-            and CuraEqui.PlayerOwnsHorse(h)
-            and ST.lastHorseFp
-            and B
+        local h            = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+        local S            = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+        local B            = CuraEqui.Buffs
+        if not (h and S and B) then return end
+
+        if CuraEqui.PlayerOwnsHorse and CuraEqui.PlayerOwnsHorse(h)
             and B.SyncSatedTimer
         then
             pcall(B.SyncSatedTimer, h, S, { cause = "ogs-settle", force = true })
-            if B.SyncAll then
-                pcall(B.SyncAll, h, S)
-            end
+        end
+
+        if B.SyncAll then
+            pcall(B.SyncAll, h, S)
         end
     end)
 
@@ -984,55 +1065,17 @@ function CuraEqui.OnGameplayStarted()
             System.LogAlways("[CuraEqui] Bound SkipTime element listener")
         end
     end
+
+    if UIAction and UIAction.RegisterElementListener and not CuraEqui.__gameOverBound then
+        UIAction.RegisterElementListener(CuraEqui, "GameOver", -1, "OnPictureShown", "OnGameOverShown")
+        UIAction.RegisterElementListener(CuraEqui, "GameOver", -1, "OnPictureHided", "OnGameOverHidden")
+        CuraEqui.__gameOverBound = true
+    end
 end
 
 function CuraEqui.OnQuickLoadingStart()
     System.LogAlways("[CuraEqui] OnQuickLoadingStart")
-    local ST = CuraEqui.state or {}
-
-    -- Invalidate any pending debuff retries across save switches.
-    -- (A SetTimer callback can fire after the world/horse changed.)
-    ST._horseDebuffRetryGen = (ST._horseDebuffRetryGen or 0) + 1
-
-    if ST.horseDebuffRetryTimer then
-        Script.KillTimer(ST.horseDebuffRetryTimer)
-        ST.horseDebuffRetryTimer = nil
-    end
-    ST._horseDebuffRetryPending = nil
-
-    ----------------------------------------------------------------
-    -- Kill any inherited hunger timer from the previous session
-    ----------------------------------------------------------------
-    if ST.hungerTimer then
-        Script.KillTimer(ST.hungerTimer)
-        ST.hungerTimer = nil
-        System.LogAlways("[CuraEqui][Fix] Killed inherited hunger timer on load start")
-    end
-
-    ----------------------------------------------------------------
-    -- Mark that the next Initialize() is happening after a load.
-    -- This is used by HorseOwnership.TryInitOwnedHorseOnLoad.
-    ----------------------------------------------------------------
-    ST.justLoaded = true
-
-    ----------------------------------------------------------------
-    -- IMPORTANT: Reset horse-mount dedupe across loads.
-    --
-    -- Without this, the first OnPlayerMountedHorseInternal call
-    -- after a load may see the new horse 'h' as the same as the
-    -- old C._lastMountId from the previous gameplay session,
-    -- and will log "[mount] duplicate event, ignoring]" and bail.
-    --
-    -- That means SetOwnedHorse() is never called
-    ----------------------------------------------------------------
-    C._lastMountId = nil
-
-    -- Reset throttled debug / HUD timers so loading an older save
-    -- doesn't "mute" logs and dev toasts until time catches up.
-    local U = CuraEqui.Utils
-    if U and U.reset_throttle then
-        U.reset_throttle()
-    end
+    CuraEqui._PrepareForLoad("quickload")
 end
 
 function CuraEqui.RevalidateHorseIdentity(now)
@@ -1070,84 +1113,6 @@ function CuraEqui.RevalidateHorseIdentity(now)
         System.LogAlways(("[CuraEqui][HorseId] swap %s → %s"):format(tostring(ST.lastHorseFpExt or "∅"), curFp))
     end
 end
-
-function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
-    -- TEMPORARILY DISABLED: welcome sated gift
-    local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
-    if D and D.giftTrace then
-        System.LogAlways("[CuraEqui][Gift] disabled in this build")
-    end
-    return
-end
-
--- Gift a welcome sated once per horse GUID in this session.
--- function CuraEqui._GiftOncePerHorse(h, horseKey, cause)
---     -- Prevent gifts on game load or probing
---     if CuraEqui.state and CuraEqui.state.loadingSave then
---         if CuraEqui.Config.Debug.giftTrace then
---             System.LogAlways("[CuraEqui][Gift] skipped (loading save)")
---         end
---         return
---     end
-
---     if not (h and horseKey) then return end
---     local ST = CuraEqui.state or {}; ST._giftedFor = ST._giftedFor or {}
---     if ST._giftedFor[horseKey] then return end
---     ST._giftedFor[horseKey] = true
-
---     local giftSec =
---         (CuraEqui.Config and CuraEqui.Config.Hunger and
---             (CuraEqui.Config.Hunger.newHorseSatedSec or CuraEqui.Config.Hunger.welcomeSatedSec))
---         or 1200
---     giftSec = math.max(0, tonumber(giftSec) or 0)
---     if giftSec <= 0 then return end
-
---     local S = CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
---     if not S then return end
-
---     -- Mark: this save now really has a horse
---     local ST = CuraEqui.state or {}
---     ST.hasHorse = true
-
---     -- Skip welcome gift if the horse is already sated (prevents double stacking)
---     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
---     if tonumber(S.satedUntil or 0) > now then
---         return
---     end
-
---     local now = (CuraEqui.Now and CuraEqui.Now()) or os.clock()
---     S.satedUntil = now + giftSec
-
---     -- Ceil to next visible tier so UI = timer
---     local T = CuraEqui.Buffs and CuraEqui.Buffs.SATED_TIERS
---     if T and #T > 0 then
---         local target = giftSec
---         for i = #T, 1, -1 do
---             local s = tonumber(T[i].sec) or 0
---             if s >= giftSec then
---                 target = s; break
---             end
---         end
---         S.satedUntil = now + (target or giftSec)
---     end
-
---     -- Apply cleanly
---     if CuraEqui.Buffs and CuraEqui.Buffs.ClearSated then pcall(CuraEqui.Buffs.ClearSated, h) end
---     if CuraEqui.Buffs and CuraEqui.Buffs.SyncSatedTimer then
---         pcall(CuraEqui.Buffs.SyncSatedTimer, h, S, { cause = cause or "horse_gain", force = true })
---     end
---     if CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then pcall(CuraEqui.Buffs.SyncAll, h, S) end
---     if CuraEqui.Persist and CuraEqui.Persist.Save then
---         pcall(CuraEqui.Persist.Save, S.hunger, S.satedUntil,
---             cause or "gift")
---     end
-
---     local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
---     if D and D.buffTraceVerbose then
---         System.LogAlways(("[CuraEqui][Gift] welcome sated %ds for key=%s (%s)")
---             :format(giftSec, horseKey, tostring(cause or "?")))
---     end
--- end
 
 function CuraEqui.TeardownAll(reason)
     local ST = CuraEqui.state or {}

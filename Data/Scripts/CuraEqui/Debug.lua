@@ -719,7 +719,7 @@ end
 -- If you have the preset switcher (in Presets.lua), expose an alias here:
 if CuraEqui.ApplyPreset then
     _add_cmd("curaequi_preset", "CuraEqui.ApplyPreset(%1)",
-        "Apply hunger/feeding preset: hardcore|real_life|moderate|laidback|author")
+        "Apply hunger/feeding preset: hardcore|moderate|laidback|")
 end
 
 -- Implement SnapStaminaMax via the reader (so help can bind to a function name)

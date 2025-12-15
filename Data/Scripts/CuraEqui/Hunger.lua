@@ -902,20 +902,15 @@ function CuraEqui.StartWatching()
     local S = C.HorseStateGet and C.HorseStateGet(h) or nil
     if not S then return end
 
-    local now       = (C.Now and C.Now()) or 0
-    local hasSated  = tonumber(S.satedUntil or 0) > now
-
     -- ensure status tier is recomputed on this start
     S._lastBuffTier = nil
 
-    if hasSated then
-        if C.Buffs and C.Buffs.SyncAll then
-            pcall(C.Buffs.SyncAll, h, S)
-        end
-    else
-        if C.Buffs and C.Buffs.SyncSatedTimer then
-            pcall(C.Buffs.SyncSatedTimer, h, S, { cause = "start", force = false })
-        end
+    -- Always reconcile timers first, then tiers (horse+player)
+    if C.Buffs and C.Buffs.SyncSatedTimer then
+        pcall(C.Buffs.SyncSatedTimer, h, S, { cause = "start", force = false })
+    end
+
+    if not ST._preloadFence then
         if C.Buffs and C.Buffs.SyncAll then
             pcall(C.Buffs.SyncAll, h, S)
         end

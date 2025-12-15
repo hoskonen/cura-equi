@@ -185,29 +185,35 @@ function CuraEqui.SetOwnedHorse(h, opts)
     -- 4) LAZY HUNGER HYDRATION – ONLY ONCE PER SESSION
     --    (only for accepted / engine-owned horses)
     ---------------------------------------------------------
+
     if (not ST._hungerLoadedFromDB)
         and C.Persist and C.Persist.Load
-        and C.HorseStateGet then
+        and C.HorseStateGet
+    then
         local S = C.HorseStateGet(h)
         if S then
             local ph, ps = C.Persist.Load()
             if ph ~= nil then
-                -- clamp into 0..100 just in case
                 S.hunger = math.max(0, math.min(100, ph))
             end
+
+            -- IMPORTANT: these must not persist across saves (prevents “no status icon”)
+            S.satedUntil = 0
+            S._lastHorseDebuffUuid = nil
+            S._horseDebuffRetryPending = nil
+            S._horseDebuffRetryCount = nil
+            S.horseDebuffRetryTimer = nil
 
             ST._hungerLoadedFromDB = true
 
             if C.Log then
-                C.Log(
-                    "Persist",
-                    "Hydrated hunger on SetOwnedHorse[%s]: hunger=%s (sated ignored)",
-                    reason,
-                    tostring(ph)
-                )
+                C.Log("Persist",
+                    "Hydrated hunger on SetOwnedHorse[%s]: hunger=%s (sated cleared)",
+                    reason, tostring(ph))
             end
         end
     end
+
 
     ---------------------------------------------------------
     -- 5) ACCEPT OWNABLE HORSE (original snapshot logic)

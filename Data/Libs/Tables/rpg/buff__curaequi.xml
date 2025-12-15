@@ -7,16 +7,16 @@
 		<!-- ========================= -->
 
 		<!-- Cura Equi / Player Horse Hunger Status Buff: Ok -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="f3d4b5e2-7f8a-4d6b-9a31-8b0d1c9a7c52" buff_lifetime_id="1" buff_name="buff_ce_ok" buff_params="" buff_ui_type_id="1" duration="-1" icon_id="buff_ce_ok" implementation="Cpp:Constant" is_persistent="true" buff_desc="buff_ce_ok_desc" buff_ui_name="buff_ce_ok" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="f3d4b5e2-7f8a-4d6b-9a31-8b0d1c9a7c52" buff_lifetime_id="1" buff_name="buff_ce_ok" buff_params="" buff_ui_type_id="1" duration="-1" icon_id="buff_ce_ok" implementation="Cpp:Constant" is_persistent="false" buff_desc="buff_ce_ok_desc" buff_ui_name="buff_ce_ok" buff_ui_visibility_id="3" />
 
         <!-- Cura Equi / Player Horse Hunger Status: Minor Hunger -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="3329d630-3aa6-4d65-b7bb-8257fdecb66c" buff_lifetime_id="1" buff_name="buff_ce_minor" buff_params="" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_minor" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_minor" buff_desc="buff_ce_minor_desc" buff_ui_visibility_id="3" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="3329d630-3aa6-4d65-b7bb-8257fdecb66c" buff_lifetime_id="1" buff_name="buff_ce_minor" buff_params="" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_minor" implementation="Cpp:Constant" is_persistent="false" buff_ui_name="buff_ce_minor" buff_desc="buff_ce_minor_desc" buff_ui_visibility_id="3" />
 
         <!-- Cura Equi / Player Horse Hunger Status: Moderate Hunger -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="11a47968-997f-41a4-a9f7-ad5a99b1d737" buff_lifetime_id="1" buff_name="buff_ce_moderate" buff_params="" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_moderate" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_ce_moderate" buff_ui_visibility_id="3" buff_desc="buff_ce_moderate_desc" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="11a47968-997f-41a4-a9f7-ad5a99b1d737" buff_lifetime_id="1" buff_name="buff_ce_moderate" buff_params="" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_moderate" implementation="Cpp:Constant" is_persistent="false" buff_ui_name="buff_ce_moderate" buff_ui_visibility_id="3" buff_desc="buff_ce_moderate_desc" />
 
         <!-- Cura Equi / Player Horse Hunger Status: Critical Hunger -->
-		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="5b57061a-3425-460e-9848-a26afbd060a4" buff_lifetime_id="1" buff_name="buff_ce_critical" buff_params="" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_critical" implementation="Cpp:Constant" is_persistent="true" buff_ui_name="buff_buff_ce_critical" buff_ui_visibility_id="3" buff_desc="buff_buff_ce_critical_desc" />
+		<buff buff_class_id="4" buff_exclusivity_id="3" buff_id="5b57061a-3425-460e-9848-a26afbd060a4" buff_lifetime_id="1" buff_name="buff_ce_critical" buff_params="" buff_ui_type_id="2" duration="-1" icon_id="buff_ce_critical" implementation="Cpp:Constant" is_persistent="false" buff_ui_name="buff_buff_ce_critical" buff_ui_visibility_id="3" buff_desc="buff_buff_ce_critical_desc" />
 
 		<!-- ========================= -->
 		<!-- Sated Timed Buffs -->
