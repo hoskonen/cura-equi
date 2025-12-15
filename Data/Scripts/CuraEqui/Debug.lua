@@ -716,10 +716,9 @@ local function _add_cmd(name, handler, help)
     end
 end
 
--- If you have the preset switcher (in Presets.lua), expose an alias here:
-if CuraEqui.ApplyPreset then
-    _add_cmd("curaequi_preset", "CuraEqui.ApplyPreset(%1)",
-        "Apply hunger/feeding preset: hardcore|moderate|laidback|")
+if CuraEqui.SetPreset then
+    _add_cmd("curaequi_preset", "CuraEqui.SetPreset(%1)",
+        "Apply preset: hardcore|moderate|laidback| (persists + toast)")
 end
 
 -- Implement SnapStaminaMax via the reader (so help can bind to a function name)

@@ -197,5 +197,6 @@ do
 end
 
 if CuraEqui and CuraEqui.ApplyPreset then
-    CuraEqui.ApplyPreset("overwrite") -- or "fill" if you prefer config wins
+    -- Apply the configured preset on game load, silently (no toast).
+    CuraEqui.ApplyPreset("current", "ogs")
 end

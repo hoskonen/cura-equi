@@ -172,6 +172,7 @@ function CuraEqui._PrepareForLoad(reason)
     local ST              = CuraEqui.state or {}
     CuraEqui.state        = ST
 
+    ST._presetLogged      = nil
     ST._preloadFence      = true
     ST._needsStatusClean  = true
 
@@ -423,6 +424,8 @@ function CuraEqui.Bootstrap(reason)
     if CuraEqui.Persist and CuraEqui.Persist.Reopen then
         pcall(CuraEqui.Persist.Reopen)
     end
+
+    pcall(CuraEqui.LogActivePreset, reason or "bootstrap")
 
     pcall(function()
         if CuraEqui and CuraEqui.Buffs and CuraEqui.Buffs.SweepPlayerSatedEffects then
@@ -978,12 +981,24 @@ function CuraEqui.OnGameplayStarted()
         C.__initToastShown = true
 
         -- Show toast (immersive)
-        C.UI.Toast("Cura Equi systems initialized.", 3500, nil, "curaequi_init", "notification")
+        C.UI.Toast("Cura Equi initialized.", 3500, nil, "curaequi_init", "notification")
     end
 
     -- Delay toast by ~1.8 seconds to ensure UI is ready
     Script.SetTimer(1800, _initToast)
 
+    -- hunger preset
+    do
+        local P = CuraEqui.Persist
+        local preset = (P and P.LoadPreset and P.LoadPreset()) or nil
+        if preset and preset ~= "" then
+            CuraEqui.SetPreset(preset, { cause = "ogs" }) -- no toast
+        else
+            -- Apply whatever config says, but no toast
+            local cfg = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "moderate"
+            CuraEqui.SetPreset(cfg, { cause = "ogs" })
+        end
+    end
 
     -- Always treat OGS as a fresh runtime session
     if CuraEqui.state then CuraEqui.state._preloadFence = nil end
@@ -1178,4 +1193,69 @@ function CuraEqui.OnPlayerMountedHorse(horse)
     if C.StartWatching then
         C.StartWatching()
     end
+end
+
+function CuraEqui._ShowPresetToast(preset, meta)
+    local C = CuraEqui
+    if not (C and C.UI and C.UI.Toast) then return end
+
+    local txt = ("Cura Equi preset: %s"):format(tostring(preset))
+    local ms  = 2500
+
+    -- Use its own id so it dedups cleanly from other notifications
+    C.UI.Toast(txt, ms, nil, "curaequi_preset", "notification")
+
+    if C.Config and C.Config.Debug and C.Config.Debug.presetTrace then
+        System.LogAlways(("[CuraEqui][Preset] %s cause=%s"):format(tostring(preset), tostring(meta and meta.cause)))
+    end
+end
+
+function CuraEqui.SetPreset(preset, meta)
+    preset = tostring(preset or ""):lower()
+    if preset == "" then preset = "moderate" end
+
+    local cause = (meta and meta.cause) or "manual"
+
+    -- apply runtime config changes
+    local applied = preset
+    if CuraEqui.ApplyPreset then
+        applied = CuraEqui.ApplyPreset(preset, cause) or preset
+    end
+
+    -- persist preset
+    local P = CuraEqui.Persist
+    if P and P.SavePreset then
+        pcall(P.SavePreset, applied)
+    end
+
+    -- user feedback only for manual
+    if cause == "manual" and CuraEqui._ShowPresetToast then
+        CuraEqui._ShowPresetToast(applied, { cause = cause })
+    end
+
+    System.LogAlways(("[CuraEqui][Preset] active=%s cause=%s")
+        :format(tostring(applied), tostring(cause)))
+
+    -- Optional: immediate refresh
+    local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
+    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
+    if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
+        pcall(CuraEqui.Buffs.SyncAll, h, S)
+    end
+
+    return applied
+end
+
+function CuraEqui.LogActivePreset(cause)
+    local C    = CuraEqui
+    local cfg  = C and C.Config or {}
+    local name = (cfg.Hunger and cfg.Hunger.preset) or "moderate"
+
+    -- Dedup: only once per playline/load session
+    local ST   = C.state or {}
+    C.state    = ST
+    if ST._presetLogged then return end
+    ST._presetLogged = true
+
+    System.LogAlways(("[CuraEqui][Preset] active=%s cause=%s"):format(tostring(name), tostring(cause or "load")))
 end

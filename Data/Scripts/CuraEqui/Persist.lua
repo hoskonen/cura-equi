@@ -8,7 +8,7 @@ P._ver           = 2
 P._ns            = "CuraEqui"
 P._localKey      = "horse.state" -- per-save (DB.Set / DB.Get)
 P._gKey          = "horse.meta"  -- global (DB.SetG / DB.GetG) (reserved for future multi-horse)
-
+P._presetKey     = (P._localKey or "curaequi") .. "_preset"
 -- Prefer the namespaced DB API if available
 local _db        = nil
 do
@@ -46,6 +46,15 @@ function P.Load()
         return nil, nil
     end
 
+    -- Apply preset from DB (runtime config)
+    local preset = tostring(t.preset or "")
+    if preset ~= "" and CuraEqui and CuraEqui.Config and CuraEqui.Config.Hunger then
+        CuraEqui.Config.Hunger.preset = preset
+        if CuraEqui.ApplyPreset then
+            CuraEqui.ApplyPreset(preset) -- applies values into Config.Hunger/Feeding
+        end
+    end
+
     -- Hunger is the only thing we care about now
     local hunger = tonumber(t.hunger or -1) or -1
     if hunger < 0 then
@@ -66,13 +75,15 @@ end
 function P.Save(hunger, satedUntil)
     if not _db then return end
 
-    -- Only persist hunger; sated is runtime-only
+    local C = CuraEqui
+    local preset = (C and C.Config and C.Config.Hunger and C.Config.Hunger.preset) or "moderate"
+
     local t = {
         hunger         = tonumber(hunger or -1) or -1,
-        -- keep the fields for forward-compat but always zero them out
+        preset         = tostring(preset),
         satedRemainSec = 0,
         savedAt        = 0,
-        version        = 2,
+        version        = 3,
     }
 
     local ok, err = pcall(function()
@@ -95,6 +106,35 @@ function P.Reopen()
         return nil
     end)
     if ok and inst then _db = inst end
+end
+
+function P.SavePreset(presetName)
+    if not _db then return false end
+    local t = {
+        preset  = tostring(presetName or "moderate"),
+        version = 1,
+    }
+    local ok = pcall(function()
+        if _db.Set then
+            return _db:Set(P._presetKey, t)
+        elseif _db.SetValue then
+            return _db:SetValue(P._presetKey, t)
+        end
+    end)
+    return ok == true
+end
+
+function P.LoadPreset()
+    if not _db then return nil end
+    local ok, v = pcall(function()
+        return (_db.Get and _db:Get(P._presetKey))
+            or (_db.Get and _db.Get(P._presetKey))
+            or nil
+    end)
+    if not ok or type(v) ~= "table" then return nil end
+    local p = tostring(v.preset or ""):lower()
+    if p == "" then return nil end
+    return p
 end
 
 -- Throttled saver: writes only on >=1% delta or every N seconds

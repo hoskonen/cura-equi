@@ -14,28 +14,37 @@ local function merge_into(dst, src, overwrite)
     end
 end
 
-function CuraEqui.ApplyPreset(mode)
+function CuraEqui.ApplyPreset(preset, cause)
     local C = CuraEqui.Config or {}
     local P = C.Presets or {}
-    local name = (C.Hunger and C.Hunger.preset) or "moderate"
-    local overwrite = (mode ~= "fill") -- "overwrite" (default) vs "fill"
 
-    -- Apply Hunger preset
+    local name = tostring(preset or ""):lower()
+    if name == "" or name == "current" then
+        name = (C.Hunger and C.Hunger.preset) or "moderate"
+    end
+
+    -- allow "fill" behavior as a mode, not a preset
+    local overwrite = true
+    if name == "fill" then
+        overwrite = false
+        name = (C.Hunger and C.Hunger.preset) or "moderate"
+    end
+
+    -- validate preset exists; fallback to moderate
+    if not (P.Hunger and P.Hunger[name]) then
+        name = "moderate"
+    end
+
+    C.Hunger = C.Hunger or {}
+    C.Hunger.preset = name
+
     if P.Hunger and P.Hunger[name] then
         merge_into(C.Hunger, P.Hunger[name], overwrite)
     end
-    -- Apply Feeding preset (if provided)
     if P.Feeding and P.Feeding[name] then
+        C.Feeding = C.Feeding or {}
         merge_into(C.Feeding, P.Feeding[name], overwrite)
     end
-end
 
-if System and System.AddCCommand then
-    System.AddCCommand("curaequi_preset", function(_, p)
-        if p and CuraEqui.Config and CuraEqui.Config.Hunger then
-            CuraEqui.Config.Hunger.preset = p
-            CuraEqui.ApplyPreset("overwrite")
-            System.LogAlways("[CuraEqui] Applied preset: " .. tostring(p))
-        end
-    end, "Apply a CuraEqui hunger/feeding preset")
+    return name
 end
