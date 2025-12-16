@@ -130,7 +130,7 @@ M._desiredPlayerUuid  = M._desiredPlayerUuid or nil
 M._playerApplyPending = M._playerApplyPending or false
 
 function M.SyncPlayerStatus(horseEnt, S)
-    System.LogAlways("[CuraEqui][DBG] SyncPlayerStatus entered")
+    --System.LogAlways("[CuraEqui][DBG] SyncPlayerStatus entered")
 
     local C    = CuraEqui
     local list = C.Config and C.Config.HUD and C.Config.HUD.playerStatusTiers

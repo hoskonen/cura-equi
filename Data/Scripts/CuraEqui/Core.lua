@@ -412,10 +412,6 @@ function CuraEqui.Bootstrap(reason)
     CuraEqui.state = CuraEqui.state or {}
 
     if reason == "ogs" then
-        CuraEqui.state.loadingSave = true -- mark: this was called from OnGameplayStarted
-    end
-
-    if reason == "ogs" then
         CuraEqui._PrepareForLoad("ogs")
         CuraEqui.state.loadingSave = true
     end
@@ -425,7 +421,16 @@ function CuraEqui.Bootstrap(reason)
         pcall(CuraEqui.Persist.Reopen)
     end
 
-    pcall(CuraEqui.LogActivePreset, reason or "bootstrap")
+    do
+        local P = CuraEqui.Persist
+        local preset = (P and P.LoadPreset and P.LoadPreset()) or nil
+        if not preset or preset == "" then
+            preset = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "moderate"
+        end
+        CuraEqui.SetPreset(preset, { cause = "ogs" }) -- no toast by cause rules
+    end
+
+    --pcall(CuraEqui.LogActivePreset, reason or "bootstrap")
 
     pcall(function()
         if CuraEqui and CuraEqui.Buffs and CuraEqui.Buffs.SweepPlayerSatedEffects then
@@ -987,19 +992,6 @@ function CuraEqui.OnGameplayStarted()
     -- Delay toast by ~1.8 seconds to ensure UI is ready
     Script.SetTimer(1800, _initToast)
 
-    -- hunger preset
-    do
-        local P = CuraEqui.Persist
-        local preset = (P and P.LoadPreset and P.LoadPreset()) or nil
-        if preset and preset ~= "" then
-            CuraEqui.SetPreset(preset, { cause = "ogs" }) -- no toast
-        else
-            -- Apply whatever config says, but no toast
-            local cfg = (CuraEqui.Config and CuraEqui.Config.Hunger and CuraEqui.Config.Hunger.preset) or "moderate"
-            CuraEqui.SetPreset(cfg, { cause = "ogs" })
-        end
-    end
-
     -- Always treat OGS as a fresh runtime session
     if CuraEqui.state then CuraEqui.state._preloadFence = nil end
     CuraEqui.Bootstrap("ogs")
@@ -1211,37 +1203,36 @@ function CuraEqui._ShowPresetToast(preset, meta)
 end
 
 function CuraEqui.SetPreset(preset, meta)
+    local ST = CuraEqui.state or {}
+    CuraEqui.state = ST
+
     preset = tostring(preset or ""):lower()
     if preset == "" then preset = "moderate" end
 
     local cause = (meta and meta.cause) or "manual"
 
-    -- apply runtime config changes
+    -- hard dedupe: same preset already active
+    if ST._activePreset == preset then
+        return preset
+    end
+    ST._activePreset = preset
+
     local applied = preset
     if CuraEqui.ApplyPreset then
-        applied = CuraEqui.ApplyPreset(preset, cause) or preset
+        applied = CuraEqui.ApplyPreset(preset) or preset
     end
 
-    -- persist preset
-    local P = CuraEqui.Persist
-    if P and P.SavePreset then
-        pcall(P.SavePreset, applied)
-    end
-
-    -- user feedback only for manual
-    if cause == "manual" and CuraEqui._ShowPresetToast then
-        CuraEqui._ShowPresetToast(applied, { cause = cause })
+    -- persist only for manual changes (optional: also persist for load)
+    if cause == "manual" then
+        local P = CuraEqui.Persist
+        if P and P.SavePreset then pcall(P.SavePreset, applied) end
+        if CuraEqui._ShowPresetToast then
+            CuraEqui._ShowPresetToast(applied, { cause = cause })
+        end
     end
 
     System.LogAlways(("[CuraEqui][Preset] active=%s cause=%s")
         :format(tostring(applied), tostring(cause)))
-
-    -- Optional: immediate refresh
-    local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
-    local S = h and CuraEqui.HorseStateGet and CuraEqui.HorseStateGet(h) or nil
-    if h and S and CuraEqui.Buffs and CuraEqui.Buffs.SyncAll then
-        pcall(CuraEqui.Buffs.SyncAll, h, S)
-    end
 
     return applied
 end
