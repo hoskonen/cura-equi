@@ -224,6 +224,10 @@ function M.SyncPlayerStatus(horseEnt, S)
             if not M._playerRetryPending then
                 M._playerRetryPending = true
                 M._playerRetryTimer = Script.SetTimer(250, function()
+                    -- KillTimer is best-effort during lifecycle transitions.
+                    -- Never let an old save's retry clear or reuse current state.
+                    if myGen ~= (M._playerGen or 0) then return end
+
                     M._playerRetryPending = nil
                     M._playerRetryTimer = nil
                     M._playerApplyPending = false
@@ -284,17 +288,34 @@ function M.SyncHorseDebuff(horseEnt, S)
         -- If cannot clear yet (load timing), retry once
         if not cleared and not S._horseDebuffRetryPending then
             S._horseDebuffRetryPending = true
-            ST.horseDebuffRetryTimer = Script.SetTimer(250, function()
-                S._horseDebuffRetryPending = nil
-                ST.horseDebuffRetryTimer = nil
+            ST._horseDebuffRetryState = S
 
-                local hNow = horseEnt
-                if CuraEqui.Horse and CuraEqui.Horse.Resolve then
-                    local ok, h = pcall(CuraEqui.Horse.Resolve)
-                    if ok and h then hNow = h end
+            local myGen    = ST._horseDebuffRetryGen or 0
+            local expectId = tostring(horseEnt.id or horseEnt)
+
+            ST.horseDebuffRetryTimer = Script.SetTimer(250, function()
+                -- Check the current lifecycle before touching captured state or
+                -- the shared timer slot; a cancelled callback may still fire.
+                if (CuraEqui.state and (CuraEqui.state._horseDebuffRetryGen or 0) or 0) ~= myGen then
+                    return
                 end
 
-                pcall(M.SyncHorseDebuff, hNow, S)
+                local cur = nil
+                if CuraEqui.Horse and CuraEqui.Horse.Resolve then
+                    local ok, resolved = pcall(CuraEqui.Horse.Resolve)
+                    if ok then cur = resolved end
+                end
+                if not cur or tostring(cur.id or cur) ~= expectId then
+                    S._horseDebuffRetryPending = nil
+                    if ST._horseDebuffRetryState == S then ST._horseDebuffRetryState = nil end
+                    ST.horseDebuffRetryTimer = nil
+                    return
+                end
+
+                S._horseDebuffRetryPending = nil
+                if ST._horseDebuffRetryState == S then ST._horseDebuffRetryState = nil end
+                ST.horseDebuffRetryTimer = nil
+                pcall(M.SyncHorseDebuff, cur, S)
             end)
         end
         return
@@ -348,25 +369,33 @@ function M.SyncHorseDebuff(horseEnt, S)
         if not cleared then
             if not S._horseDebuffRetryPending then
                 S._horseDebuffRetryPending = true
+                ST._horseDebuffRetryState   = S
 
                 local myGen                = ST._horseDebuffRetryGen or 0
                 local expectId             = tostring(horseEnt.id or horseEnt)
 
                 ST.horseDebuffRetryTimer   = Script.SetTimer(250, function()
-                    S._horseDebuffRetryPending = nil
-                    ST.horseDebuffRetryTimer   = nil
-
                     -- Abort if a quickload happened since scheduling
                     if (CuraEqui.state and (CuraEqui.state._horseDebuffRetryGen or 0) or 0) ~= myGen then
                         return
                     end
 
                     -- Abort if the "current" horse is not the same entity anymore
-                    local cur = CuraEqui.Horse and CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
+                    local cur = nil
+                    if CuraEqui.Horse and CuraEqui.Horse.Resolve then
+                        local ok, resolved = pcall(CuraEqui.Horse.Resolve)
+                        if ok then cur = resolved end
+                    end
                     if not cur or tostring(cur.id or cur) ~= expectId then
+                        S._horseDebuffRetryPending = nil
+                        if ST._horseDebuffRetryState == S then ST._horseDebuffRetryState = nil end
+                        ST.horseDebuffRetryTimer = nil
                         return
                     end
 
+                    S._horseDebuffRetryPending = nil
+                    if ST._horseDebuffRetryState == S then ST._horseDebuffRetryState = nil end
+                    ST.horseDebuffRetryTimer = nil
                     pcall(M.SyncHorseDebuff, cur, S)
                 end)
             end

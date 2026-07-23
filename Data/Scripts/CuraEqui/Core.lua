@@ -194,21 +194,31 @@ function CuraEqui._PrepareForLoad(reason)
         ST.horseDebuffRetryTimer = nil
         System.LogAlways("[CuraEqui][LoadPrep] killed horse debuff retry timer")
     end
+    if ST._horseDebuffRetryState then
+        ST._horseDebuffRetryState._horseDebuffRetryPending = nil
+        ST._horseDebuffRetryState = nil
+    end
     ST._horseDebuffRetryPending = nil
     ST._horseDebuffRetryGen     = (ST._horseDebuffRetryGen or 0) + 1
 
     -- Invalidate player-status delayed apply logic (poison across loads)
-    local BL                    = CuraEqui.BuffLogic
-    if BL then
-        BL._playerGen = (BL._playerGen or 0) + 1
-        if BL._playerRetryTimer then
-            Script.KillTimer(BL._playerRetryTimer)
-            BL._playerRetryTimer = nil
+    local B                     = CuraEqui.Buffs
+    if B then
+        B._playerGen = (B._playerGen or 0) + 1
+        if B._playerRetryTimer then
+            Script.KillTimer(B._playerRetryTimer)
+            B._playerRetryTimer = nil
         end
-        BL._playerRetryPending = nil
-        BL._playerApplyPending = nil
-        BL._desiredPlayerUuid  = nil
-        BL._lastPlayerUuid     = nil
+        B._playerRetryPending = nil
+        B._playerApplyPending = nil
+        B._desiredPlayerUuid  = nil
+        B._lastPlayerUuid     = nil
+    end
+
+    -- Timed effect removals also capture the save in which they were created.
+    local E = CuraEqui.Effects
+    if E then
+        E._satedGen = (E._satedGen or 0) + 1
     end
 
     -- IMPORTANT: don't hard-clear tiers here; do it in SyncAll via ST._needsStatusClean
