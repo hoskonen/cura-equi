@@ -187,6 +187,17 @@ function CuraEqui._PrepareForLoad(reason)
         ST.hungerTimer = nil
         System.LogAlways("[CuraEqui][LoadPrep] killed hunger timer")
     end
+    ST._hungerWatcherActive = nil
+    ST._hungerWatcherGen    = (ST._hungerWatcherGen or 0) + 1
+
+    -- Kill the horseless probe and invalidate any callback already queued.
+    if ST.probeTimer then
+        Script.KillTimer(ST.probeTimer)
+        ST.probeTimer = nil
+        System.LogAlways("[CuraEqui][LoadPrep] killed horse probe timer")
+    end
+    ST._horseProbeActive = nil
+    ST._horseProbeGen    = (ST._horseProbeGen or 0) + 1
 
     -- Kill horse debuff retry timer
     if ST.horseDebuffRetryTimer then
@@ -1007,11 +1018,17 @@ function CuraEqui.OnGameplayStarted()
     CuraEqui.Bootstrap("ogs")
     CuraEqui.ValidateBuffGuids()
 
+    -- Any later load/death preparation advances this generation. Timers from
+    -- this gameplay start must not mutate the next save's horse or buff state.
+    local ogsGen = CuraEqui.state and (CuraEqui.state._horseSyncFenceGen or 0) or 0
+
     -- Staggered horse resolve attempts: 0ms, 300ms, 1200ms
     local tries = { 0, 300, 1200 }
 
     local function try(i)
         local ST = CuraEqui.state or {}
+        if (ST._horseSyncFenceGen or 0) ~= ogsGen then return end
+
         local D = CuraEqui.Config and CuraEqui.Config.Debug or {}
 
         -- Always try to resolve a horse; on horseless saves this just returns nil.
@@ -1050,6 +1067,7 @@ function CuraEqui.OnGameplayStarted()
     Script.SetTimer(400, function()
         local ST = CuraEqui.state
         if not ST then return end
+        if (ST._horseSyncFenceGen or 0) ~= ogsGen then return end
 
         ST._preloadFence   = nil
         ST._horseSyncFence = nil
@@ -1140,6 +1158,8 @@ function CuraEqui.TeardownAll(reason)
     if ST.probeTimer then
         Script.KillTimer(ST.probeTimer); ST.probeTimer = nil
     end
+    ST._horseProbeActive = nil
+    ST._horseProbeGen    = (ST._horseProbeGen or 0) + 1
 
     -- Unregister any UI listeners you installed (map, fader, item selection…)
     -- (Only if you registered them via UIAction.RegisterElementListener earlier)

@@ -190,14 +190,30 @@ local function _H()
 end
 
 function CuraEqui.StartProbing()
+    CuraEqui.state = CuraEqui.state or {}
     local ST = CuraEqui.state
     if ST.probeTimer then Script.KillTimer(ST.probeTimer) end
 
-    local periodMs = 10000 -- every 10 s
+    ST._horseProbeGen    = (ST._horseProbeGen or 0) + 1
+    ST._horseProbeActive = true
+    local probeGen       = ST._horseProbeGen
+    local periodMs       = 10000 -- every 10 s
+
     _G["CuraEqui_HorseProbeTick"] = function()
+        local current = CuraEqui.state or {}
+        if current._horseProbeActive ~= true
+            or probeGen ~= (current._horseProbeGen or 0)
+        then
+            return
+        end
+
         local h = CuraEqui.ResolveHorse and CuraEqui.ResolveHorse() or nil
 
         if h then
+            current.probeTimer        = nil
+            current._horseProbeActive = nil
+            current._horseProbeGen    = (current._horseProbeGen or 0) + 1
+
             -- Route identity through owned-horse helper; do NOT start hunger here
             if CuraEqui.SetOwnedHorse then
                 CuraEqui.SetOwnedHorse(h, { reason = "probe" })
@@ -234,17 +250,28 @@ function CuraEqui.StartProbing()
             return
         end
 
-        -- keep probing
-        ST.probeTimer = Script.SetTimerForFunction(periodMs, "CuraEqui_HorseProbeTick")
+        -- ResolveHorse may invoke lifecycle helpers. Recheck before rearming.
+        current = CuraEqui.state or {}
+        if current._horseProbeActive ~= true
+            or probeGen ~= (current._horseProbeGen or 0)
+        then
+            return
+        end
+
+        current.probeTimer = Script.SetTimer(periodMs, _G["CuraEqui_HorseProbeTick"])
     end
 
     -- kick-off first probe
-    ST.probeTimer = Script.SetTimerForFunction(500, "CuraEqui_HorseProbeTick")
+    ST.probeTimer = Script.SetTimer(500, _G["CuraEqui_HorseProbeTick"])
     CuraEqui.Log("poll", "Probe started (waiting for horse…).")
 end
 
 function CuraEqui.StopProbing()
+    CuraEqui.state = CuraEqui.state or {}
     local ST = CuraEqui.state
+    ST._horseProbeActive = nil
+    ST._horseProbeGen    = (ST._horseProbeGen or 0) + 1
+
     if ST.probeTimer then
         Script.KillTimer(ST.probeTimer)
         ST.probeTimer = nil
@@ -821,10 +848,24 @@ function CuraEqui._HungerTickBody()
     end
 end
 
--- ---------- TIMER WRAPPER (ALWAYS REARMS) ----------
-function CuraEqui_HungerTick()
+-- ---------- TIMER WRAPPER ----------
+local function _armHungerTick(C, ST, watcherGen)
+    ST.hungerTimer = Script.SetTimer(C.HorseCfg.tickSec * 1000, function()
+        CuraEqui_HungerTick(watcherGen)
+    end)
+end
+
+function CuraEqui_HungerTick(watcherGen)
     local C  = CuraEqui
     local ST = C.state or {}
+
+    -- KillTimer is best-effort if a callback is already queued/running.
+    -- A stopped or superseded watcher must neither mutate nor rearm.
+    if ST._hungerWatcherActive ~= true
+        or watcherGen ~= (ST._hungerWatcherGen or 0)
+    then
+        return
+    end
 
     ----------------------------------------------------------------
     -- First real runtime heartbeat after load
@@ -863,12 +904,17 @@ function CuraEqui_HungerTick()
     end
 
     ----------------------------------------------------------------
-    -- Once the watcher is running for this session, keep it alive.
-    -- We no longer try to "guess" stray ticks; StopWatching() on
-    -- load handles teardown, and StartWatching() is idempotent.
+    -- StopWatching may be called by lifecycle work reached during the tick.
+    -- Recheck before creating the successor timer.
     ----------------------------------------------------------------
-    CuraEqui.state.hungerTimer =
-        Script.SetTimerForFunction(CuraEqui.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
+    ST = C.state or {}
+    if ST._hungerWatcherActive ~= true
+        or watcherGen ~= (ST._hungerWatcherGen or 0)
+    then
+        return
+    end
+
+    _armHungerTick(C, ST, watcherGen)
 end
 
 -- ---------- START/STOP ----------
@@ -893,9 +939,12 @@ function CuraEqui.StartWatching()
         return
     end
 
+    ST._hungerWatcherGen    = (ST._hungerWatcherGen or 0) + 1
+    ST._hungerWatcherActive = true
+    local watcherGen        = ST._hungerWatcherGen
+
     -- Arm the timer once
-    ST.hungerTimer =
-        Script.SetTimerForFunction(C.HorseCfg.tickSec * 1000, "CuraEqui_HungerTick")
+    _armHungerTick(C, ST, watcherGen)
     C.Log("poll", "Hunger watcher started (timerId=%s)", tostring(ST.hungerTimer))
 
     -- Refresh sated UI *once* if we have valid state
@@ -918,14 +967,19 @@ function CuraEqui.StartWatching()
 end
 
 function CuraEqui.StopWatching()
-    if CuraEqui.state.hungerTimer then
-        Script.KillTimer(CuraEqui.state.hungerTimer)
-        CuraEqui.state.hungerTimer = nil
+    local ST                = CuraEqui.state or {}
+    CuraEqui.state          = ST
+    ST._hungerWatcherActive = nil
+    ST._hungerWatcherGen    = (ST._hungerWatcherGen or 0) + 1
+
+    if ST.hungerTimer then
+        Script.KillTimer(ST.hungerTimer)
+        ST.hungerTimer = nil
     end
 
     -- skip safety-save if we’re inside the boot/load mute window
     local now = (CuraEqui.Now and CuraEqui.Now()) or 0
-    local muted = CuraEqui.state and CuraEqui.state.persistMuteUntil and (now < CuraEqui.state.persistMuteUntil)
+    local muted = ST.persistMuteUntil and (now < ST.persistMuteUntil)
 
     if (not muted) then
         local h = CuraEqui.Horse.Resolve and CuraEqui.Horse.Resolve() or nil
